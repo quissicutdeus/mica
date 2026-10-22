@@ -4,7 +4,7 @@
 
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { renderApp } from '@mica/sdk/testing';
 import type { SparkCard, SparkMatch, SparkProfile } from '@mica/shared/types';
 
@@ -16,6 +16,7 @@ import { fetchNui } from '../../nui/fetchNui';
 import { registerNuiTransport } from '../../../../sdk/nui/transport';
 
 import Spark from './index.svelte';
+import LauncherIcon from './Icon.svelte';
 import { profile, profileLoaded, matches, matchesLoaded } from './store';
 
 const card: SparkCard = {
@@ -106,5 +107,13 @@ describe('Spark full-screen panels', () => {
     expect(
       Array.from(dialog.querySelectorAll('button')).map((b) => b.getAttribute('data-testid'))
     ).toEqual(['spark-view-profile', 'spark-unmatch', 'spark-block', 'spark-report-profile']);
+  });
+});
+
+/** MICA-420: the launcher glyph's fallback size is the `size-icon-xl` token, not a raw `h-8 w-8`. */
+describe('launcher icon', () => {
+  it('draws at the xl icon token when the shell passes no class', () => {
+    const { container } = render(LauncherIcon);
+    expect(container.querySelector('svg')?.getAttribute('class')).toBe('size-icon-xl');
   });
 });

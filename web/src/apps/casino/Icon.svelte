@@ -5,10 +5,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  let { class: className = 'h-8 w-8' }: { class?: string } = $props();
+  let { class: className = 'size-icon-xl' }: { class?: string } = $props();
 </script>
 
-<!-- A casino chip: a ring with four edge marks. Sized h-8 w-8 like every launcher icon,
+<!-- A casino chip: a ring with four edge marks. 2rem (`size-icon-xl`), the launcher size;
      `currentColor` so it follows the tile. -->
 <svg class={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
   <circle cx="12" cy="12" r="9" stroke-width="2" />

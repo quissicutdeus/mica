@@ -110,6 +110,25 @@ describe('a chunk that will not load offers a reload', () => {
     }
   );
 
+  /**
+   * The prompt is the shell's catalog's, not English literals (MICA-420): a player on a German
+   * phone was offered "Reload" under an English title. Read at show time, so it is in whatever
+   * language the phone is in when the load fails.
+   */
+  it("speaks the phone's language", async () => {
+    const { appRegistryStore, toast } = await freshRegistry();
+    const { locale } = await import('../../../../sdk/i18n');
+    locale.set('de');
+
+    await appRegistryStore.loadComponent('calculator');
+
+    const [shown] = get(toast);
+    expect(shown.actions?.map((a) => a.label)).toEqual(['Neu laden']);
+    expect(shown.title).toBe('micaOS konnte diese App nicht laden');
+    expect(shown.message).not.toMatch(/reloading/i);
+    locale.set('en');
+  });
+
   it('prompts once however many apps fail, since it is one deploy to recover from', async () => {
     const { appRegistryStore, toast } = await freshRegistry();
 

@@ -100,7 +100,10 @@ describe('server-provided languages (MICA-235)', () => {
     const tr = get(m.t);
     expect(tr('notes.title')).toBe('Notizen');
     expect(tr('clock.alarm')).toBe('Wecker');
-    expect(m.catalogFor('shell', 'de')).toEqual({ home: 'Start' });
+    // Matched, not equal: the server's strings merge over the shell's bundled `de`, which is
+    // registered too once anything in the graph imports `shell/messages` (`registry.ts` does).
+    expect(m.catalogFor('shell', 'de')).toMatchObject({ home: 'Start' });
+    expect(m.catalogFor('Not An Id', 'de')).toBeUndefined();
   });
 
   it('a failed language list leaves the list empty', async () => {

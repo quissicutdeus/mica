@@ -372,9 +372,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {/if}
     {#if msg.sender === 'me' && currentConv}
       {#if isLastReadMyMessage}
-        <MessageStatusIcon status="read" class="h-3.5 w-3.5" />
+        <MessageStatusIcon status="read" />
       {:else if !isReadByOther}
-        <MessageStatusIcon status="delivered" class="h-3.5 w-3.5" />
+        <MessageStatusIcon status="delivered" />
       {/if}
     {/if}
   </div>

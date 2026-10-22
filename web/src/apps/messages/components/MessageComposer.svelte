@@ -135,7 +135,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >
         <div class="flex min-w-0 flex-1 flex-col pr-2">
           <div class="text-primary flex items-center gap-1.5 font-semibold">
-            <EditIcon class="h-3.5 w-3.5 shrink-0" />
+            <EditIcon class="size-icon-xs shrink-0" />
             <span class="text-label-small truncate">{$t('messages.editingMessage')}</span>
           </div>
           <p class="text-on-surface-variant text-label-small mt-0.5 truncate">
@@ -161,7 +161,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >
         <div class="flex min-w-0 flex-1 flex-col pr-2">
           <div class="text-primary flex items-center gap-1.5 font-semibold">
-            <ReplyIcon class="h-3.5 w-3.5 shrink-0" />
+            <ReplyIcon class="size-icon-xs shrink-0" />
             <Avatar
               src={replySender.avatar}
               name={replySender.name}

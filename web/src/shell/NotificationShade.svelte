@@ -499,7 +499,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       title={$t('shell.restoreToActive')}
                       aria-label={$t('shell.restoreToActive')}
                     >
-                      <ReplyIcon class="h-3.5 w-3.5" />
+                      <ReplyIcon class="size-icon-xs" />
                     </button>
                   </div>
                 </SwipeableRow>
@@ -580,7 +580,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                           app: group.app
                         })}
                       >
-                        <ReplyIcon class="h-3.5 w-3.5" />
+                        <ReplyIcon class="size-icon-xs" />
                       </button>
                     </div>
                   </SwipeableRow>
@@ -662,7 +662,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div
               class="bg-surface ring-outline-variant shadow-elevation-2 flex h-16 w-16 items-center justify-center rounded-box ring-1"
             >
-              <CheckIcon class="h-8 w-8 text-emerald-400" />
+              <CheckIcon class="size-icon-xl text-emerald-400" />
             </div>
             <div>
               <p class="text-on-surface text-body-large">{$t('shell.noNewNotifications')}</p>
@@ -722,7 +722,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       title={$t('shell.clearNotification')}
                       aria-label={$t('shell.clearNotification')}
                     >
-                      <TrashIcon class="h-3.5 w-3.5" />
+                      <TrashIcon class="size-icon-xs" />
                     </button>
                   </div>
                 </SwipeableRow>
@@ -800,7 +800,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                           app: group.app
                         })}
                       >
-                        <TrashIcon class="h-3.5 w-3.5" />
+                        <TrashIcon class="size-icon-xs" />
                       </button>
                     </div>
                   </SwipeableRow>

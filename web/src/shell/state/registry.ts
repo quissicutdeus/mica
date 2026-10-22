@@ -32,6 +32,7 @@ import { isCatalogEntry, type CatalogEntry } from '../../../../sdk/catalog';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { MICA_ADDON_MOCK_MARKER } from '@mica/shared/addonDev';
 import { toast } from './toast';
+import { t } from '../messages';
 import { disabledAppIds } from './ownerConfig';
 import { activeDevice } from './device';
 
@@ -237,12 +238,14 @@ let staleBuildPrompted = false;
 const offerReloadForStaleBuild = (): void => {
   if (!isBrowser() || staleBuildPrompted) return;
   staleBuildPrompted = true;
+  const translate = get(t);
 
   toast.show({
     app: 'system',
     source: 'feedback',
-    title: 'micaOS could not load that app',
-    message: 'If it updated while this page was open, reloading will pick up the new version.',
+    // Read at show time, so the prompt is in the phone's language when the load fails.
+    title: translate('shell.staleBuildTitle'),
+    message: translate('shell.staleBuildMessage'),
     type: 'error',
     // Sticky: it is asking for a decision, and a prompt that vanishes after four seconds is
     // one the player has to reproduce the fault to see again.
@@ -250,7 +253,7 @@ const offerReloadForStaleBuild = (): void => {
     persist: false,
     actions: [
       {
-        label: 'Reload',
+        label: translate('shell.staleBuildReload'),
         variant: 'success',
         onClick: () => {
           window.location.reload();

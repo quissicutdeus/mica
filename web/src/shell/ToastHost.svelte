@@ -303,7 +303,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               onclick={(e) => handleSendReply(t, e)}
               aria-label={$translate('shell.sendReply')}
             >
-              <SendIcon class="h-3.5 w-3.5" />
+              <SendIcon class="size-icon-xs" />
             </button>
           </div>
         {/if}

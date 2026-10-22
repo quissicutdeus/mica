@@ -10,7 +10,7 @@
 import '../../../host/registerFacets';
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
-import { registerMessages } from '@mica/sdk';
+import { registerMessages, type UIMessage } from '@mica/sdk';
 import MessageComposer from './MessageComposer.svelte';
 import en from '../locales/en.json';
 import de from '../locales/de.json';
@@ -77,5 +77,20 @@ describe('MessageComposer attach menu and picker', () => {
     expect(queryByRole('button', { name: en.photo })).toBeNull();
     await rerender(props({ attachMenuOpen: true }));
     expect(queryByRole('button', { name: en.photo })).not.toBeNull();
+  });
+});
+
+describe('MessageComposer banner icons (MICA-420)', () => {
+  it('draws the editing banner glyph at the xs icon token', () => {
+    const editing = {
+      id: 1,
+      conversation_id: 1,
+      sender: 'me',
+      message: 'hi'
+    } as unknown as UIMessage;
+    const { container } = render(MessageComposer, props({ editing }));
+    const glyph = container.querySelector('.border-l-4 svg');
+    expect(glyph?.classList.contains('size-icon-xs')).toBe(true);
+    expect(glyph?.classList.contains('h-3.5')).toBe(false);
   });
 });

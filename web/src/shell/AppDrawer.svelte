@@ -298,7 +298,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div
         class="bg-surface-container-highest text-on-surface focus-within:ring-focus-ring flex h-11 shrink-0 items-center gap-2 rounded-box px-4 focus-within:ring-1"
       >
-        <SearchIcon class="text-on-surface-variant h-4 w-4" />
+        <SearchIcon class="text-on-surface-variant size-icon-sm" />
         <input
           bind:this={inputRef}
           bind:value={$searchQuery}

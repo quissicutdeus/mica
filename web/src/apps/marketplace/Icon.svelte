@@ -5,13 +5,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  let { class: className = 'h-8 w-8' }: { class?: string } = $props();
+  let { class: className = 'size-icon-xl' }: { class?: string } = $props();
 </script>
 
 <!-- A shopping cart — a clean break from the tag/string design, and a silhouette nothing
-     else in the launcher uses (Store's own icon is a bag). Sized h-8 w-8 like every other
-     launcher icon, `currentColor` like the other stroke-based icons so it follows the
-     tile's own foreground rather than carrying a fixed color. -->
+     else in the launcher uses (Store's own icon is a bag). 2rem (`size-icon-xl`) like
+     every other launcher icon, `currentColor` like the other stroke-based icons so it
+     follows the tile's own foreground rather than carrying a fixed color. -->
 <svg class={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
   <path
     stroke-linecap="round"

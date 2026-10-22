@@ -132,6 +132,17 @@ describe('pnpm new:app output', () => {
     expect(tileClasses(readFileSync(manifest, 'utf8'), 'manifest.ts')).not.toEqual([]);
   });
 
+  /**
+   * MICA-420: the launcher glyph's fallback size is the `size-icon-xl` token (2rem), the
+   * scale every in-tree app's `Icon.svelte` now uses, not a raw `h-8 w-8` copied into each
+   * new app.
+   */
+  it('scaffolds a launcher icon sized by the xl icon token', () => {
+    const icon = readFileSync(join(runs.plain.appDir, 'Icon.svelte'), 'utf8');
+    expect(icon).toContain("className = 'size-icon-xl'");
+    expect(icon).not.toContain('h-8 w-8');
+  });
+
   it.each([
     ['a plain app', 'plain'],
     ['an app with --service --tablet', 'full']

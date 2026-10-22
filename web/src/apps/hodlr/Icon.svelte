@@ -5,10 +5,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  let { class: className = 'h-8 w-8' }: { class?: string } = $props();
+  let { class: className = 'size-icon-xl' }: { class?: string } = $props();
 </script>
 
-<!-- Sized h-8 w-8 like every other launcher icon. -->
+<!-- 2rem (`size-icon-xl`), the launcher icon size. -->
 <svg class={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
   <circle cx="12" cy="12" r="9" stroke-width="2" />
   <path

@@ -128,10 +128,10 @@ export default defineApp({
 write(
   `web/src/apps/${id}/Icon.svelte`,
   `<script lang="ts">
-  let { class: className = 'h-8 w-8' }: { class?: string } = $props();
+  let { class: className = 'size-icon-xl' }: { class?: string } = $props();
 </script>
 
-<!-- Sized h-8 w-8 like every other launcher icon. -->
+<!-- Sized \`size-icon-xl\` like every other launcher icon. -->
 <svg class={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
   <path
     stroke-linecap="round"

@@ -129,3 +129,16 @@ describe('MessageBubble controls (MICA-407)', () => {
     expect(queryByRole('button', { name: en.replyToMessage })).not.toBeNull();
   });
 });
+
+describe('MessageBubble status icon (MICA-420)', () => {
+  it.each([
+    ['read', { isLastReadMyMessage: true }],
+    ['delivered', { isReadByOther: false }]
+  ])('draws the %s tick at the xs icon token', (_label, over) => {
+    const mine = message({ id: 20, message: 'On my way' });
+    const { container } = render(MessageBubble, props(mine, over));
+    const tick = container.querySelector('svg.text-blue-500, svg.text-gray-400');
+    expect(tick?.classList.contains('size-icon-xs')).toBe(true);
+    expect(tick?.classList.contains('h-3.5')).toBe(false);
+  });
+});

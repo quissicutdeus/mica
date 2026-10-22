@@ -80,7 +80,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <!-- Left Avatar / Activity Badge -->
           <div class="relative shrink-0 pt-0.5">
             {#if item.avatar}
-              <Avatar src={item.avatar} size="md" />
+              <!-- 40px, the size of the activity badge drawn when there is no avatar. -->
+              <Avatar src={item.avatar} size="w-10 h-10" />
             {:else}
               <!-- The `on-` role travels with the `bg-` it pairs with, rather than one
                    `text-on-surface` covering all three branches (MICA-109). It used to

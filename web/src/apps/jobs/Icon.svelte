@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  let { class: className = 'h-8 w-8' }: { class?: string } = $props();
+  let { class: className = 'size-icon-xl' }: { class?: string } = $props();
 </script>
 
 <!-- A briefcase, 24×24 stroke like Bank's. -->

@@ -28,7 +28,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <span class="text-on-surface font-medium">{$t('bank.totalBalance')}</span>
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      class="text-on-surface h-8 w-8"
+      class="text-on-surface size-icon-xl"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"

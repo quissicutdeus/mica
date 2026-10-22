@@ -5,10 +5,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  let { class: className = 'h-8 w-8' }: { class?: string } = $props();
+  let { class: className = 'size-icon-xl' }: { class?: string } = $props();
 </script>
 
-<!-- A flame: a spark caught. Sized h-8 w-8 like every launcher icon, `currentColor` so it
+<!-- A flame: a spark caught. Sized `size-icon-xl` (2rem, the launcher glyph's size), `currentColor` so it
      follows the tile. -->
 <svg class={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
   <path

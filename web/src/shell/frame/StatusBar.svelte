@@ -204,7 +204,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            pick this up for free; one hardcoded to a fixed color — Snek — will not,
            the same tradeoff its own launcher tile already made deliberately.
 
-           `class="h-3.5 w-3.5"` on the icon itself, matching `BluetoothIcon` —
+           `class="size-icon-xs"` on the icon itself, matching `BluetoothIcon` —
            every app icon component now accepts and honors `class` (they didn't
            all used to; a couple were a bare `<svg class="h-8 w-8">` with nothing
            plumbed through, which is what this repo has instead of Tailwind, so a
@@ -264,9 +264,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <img src={musicIcon} alt="" class="h-3.5 w-3.5 object-contain" />
               {:else if musicIcon}
                 {@const MusicAppIcon = musicIcon}
-                <MusicAppIcon class="h-3.5 w-3.5" />
+                <MusicAppIcon class="size-icon-xs" />
               {:else}
-                <MusicNoteIcon class="h-3.5 w-3.5" />
+                <MusicNoteIcon class="size-icon-xs" />
               {/if}
             </span>
           {/if}
@@ -275,7 +275,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <img src={app.icon} alt="" class="h-3.5 w-3.5 object-contain" />
             {:else if app.icon}
               {@const Icon = app.icon}
-              <Icon class="h-3.5 w-3.5" />
+              <Icon class="size-icon-xs" />
             {/if}
           {/each}
           {#if hiddenNotificationCount > 0}
@@ -301,11 +301,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           role="img"
           aria-label={$t('shell.liveLocationSharing')}
         >
-          <LocationIcon class="h-3.5 w-3.5" />
+          <LocationIcon class="size-icon-xs" />
         </span>
       {/if}
       {#if $bluetoothEnabled}
-        <BluetoothIcon class="h-3.5 w-3.5 opacity-90" />
+        <BluetoothIcon class="size-icon-xs opacity-90" />
       {/if}
       <SignalIcon level={$clampedSignalLevel} />
 

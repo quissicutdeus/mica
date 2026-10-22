@@ -5,13 +5,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  let { class: className = 'h-8 w-8' }: { class?: string } = $props();
+  let { class: className = 'size-icon-xl' }: { class?: string } = $props();
 </script>
 
 <!-- A bullhorn: narrow mouthpiece with a handle on the left, flaring to a wide bell on
-     the right, with sound arcs past the bell. Sized h-8 w-8 like every other launcher
-     icon, `currentColor` like the other stroke-based icons so it follows the tile's own
-     foreground rather than carrying a fixed color. -->
+     the right, with sound arcs past the bell. Sized `size-icon-xl` (2rem, the launcher
+     glyph's size), `currentColor` like the other stroke-based icons so it follows the
+     tile's own foreground rather than carrying a fixed color. -->
 <svg class={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
   <path
     stroke-linecap="round"
