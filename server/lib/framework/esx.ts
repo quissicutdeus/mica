@@ -7,6 +7,7 @@ import { Database } from '../Database';
 import {
   balanceOf,
   booleanOf,
+  dropOn,
   exposes,
   heldUntilRestart,
   moved,
@@ -34,12 +35,40 @@ import {
  * ────────────────────────────────────────────────────────────────────────────── */
 
 /**
+ * Each distinct reason ESX was refused, so the console says it once per es_extended start.
+ *
+ * Forgotten when es_extended starts or stops, as the held core is: a restart may be the owner
+ * installing Legacy, and a refusal of the new build should be said again.
+ */
+const esxRefusals = new Set<string>();
+dropOn(['es_extended'], [], () => esxRefusals.clear());
+
+/**
+ * Refuse this server's ESX, out loud, and answer null (MICA-421).
+ *
+ * Once per reason, because the cause is the build that is installed and `getPlayer` asks on
+ * every request: a line per request would bury the one that names it.
+ */
+const refuseEsx = (why: string): null => {
+  if (!esxRefusals.has(why)) {
+    esxRefusals.add(why);
+    console.error(
+      `[FrameworkBridge] ${why} micaOS supports ESX Legacy only, reached through that export, ` +
+        'so no ESX player is visible to it. Reported once per distinct reason.'
+    );
+  }
+  return null;
+};
+
+/**
  * The ESX shared object, or null when `es_extended` is not the framework here.
  *
- * `exports.es_extended.getSharedObject()` is the supported route on ESX Legacy. The
- * `esx:getSharedObject` event is the pre-Legacy one and is kept strictly as a fallback for a
- * build old enough to have no export — deliberately second, because it costs an event
- * dispatch on a path `getPlayer` walks for every request.
+ * `exports.es_extended.getSharedObject()` is the only route: ESX older than Legacy is
+ * unsupported (MICA-421), so the pre-Legacy `esx:getSharedObject` event is never sent. A running
+ * `es_extended` without the export is such a build, and is refused by name rather than read as
+ * "no framework" — a phone blank on every player with nothing in the console is the failure
+ * that would otherwise be left. `es_extended` not running at all is not a fault: a standalone
+ * server walks this probe too.
  *
  * This fetches afresh, and is what `esxCore` holds. Only `esxAllPlayers`' read of the
  * `Players` *data field* calls it directly, because a held copy's data is as old as the copy.
@@ -51,20 +80,14 @@ const fetchEsxCore = (): any => {
   if (exposes('es_extended', 'getSharedObject')) {
     return resource('es_extended').getSharedObject() ?? null;
   }
-
-  try {
-    if (!resource('es_extended')) return null;
-
-    let shared: any = null;
-    if (typeof emit === 'function') {
-      emit('esx:getSharedObject', (obj: any) => {
-        shared = obj;
-      });
-    }
-    return shared;
-  } catch {
+  // The export proxy cannot tell "not running" from "running without it", so the state is
+  // asked of the runtime.
+  if (typeof GetResourceState !== 'function' || GetResourceState('es_extended') !== 'started') {
     return null;
   }
+  return refuseEsx(
+    'es_extended is running without a getSharedObject export, so it predates ESX Legacy.'
+  );
 };
 
 /**

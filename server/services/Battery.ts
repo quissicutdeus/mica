@@ -752,8 +752,10 @@ export const sendLoadedBatteryToClient = async (
 
   if (savedCharge === null) {
     // Legacy metadata is the phone's alone: it predates the tablet having a battery at all.
+    // Only `mica_battery`, the key `savePlayerBattery` still mirrors; the older `phone_battery`
+    // is no longer read (MICA-421), since nothing writes it and a value there is stale.
     const metadata = device === DEFAULT_DEVICE ? player.rawPlayer?.PlayerData?.metadata : null;
-    const legacy = metadata?.mica_battery ?? metadata?.phone_battery;
+    const legacy = metadata?.mica_battery;
     savedCharge = legacy === undefined ? 100 : Number(legacy);
     // Adopt it, so the next load reads our table. Awaited rather than fired and
     // forgotten: a `loadBattery` racing the drain loop's first `saveBattery` could

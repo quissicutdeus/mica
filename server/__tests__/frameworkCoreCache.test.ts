@@ -231,3 +231,45 @@ describe('ESX shared object (MICA-351)', () => {
     expect(Object.keys(FrameworkBridge.getAllPlayers())).toEqual(['9']);
   });
 });
+
+/**
+ * A pre-Legacy es_extended is refused once per reason (MICA-421), and the refusal is forgotten when
+ * es_extended starts or stops — a restart may be the owner installing Legacy, and a build still
+ * without the export should be named again. `FrameworkBridge.test.ts` pins the once; this pins
+ * the re-arm, which only a fired `onResourceStart` can reach.
+ */
+describe('the pre-Legacy ESX refusal (MICA-421)', () => {
+  beforeEach(() => {
+    (globalThis as Record<string, unknown>).GetResourceState = (name: string) =>
+      name === 'es_extended' ? 'started' : 'missing';
+    __setResourceLookup((name) => (name === 'es_extended' ? {} : undefined));
+  });
+  afterEach(() => {
+    delete (globalThis as Record<string, unknown>).GetResourceState;
+  });
+
+  const refusals = (error: { mock: { calls: unknown[][] } }) =>
+    error.mock.calls.filter((call) => String(call[0]).includes('predates ESX Legacy')).length;
+
+  it('is said again after es_extended restarts, and not for another resource', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    FrameworkBridge.getCitizenId(1);
+    FrameworkBridge.getCitizenId(1);
+    expect(refusals(error)).toBe(1);
+
+    fire('onResourceStart', 'ox_inventory');
+    FrameworkBridge.getCitizenId(1);
+    expect(refusals(error)).toBe(1);
+
+    fire('onResourceStart', 'es_extended');
+    FrameworkBridge.getCitizenId(1);
+    FrameworkBridge.getCitizenId(1);
+    expect(refusals(error)).toBe(2);
+
+    fire('onResourceStop', 'es_extended');
+    FrameworkBridge.getCitizenId(1);
+    expect(refusals(error)).toBe(3);
+    error.mockRestore();
+  });
+});

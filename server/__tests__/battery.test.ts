@@ -360,12 +360,14 @@ describe('sendLoadedBatteryToClient', () => {
     expect(dbMock.insert.mock.calls[0][1]).toEqual(expect.arrayContaining([CID, 55]));
   });
 
-  it('reads the legacy phone_battery key too', async () => {
+  it('no longer reads the pre-micaOS phone_battery key (MICA-421)', async () => {
+    // Only `mica_battery` is read, the key micaOS itself mirrors. `phone_battery` predates it,
+    // and nothing writes it any more, so a value there is stale by definition.
     bridgeMock.getPlayer.mockReturnValue(mockPlayer({ phone_battery: 12 }));
 
     await sendLoadedBatteryToClient(SRC);
 
-    expect(emittedCharge()).toBe(12);
+    expect(emittedCharge()).toBe(100);
   });
 
   it('defaults to full with no row and no metadata', async () => {

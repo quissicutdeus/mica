@@ -67,6 +67,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Object.assign(g, saved);
+  vi.restoreAllMocks();
 });
 
 describe('qb-core', () => {
@@ -211,19 +212,72 @@ describe('es_extended', () => {
     expect(touched).not.toContain('qb-core');
   });
 
-  it('refetches an older build every time, since its PlayerData field is a snapshot', async () => {
-    let bank = 5;
-    const getSharedObject = vi.fn(() => ({
-      PlayerData: { identifier: 'char1:abc123', accounts: [{ name: 'bank', money: bank }] }
-    }));
-    resources['es_extended'] = { getSharedObject };
+  it('never waits on the pre-Legacy event when the export is absent, and says why', async () => {
+    // FiveM's per-resource proxy throws on an export the resource does not register.
+    resources['es_extended'] = new Proxy(
+      {},
+      {
+        get(_target, name) {
+          throw new Error(`No such export ${String(name)} in resource es_extended`);
+        }
+      }
+    );
     states['es_extended'] = 'started';
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const bridge = await loadBridge();
 
-    expect(bridge.getBankBalance()).toBe(5);
-    bank = 9;
+    expect(bridge.getPlayerData()).toBeNull();
+    expect(bridge.getBankBalance()).toBe(0);
+    expect(g.emit).not.toHaveBeenCalled();
+    // Once per session, naming the cause, however often the UI polls.
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toMatch(/getSharedObject.*ESX Legacy/);
+  });
+
+  it('treats a shared object without GetPlayerData as not ready: silent, unheld, refetched', async () => {
+    // Never read through a `PlayerData` snapshot, and not refused either — the server reads
+    // this shape as a shared object that is not ready yet (MICA-421).
+    let ready = false;
+    const getSharedObject = vi.fn(() =>
+      ready
+        ? {
+            GetPlayerData: () => ({
+              identifier: 'char1:abc123',
+              accounts: [{ name: 'bank', money: 9 }]
+            })
+          }
+        : { PlayerData: { identifier: 'char1:abc123', accounts: [{ name: 'bank', money: 5 }] } }
+    );
+    resources['es_extended'] = { getSharedObject };
+    states['es_extended'] = 'started';
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const bridge = await loadBridge();
+
+    expect(bridge.getBankBalance()).toBe(0);
+    expect(bridge.getCitizenId()).toBeNull();
+    expect(error).not.toHaveBeenCalled();
+    expect(g.emit).not.toHaveBeenCalled();
+
+    ready = true;
     expect(bridge.getBankBalance()).toBe(9);
-    expect(getSharedObject).toHaveBeenCalledTimes(2);
+    expect(bridge.getBankBalance()).toBe(9);
+    // Twice while not ready, once more when ready, and held from then on.
+    expect(getSharedObject).toHaveBeenCalledTimes(3);
+  });
+
+  it('says a refusal again after a resource restart, which may be Legacy being installed', async () => {
+    resources['es_extended'] = {};
+    states['es_extended'] = 'started';
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const bridge = await loadBridge();
+
+    bridge.getPlayerData();
+    bridge.getPlayerData();
+    expect(error).toHaveBeenCalledTimes(1);
+
+    fire('onClientResourceStart', 'es_extended');
+    bridge.getPlayerData();
+    expect(error).toHaveBeenCalledTimes(2);
   });
 
   it('probes every framework when no state reads started (a provided fork)', async () => {
@@ -236,9 +290,13 @@ describe('es_extended', () => {
   });
 
   it('answers null and 0 on a standalone server with no framework at all', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const bridge = await loadBridge();
 
     expect(bridge.getPlayerData()).toBeNull();
     expect(bridge.getBankBalance()).toBe(0);
+    // No framework is not a broken framework: nothing to complain about, nothing to wait on.
+    expect(error).not.toHaveBeenCalled();
+    expect(g.emit).not.toHaveBeenCalled();
   });
 });

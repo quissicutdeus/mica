@@ -719,14 +719,56 @@ describe('FrameworkBridge on ESX — identity', () => {
     expect(FrameworkBridge.getCitizenId(1)).toBe('CIT_A');
   });
 
-  it('falls back to the esx:getSharedObject event on a build with no export', () => {
-    (globalThis as any).emit = (event: string, cb: (obj: unknown) => void) => {
+  /**
+   * ESX older than Legacy is unsupported (MICA-421): the `es_extended` export is the only way in.
+   * The event the pre-Legacy builds answered is never sent, and a running `es_extended` with no
+   * export says so in the console rather than leaving every phone blank in silence.
+   */
+  describe('a build with no getSharedObject export (MICA-421)', () => {
+    const answeringEvent = vi.fn((event: string, cb: (obj: unknown) => void) => {
       if (event === 'esx:getSharedObject') cb({ GetPlayerFromId: () => xPlayer(LICENSE) });
-    };
-    __setResourceLookup((name) => (name === 'es_extended' ? {} : undefined));
+    });
+    let state: string;
+    beforeEach(() => {
+      state = 'started';
+      answeringEvent.mockClear();
+      (globalThis as any).emit = answeringEvent;
+      (globalThis as any).GetResourceState = (name: string) =>
+        name === 'es_extended' ? state : 'missing';
+      __setResourceLookup((name) => (name === 'es_extended' ? {} : undefined));
+    });
+    afterEach(() => {
+      delete (globalThis as any).emit;
+      delete (globalThis as any).GetResourceState;
+    });
 
-    expect(FrameworkBridge.getCitizenId(1)).toBe(LICENSE);
-    delete (globalThis as any).emit;
+    it('never asks for the shared object by event, and has no player', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(FrameworkBridge.getCitizenId(1)).toBeNull();
+      expect(answeringEvent).not.toHaveBeenCalled();
+    });
+
+    it('logs an error naming the cause, once however often it is asked', () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      FrameworkBridge.getCitizenId(1);
+      FrameworkBridge.getCitizenId(2);
+      FrameworkBridge.getPlayer(3);
+
+      const lines = error.mock.calls.map((call) => String(call[0]));
+      const refusals = lines.filter((line) => line.includes('getSharedObject export'));
+      expect(refusals).toHaveLength(1);
+      expect(refusals[0]).toMatch(/predates ESX Legacy/);
+    });
+
+    it('stays silent where es_extended is not running at all', () => {
+      // A standalone server walks the ESX probe too; no ESX is not a fault there.
+      state = 'missing';
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(FrameworkBridge.getCitizenId(1)).toBeNull();
+      expect(error.mock.calls.map((call) => String(call[0])).join('\n')).not.toMatch(
+        /getSharedObject/
+      );
+    });
   });
 });
 

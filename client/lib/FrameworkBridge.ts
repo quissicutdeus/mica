@@ -136,6 +136,13 @@ let qbCore: any = null;
 let esxShared: any = null;
 
 /**
+ * Each distinct reason ESX was refused, so the console says it once per resource start
+ * (MICA-421). Forgotten with the cached cores: a restart may be the owner installing Legacy,
+ * and a refusal of the new build should be said again.
+ */
+const esxRefusals = new Set<string>();
+
+/**
  * Any resource, not only `qb-core` and `es_extended`: a fork that `provide`s one of them starts
  * under its own name, and a funcref left from before a restart may answer nil rather than
  * throw, which would leave the phone blank until micaOS itself restarted. Starts and stops
@@ -144,54 +151,75 @@ let esxShared: any = null;
 const dropCachedCores = (): void => {
   qbCore = null;
   esxShared = null;
+  esxRefusals.clear();
 };
 on('onClientResourceStart', dropCachedCores);
 on('onClientResourceStop', dropCachedCores);
 
 /**
- * The ESX shared object on the client, or null.
+ * Refuse this server's ESX, out loud, and answer null.
  *
- * Mirrors `esxCore` on the server, including the `esx:getSharedObject` fallback for a build
- * predating the export. Only a Legacy object, one with a `GetPlayerData` function, is cached: an
- * older build answers through a `PlayerData` field, which is a snapshot taken when the object
- * was copied and would be stale from the first character switch on.
+ * ESX older than Legacy is unsupported (MICA-421), so there is no `esx:getSharedObject` event
+ * to fall back on and no `PlayerData` snapshot to read: either would be a quiet wait on a
+ * build the phone does not promise to work with. The phone renders blank instead, and this is
+ * the F8 line that says it is blank on purpose. Once per reason, because the cause is the
+ * build that is installed and `GetPhoneNumber` is a client export any resource may poll.
  */
-const fetchEsxCore = (): any => {
-  try {
-    const es = fx()['es_extended'];
-    if (es?.getSharedObject) return es.getSharedObject() ?? null;
-  } catch {
-    // es_extended is not this server's framework.
-    return null;
+const refuseEsx = (why: string): null => {
+  if (!esxRefusals.has(why)) {
+    esxRefusals.add(why);
+    console.error(
+      `[FrameworkBridge] ${why} micaOS supports ESX Legacy only, reached through that ` +
+        `export, so this phone has no ESX data. Reported once per distinct reason.`
+    );
   }
-
-  try {
-    let shared: any = null;
-    emit('esx:getSharedObject', (obj: any) => {
-      shared = obj;
-    });
-    return shared;
-  } catch {
-    return null;
-  }
+  return null;
 };
 
-const esxPlayerDataOf = (esx: any): any =>
-  // `ESX.GetPlayerData()` on Legacy, `ESX.PlayerData` on older builds.
-  typeof esx?.GetPlayerData === 'function' ? esx.GetPlayerData() : esx?.PlayerData;
+/**
+ * The ESX Legacy shared object on the client, or null.
+ *
+ * `exports.es_extended.getSharedObject()` is the only route, as on the server (MICA-421). An
+ * export lookup that throws is ESX being absent when `es_extended` is not running — the blind
+ * probe of `frameworkProbes` lands here on every standalone server, and that is not a fault —
+ * but the export being missing from a running `es_extended` is a pre-Legacy build, and says so.
+ *
+ * A shared object without `GetPlayerData` is not ready yet, as the server reads the same shape:
+ * answered null in silence, never held, and fetched again on the next lookup. Its `PlayerData`
+ * field is never read — that is a snapshot taken when the object was copied, stale from the
+ * first character switch on.
+ */
+const fetchEsxCore = (): any => {
+  let es: any;
+  try {
+    es = fx()['es_extended'];
+    if (typeof es?.getSharedObject !== 'function') {
+      return refuseEsx('es_extended exposes no getSharedObject export, so it predates ESX Legacy.');
+    }
+  } catch {
+    if (!started('es_extended')) return null; // es_extended is not this server's framework.
+    return refuseEsx(
+      'es_extended is running without a getSharedObject export, so it predates ESX Legacy.'
+    );
+  }
+
+  const esx = es.getSharedObject();
+  return typeof esx?.GetPlayerData === 'function' ? esx : null;
+};
 
 const esxRawPlayerData = (): any => {
   if (esxShared) {
     try {
-      return esxPlayerDataOf(esxShared);
+      return esxShared.GetPlayerData();
     } catch {
       // A stale funcref from before an es_extended restart — fetch the object again.
       esxShared = null;
     }
   }
   const esx = fetchEsxCore();
-  if (typeof esx?.GetPlayerData === 'function') esxShared = esx;
-  return esxPlayerDataOf(esx);
+  if (!esx) return null;
+  esxShared = esx;
+  return esx.GetPlayerData();
 };
 
 const qbRawPlayerData = (): any => {
