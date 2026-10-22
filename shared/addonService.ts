@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { s, type GphoneSchema, type StandardSchemaResult, type StandardSchemaV1 } from './schema';
+import { s, type MicaSchema, type StandardSchemaResult, type StandardSchemaV1 } from './schema';
 
 /**
  * An add-on's server half, declared once and read by both ends (MICA-308).
@@ -588,8 +588,8 @@ export function defineAddonService<const D extends AddonServiceDeclaration>(decl
 
 // --- Translation to @mica/shared/schema -----------------------------------------------------
 
-const fieldSchema = (field: FieldSpec): GphoneSchema<unknown> => {
-  let schema: GphoneSchema<unknown>;
+const fieldSchema = (field: FieldSpec): MicaSchema<unknown> => {
+  let schema: MicaSchema<unknown>;
   switch (field.type) {
     case 'string':
       schema = s.string({ min: field.min, max: field.max });
@@ -627,7 +627,7 @@ const fieldSchema = (field: FieldSpec): GphoneSchema<unknown> => {
 export function addonInputSchema<const I extends AddonInput>(
   input: I
 ): StandardSchemaV1<unknown, InputOf<I>> {
-  const shape: Record<string, GphoneSchema<unknown>> = {};
+  const shape: Record<string, MicaSchema<unknown>> = {};
   for (const [name, field] of Object.entries(input)) shape[name] = fieldSchema(field);
   const object = s.object(shape);
   return {

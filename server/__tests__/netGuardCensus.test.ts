@@ -112,7 +112,7 @@ const registrations = (): { file: string; event: string }[] => {
 };
 
 /** micaOS's own namespace. Anything else is named by a framework, which is the whole point. */
-const isGphoneNamed = (event: string) => event.startsWith('mica:');
+const isMicaNamed = (event: string) => event.startsWith('mica:');
 
 /**
  * What the documented command actually prints, reproduced including its second stage.
@@ -149,7 +149,7 @@ describe('the onNet census in netGuard.ts is true', () => {
 
   it('finds the number of mica-named handlers the docblock claims', () => {
     const stated = statedNumber(/(\w+) are mica-named/);
-    expect(handlers.filter((h) => isGphoneNamed(h.event))).toHaveLength(stated);
+    expect(handlers.filter((h) => isMicaNamed(h.event))).toHaveLength(stated);
   });
 
   it('finds them in exactly the files the docblock names', () => {
@@ -162,7 +162,7 @@ describe('the onNet census in netGuard.ts is true', () => {
 
     const named = [...sentence![1].matchAll(/`([^`]+)`/g)].map((m) => m[1]).sort();
     const actual = [
-      ...new Set(handlers.filter((h) => isGphoneNamed(h.event)).map((h) => path.basename(h.file)))
+      ...new Set(handlers.filter((h) => isMicaNamed(h.event)).map((h) => path.basename(h.file)))
     ].sort();
 
     expect(actual).toEqual(named);
@@ -176,7 +176,7 @@ describe('the onNet census in netGuard.ts is true', () => {
     // and answering it is the point. MICA-341 added the third, pma-voice's own
     // `setPlayerCall`, which pma-voice lets any client send for any call channel; `Phone.ts`
     // listens only to take back out a client it did not place. This is the whole category.
-    const framework = handlers.filter((h) => !isGphoneNamed(h.event));
+    const framework = handlers.filter((h) => !isMicaNamed(h.event));
 
     expect(framework.map((h) => `${h.file}  ${h.event}`).sort()).toEqual([
       `${path.join('lib', 'qbPhoneCompat.ts')}  QB_PHONE_SERVER_EVENTS.sendNewMail`,
@@ -232,8 +232,8 @@ describe('the onNet census in netGuard.ts is true', () => {
  */
 describe('the onNet census in docs/security.md is true', () => {
   const handlers = registrations();
-  const micaNamed = handlers.filter((h) => isGphoneNamed(h.event));
-  const frameworkNamed = handlers.filter((h) => !isGphoneNamed(h.event));
+  const micaNamed = handlers.filter((h) => isMicaNamed(h.event));
+  const frameworkNamed = handlers.filter((h) => !isMicaNamed(h.event));
 
   const inDoc = (pattern: RegExp, group = 1) =>
     stated(securityDoc, 'docs/security.md', pattern, group);

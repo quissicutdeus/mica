@@ -352,7 +352,7 @@ const FRAMEWORK = {
   esx: (name) => (name === 'es_extended' ? { getSharedObject: () => ({}) } : undefined)
 };
 
-const seedFrameworkAndGPhone = async ({
+const seedFrameworkAndMica = async ({
   connection,
   schemaFile,
   hasPlayers,
@@ -395,7 +395,7 @@ const seedFrameworkAndGPhone = async ({
 };
 
 const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
-  const database = await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers });
+  const database = await seedFrameworkAndMica({ connection, schemaFile, hasPlayers });
   const framework = hasPlayers ? 'qb' : 'esx';
   const ownerA = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
   const ownerB = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
@@ -791,7 +791,7 @@ const runImportVariant = async ({ connection, schemaFile, hasPlayers, modules, s
   const expected = IMPORT_EXPECTED[source];
   const label = `${source} on ${framework}`;
 
-  await seedFrameworkAndGPhone({
+  await seedFrameworkAndMica({
     connection,
     schemaFile,
     hasPlayers,
@@ -983,7 +983,7 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
   const OLD = '2020-01-01 00:00:00';
   const label = `retention on ${framework}`;
 
-  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'retention' });
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'retention' });
   modules.__setResourceLookup(FRAMEWORK[framework]);
   await connection.query('SET @mica_saved_sql_mode = @@SESSION.sql_mode');
   await connection.query(
@@ -1222,7 +1222,7 @@ const runEvidenceVariant = async ({
   const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
   const label = `evidence hold on ${framework}${hasPlayers ? '' : ` (users ${usersCollation})`}`;
 
-  await seedFrameworkAndGPhone({
+  await seedFrameworkAndMica({
     connection,
     schemaFile,
     hasPlayers,
@@ -1332,7 +1332,7 @@ const runHostedVariant = async ({ connection, schemaFile, hasPlayers, modules })
   const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
   const label = `hosted media on ${framework}`;
 
-  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'hosted' });
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'hosted' });
   modules.__setResourceLookup(FRAMEWORK[framework]);
   modules.resetMediaHostForTests();
 
@@ -1488,7 +1488,7 @@ const runPrivacyVariant = async ({ connection, schemaFile, hasPlayers, privacy }
   const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
   const label = `privacy on ${framework}`;
 
-  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'privacy' });
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'privacy' });
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
 
   step(`${label} — A has a note, two photos, a passcode, a contact and a report; B a note`);
@@ -1739,7 +1739,7 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
   const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
   const label = `privacy cascade guard on ${framework}`;
 
-  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'cascade' });
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'cascade' });
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
   const ids = async (sql, params = []) => (await q(sql, params)).map((r) => r.id);
 
@@ -1933,7 +1933,7 @@ const runCharacterDeletedVariant = async ({
   const C = hasPlayers ? 'CIT_C' : ESX_OWNER_C;
   const label = `character deleted on ${framework}, cleaned up by the ${via}`;
 
-  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: `gone_${via}` });
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: `gone_${via}` });
   privacy.__setResourceLookup(FRAMEWORK[framework]);
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
   const ids = async (sql, params = []) => (await q(sql, params)).map((r) => r.id);
@@ -2251,7 +2251,7 @@ const runMediaHookVariant = async ({ connection, schemaFile, hasPlayers, hooks }
   const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
   const label = `media-only hook on ${framework}`;
 
-  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'media_hook' });
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'media_hook' });
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
   const ids = async (sql, params = []) => (await q(sql, params)).map((r) => r.id);
   await seedCascadeScenario({ q, A, B, label });
@@ -2373,7 +2373,7 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
   const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
   const label = `content cipher on ${framework}`;
 
-  const database = await seedFrameworkAndGPhone({
+  const database = await seedFrameworkAndMica({
     connection,
     schemaFile,
     hasPlayers,
@@ -2918,7 +2918,7 @@ const runBootstrapFreshVariant = async ({ connection, schemaFile, hasPlayers, pr
   const framework = hasPlayers ? 'qb' : 'esx';
   const label = `first-start bootstrap on ${framework}`;
   const database = `mica_bootstrap_${framework}`;
-  const reference = await seedFrameworkAndGPhone({
+  const reference = await seedFrameworkAndMica({
     connection,
     schemaFile,
     hasPlayers,

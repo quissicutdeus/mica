@@ -6,6 +6,7 @@ import { SchemaRepository } from '../defineService';
 import { phoneForCitizen } from '../deviceIdentity';
 import { MediaItem } from '@mica/shared/types';
 import { Database } from '../Database';
+import type { Bytes } from 'node:buffer';
 import { PlayerFacingError } from '../errors';
 import { hostPhoto, refuseUploadWithoutRoom, releaseOnFailure } from './hosting';
 import {
@@ -354,12 +355,18 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
   }
 }
 
+/**
+ * `data` and `thumbnail` as text. `MediaItem` types them as strings, which is what the phone is
+ * sent, but oxmysql hands a binary-collated column back as a `Buffer` — `Bytes`, as
+ * `lib/nodeCrypto.d.ts` types it. That is the one other type that reaches here, so it is the
+ * one this narrows to.
+ */
 const coerceBinaryText = (item: MediaItem): MediaItem => {
   if (item.data && typeof item.data !== 'string') {
-    item.data = (item.data as any).toString('utf8');
+    item.data = (item.data as Bytes).toString('utf8');
   }
   if (item.thumbnail && typeof item.thumbnail !== 'string') {
-    item.thumbnail = (item.thumbnail as any).toString('utf8');
+    item.thumbnail = (item.thumbnail as Bytes).toString('utf8');
   }
   return item;
 };

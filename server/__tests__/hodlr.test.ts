@@ -138,7 +138,7 @@ describe('hodlr: buy and sell', () => {
 
       const [[sql, params]] = decrements();
       expect(sql).toMatch(/`quantity` >= \?/);
-      expect(params).toEqual([3, HOLDING.id, 3]);
+      expect(params).toEqual([3, HOLDING.id, 'CID_CALLER', 3]);
     });
 
     it('credits the bank and reports the remaining quantity on success', async () => {
@@ -157,8 +157,44 @@ describe('hodlr: buy and sell', () => {
 
       expect(reply).toEqual({ ok: false, reason: 'credit_failed' });
       expect(increments()).toEqual([
-        ['UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [2, HOLDING.id]]
+        [
+          'UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ? AND `citizenid` = ?',
+          [2, HOLDING.id, 'CID_CALLER']
+        ]
       ]);
+    });
+
+    /**
+     * The mirror of buy's "could neither credit coins nor refund" (MICA-422 review): the refund
+     * is the last thing standing between the player and losing the coins, and its answer was
+     * ignored. A refund that matched no row, or threw, is said in the console — the only path
+     * left to making the player whole — and the player is still told the trade failed.
+     */
+    it.each([
+      [
+        'matched no row',
+        () => dbMock.update.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+      ],
+      [
+        'threw',
+        () =>
+          dbMock.update
+            .mockResolvedValueOnce(true)
+            .mockRejectedValueOnce(new Error('connection dropped'))
+      ]
+    ])('logs a coin refund that %s after the bank credit failed', async (_label, arrange) => {
+      player.addMoney.mockReturnValue(false);
+      arrange();
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const reply = await call(SELL, { quantity: 2 });
+
+      expect(reply).toEqual({ ok: false, reason: 'credit_failed' });
+      const lines = error.mock.calls.map((args) => String(args[0]));
+      expect(lines.some((line) => /sell .*could neither credit .* nor refund/.test(line))).toBe(
+        true
+      );
+      error.mockRestore();
     });
 
     it.each([
@@ -177,6 +213,26 @@ describe('hodlr: buy and sell', () => {
       expect(dbMock.update).not.toHaveBeenCalled();
       expect(player.addMoney).not.toHaveBeenCalled();
     });
+  });
+
+  /**
+   * The holding's id is the server's own, read by `findOrCreateHolding` for this citizen, but
+   * an id alone is never the authorization for a write (AGENTS.md §2.9, MICA-422): every
+   * statement that moves a holding names the citizen whose holding it is, so a wrong id —
+   * a bug here, or a row that changed hands — can only miss, never move someone else's coins.
+   */
+  it('names the owner in every write that moves a holding (MICA-422)', async () => {
+    await call(BUY, { quantity: 3 });
+    await call(SELL, { quantity: 2 });
+    player.addMoney.mockReturnValue(false);
+    await call(SELL, { quantity: 1 }); // the refund path
+
+    const writes = dbMock.update.mock.calls.filter(([sql]) => /UPDATE `mica_hodlr`/.test(sql));
+    expect(writes).toHaveLength(4); // buy's credit, sell's decrement, the refund's two
+    for (const [sql, params] of writes) {
+      expect(sql).toMatch(/WHERE `id` = \? AND `citizenid` = \?/);
+      expect(params).toContain('CID_CALLER');
+    }
   });
 
   describe('buy', () => {
@@ -206,7 +262,10 @@ describe('hodlr: buy and sell', () => {
 
       expect(player.removeMoney).toHaveBeenCalledWith('bank', 33);
       expect(increments()).toEqual([
-        ['UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [3, HOLDING.id]]
+        [
+          'UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ? AND `citizenid` = ?',
+          [3, HOLDING.id, 'CID_CALLER']
+        ]
       ]);
       expect(reply).toEqual({ ok: true, quantity: 8, price: 11, cost: 33 });
     });

@@ -7,6 +7,7 @@ import { Database } from '../lib/Database';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { SEED_CHARACTERS, clearSeed, seedFor } from '../lib/seed';
 import { deliverToParticipants } from './Messages';
+import type { MessageRow } from '../repositories/MessageRepository';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
 
@@ -69,7 +70,7 @@ const runText = async (source: number, owner: string, args: string[]): Promise<v
     citizenid: character.citizenid,
     message: body
   });
-  const result = await Database.query<any>(
+  const id = await Database.insert(
     `INSERT INTO mica_messages (conversation_id, citizenid, message, status)
      VALUES (?, ?, ?, 'active')`,
     [row.conversation_id, row.citizenid, row.message]
@@ -77,18 +78,22 @@ const runText = async (source: number, owner: string, args: string[]): Promise<v
 
   // Goes out over the same path a real player's message does, which is the point: this
   // is how the inbound toast and the thread update get exercised without a second
-  // person logged in.
+  // person logged in. The row is the one a real send passes, timestamps included.
+  const now = new Date().toISOString();
+  const stored: MessageRow & { id: number } = {
+    id,
+    conversation_id: conversationId,
+    citizenid: character.citizenid,
+    message: body,
+    status: 'active',
+    created_at: now,
+    updated_at: now
+  };
   await deliverToParticipants(
     conversationId,
     character.citizenid,
     { name: `${character.firstname} ${character.lastname}`, phone: character.phone },
-    {
-      id: result?.insertId,
-      conversation_id: conversationId,
-      citizenid: character.citizenid,
-      message: body,
-      status: 'active'
-    } as any
+    stored
   );
 };
 

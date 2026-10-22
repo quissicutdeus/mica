@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { s, type GphoneSchema } from '@mica/shared/schema';
+import { s, type MicaSchema } from '@mica/shared/schema';
 import { FrameworkBridge, type FrameworkPlayer } from './FrameworkBridge';
 import { allow } from './rateLimit';
 import { disabledAppFor } from './ownerConfig';
@@ -91,7 +91,7 @@ export interface GuardedNetEvent<T> {
 export function guardNetEvent<T>(
   service: string,
   action: string,
-  schema: GphoneSchema<T>,
+  schema: MicaSchema<T>,
   args: readonly unknown[]
 ): GuardedNetEvent<T> | null {
   const src = source;
@@ -102,7 +102,7 @@ export function guardNetEvent<T>(
   if (disabledAppFor(service)) return null;
 
   const outcome = schema['~standard'].validate(args);
-  // Every micaOS schema resolves synchronously; `GphoneSchema` is the parameter type so a
+  // Every micaOS schema resolves synchronously; `MicaSchema` is the parameter type so a
   // foreign async validator cannot be handed in and leave the handler with a Promise.
   if (outcome instanceof Promise || outcome.issues) return null;
 

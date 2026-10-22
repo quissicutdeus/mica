@@ -75,6 +75,18 @@ export const qbTimestamp = (date: unknown, time: unknown): Date | null => {
   return Number.isNaN(at.getTime()) ? null : at;
 };
 
+/** One day of a `phone_messages` history: a date and that day's messages, as qb-phone stores it. */
+interface QbMessageDay {
+  date?: unknown;
+  messages: unknown[];
+}
+
+/** Whether a parsed entry is a day the loop below can read — the shape check, said once. */
+const isQbMessageDay = (day: unknown): day is QbMessageDay =>
+  Boolean(day) &&
+  typeof day === 'object' &&
+  Array.isArray((day as { messages?: unknown }).messages);
+
 /** One `phone_messages` row's history, or null when it is not the shape above. */
 export const parseQbMessages = (
   raw: string | null
@@ -88,8 +100,8 @@ export const parseQbMessages = (
   if (!Array.isArray(parsed)) return null;
   const out: { sender: string; body: string; date: string; time: string }[] = [];
   for (const day of parsed) {
-    if (!day || typeof day !== 'object' || !Array.isArray((day as any).messages)) return null;
-    for (const entry of (day as any).messages as unknown[]) {
+    if (!isQbMessageDay(day)) return null;
+    for (const entry of day.messages) {
       if (!entry || typeof entry !== 'object') continue;
       const e = entry as Record<string, unknown>;
       const type = text(e.type) || 'message';
@@ -97,7 +109,7 @@ export const parseQbMessages = (
         sender: text(e.sender),
         // A picture or a location has no text of its own to carry over.
         body: type === 'message' ? text(e.message) : '',
-        date: text((day as any).date),
+        date: text(day.date),
         time: text(e.time)
       });
     }

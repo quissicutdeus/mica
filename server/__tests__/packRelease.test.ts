@@ -6,7 +6,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-// @ts-expect-error -- a plain .js build script with no types; this suite is not typechecked.
+// `pnpm typecheck:tests` reads this suite (MICA-320), and the import below is untyped.
+// @ts-expect-error -- a plain .js build script with no types.
 import { releaseManifest, hasWorkspaceSpec } from '../../scripts/lib/release-manifest.js';
 
 /**

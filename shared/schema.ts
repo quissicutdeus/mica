@@ -73,7 +73,7 @@ export type Schema<Output = unknown> = StandardSchemaV1<unknown, Output>;
  *
  * Reads the phantom `types` the spec defines, so it works identically on a micaOS schema and
  * on a zod or valibot one an add-on brought — which is the entire reason the contract is
- * typed against `~standard` rather than against `GphoneSchema`.
+ * typed against `~standard` rather than against `MicaSchema`.
  */
 export type Infer<S extends StandardSchemaV1> = NonNullable<S['~standard']['types']>['output'];
 
@@ -116,23 +116,23 @@ const fail = (path: Path, message: string): Outcome<never> => ({
 });
 
 /** A micaOS-native schema. Structural, so `s.string()` and `s.object({...})` are the same type. */
-export interface GphoneSchema<T> extends StandardSchemaV1<unknown, T> {
+export interface MicaSchema<T> extends StandardSchemaV1<unknown, T> {
   /**
    * Validate, or throw a `SchemaError`. The sync half of `parseInput`, kept because a test
    * reading `expect(() => schema.parse(x)).toThrow()` is clearer than an awaited helper.
    */
   parse(input: unknown): T;
   /** Accept `undefined` as well. On an object field, this also makes the key optional. */
-  optional(): GphoneSchema<T | undefined>;
+  optional(): MicaSchema<T | undefined>;
   /** Accept `null` as well. Distinct from `optional` — a JSON null is a value, not an absence. */
-  nullable(): GphoneSchema<T | null>;
+  nullable(): MicaSchema<T | null>;
   /**
    * Derive a value from one that has already passed. Runs only on success, so `fn` sees a
    * `T` and never a raw payload — which is what keeps a default (`v ?? ''`) or a clamp out of
    * the handler body and inside the declaration. It cannot refuse; a shape rule belongs in
    * the schema before it, not in the function after.
    */
-  transform<U>(fn: (value: T) => U): GphoneSchema<U>;
+  transform<U>(fn: (value: T) => U): MicaSchema<U>;
 }
 
 /**
@@ -149,8 +149,8 @@ export interface GphoneSchema<T> extends StandardSchemaV1<unknown, T> {
  */
 const checkers = new WeakMap<object, (value: unknown, path: Path) => Outcome<unknown>>();
 
-const make = <T>(check: (value: unknown, path: Path) => Outcome<T>): GphoneSchema<T> => {
-  const schema: GphoneSchema<T> = {
+const make = <T>(check: (value: unknown, path: Path) => Outcome<T>): MicaSchema<T> => {
+  const schema: MicaSchema<T> = {
     '~standard': {
       version: 1,
       vendor: 'mica',
@@ -312,7 +312,7 @@ export type ObjectOutput<S extends ObjectShape> = {
 };
 
 export const s = {
-  string(options: StringOptions = {}): GphoneSchema<string> {
+  string(options: StringOptions = {}): MicaSchema<string> {
     return make<string>((raw, path) => {
       if (typeof raw !== 'string') return fail(path, 'must be text.');
       const value = options.trim ? raw.trim() : raw;
@@ -334,7 +334,7 @@ export const s = {
     });
   },
 
-  int(options: NumberOptions = {}): GphoneSchema<number> {
+  int(options: NumberOptions = {}): MicaSchema<number> {
     return make<number>((value, path) => {
       const numeric = toNumber(value, path);
       if (!numeric.ok) return numeric;
@@ -344,11 +344,11 @@ export const s = {
   },
 
   /** A row id, a count, a page size. The shape `requirePositiveInt` guarded by hand. */
-  positiveInt(options: NumberOptions = {}): GphoneSchema<number> {
+  positiveInt(options: NumberOptions = {}): MicaSchema<number> {
     return s.int({ min: 1, ...options });
   },
 
-  number(options: NumberOptions = {}): GphoneSchema<number> {
+  number(options: NumberOptions = {}): MicaSchema<number> {
     return make<number>((value, path) => {
       const numeric = toNumber(value, path);
       if (!numeric.ok) return numeric;
@@ -357,13 +357,13 @@ export const s = {
   },
 
   /** Strict. A payload saying `'true'` is a client that meant something else. */
-  boolean(): GphoneSchema<boolean> {
+  boolean(): MicaSchema<boolean> {
     return make<boolean>((value, path) =>
       typeof value === 'boolean' ? { ok: true, value } : fail(path, 'must be true or false.')
     );
   },
 
-  enum<const V extends readonly [string, ...string[]]>(values: V): GphoneSchema<V[number]> {
+  enum<const V extends readonly [string, ...string[]]>(values: V): MicaSchema<V[number]> {
     return make<V[number]>((value, path) => {
       if (typeof value !== 'string' || !values.includes(value)) {
         return fail(path, `must be one of: ${values.join(', ')}.`);
@@ -375,7 +375,7 @@ export const s = {
   array<S extends StandardSchemaV1<unknown, unknown>>(
     item: S,
     options: ArrayOptions = {}
-  ): GphoneSchema<Infer<S>[]> {
+  ): MicaSchema<Infer<S>[]> {
     const checkItem = checkerOf(item);
     return make<Infer<S>[]>((value, path) => {
       if (!Array.isArray(value)) return fail(path, 'must be a list.');
@@ -409,7 +409,7 @@ export const s = {
   object<S extends ObjectShape>(
     shape: S,
     options: ObjectOptions = {}
-  ): GphoneSchema<ObjectOutput<S>> {
+  ): MicaSchema<ObjectOutput<S>> {
     const entries = Object.entries(shape).map(([key, schema]) => [key, checkerOf(schema)] as const);
     const declared = new Set(Object.keys(shape));
     const refuseUnknown = options.unknownKeys !== 'strip';
@@ -450,7 +450,7 @@ export const s = {
    * no-argument emit as one explicit `undefined` is the shape the runtime produces, and an
    * extra argument carrying a value is a payload the handler never declared.
    */
-  tuple<const E extends TupleShape>(elements: E): GphoneSchema<TupleOutput<E>> {
+  tuple<const E extends TupleShape>(elements: E): MicaSchema<TupleOutput<E>> {
     const checks = elements.map(checkerOf);
     return make<TupleOutput<E>>((value, path) => {
       if (!Array.isArray(value)) return fail(path, 'must be a list of arguments.');
@@ -479,7 +479,7 @@ export const s = {
    */
   union<const M extends readonly [StandardSchemaV1<unknown, unknown>, ...TupleShape]>(
     members: M
-  ): GphoneSchema<Infer<M[number]>> {
+  ): MicaSchema<Infer<M[number]>> {
     const checks = members.map(checkerOf);
     return make<Infer<M[number]>>((value, path) => {
       let last: Outcome<unknown> = fail(path, 'is not in the expected format.');
@@ -498,7 +498,7 @@ export const s = {
    * has no business having an opinion about. Everything reachable from a `s.unknown()` is
    * back to being hand-checked, so reach for a real shape first.
    */
-  unknown(): GphoneSchema<unknown> {
+  unknown(): MicaSchema<unknown> {
     return make<unknown>((value) => ({ ok: true, value }));
   },
 
@@ -510,7 +510,7 @@ export const s = {
    * `undefined`. Anything else is refused, so `capabilities` growing a payload is a decision
    * somebody makes rather than something a client asserts.
    */
-  none(): GphoneSchema<undefined> {
+  none(): MicaSchema<undefined> {
     return make<undefined>((value, path) => {
       if (value === undefined || value === null) return { ok: true, value: undefined };
       if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) {

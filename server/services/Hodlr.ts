@@ -272,7 +272,9 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
 
   // Atomic relative increment rather than read-modify-write off `holding.quantity` —
   // two concurrent buys reading the same stale quantity would otherwise let one
-  // overwrite the other's credit (a lost update, not just a double-spend).
+  // overwrite the other's credit (a lost update, not just a double-spend). Every write here
+  // names the citizen beside the id (§2.9, MICA-422): the id is ours, read for this citizen,
+  // but an id is never the authorization on its own, so a wrong one can only miss.
   //
   // The money is already gone by the time this runs, so its outcome is not optional
   // (MICA-132). This ignored the returned boolean and carried no `try`/`catch`: a throw
@@ -285,8 +287,8 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
   let credited = false;
   try {
     credited = await Database.update(
-      'UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?',
-      [quantity, holding.id]
+      'UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ? AND `citizenid` = ?',
+      [quantity, holding.id, citizenid]
     );
   } catch (error) {
     console.error(`[hodlr] buy could not credit ${citizenid}:`, error);
@@ -336,8 +338,9 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
   // cannot both pass the check and jointly overdraw the same holding (TOCTOU).
   // The bank credit only happens once this decrement is confirmed to have applied.
   const decremented = await Database.update(
-    'UPDATE `mica_hodlr` SET `quantity` = `quantity` - ? WHERE `id` = ? AND `quantity` >= ?',
-    [quantity, holding.id, quantity]
+    'UPDATE `mica_hodlr` SET `quantity` = `quantity` - ? ' +
+      'WHERE `id` = ? AND `citizenid` = ? AND `quantity` >= ?',
+    [quantity, holding.id, citizenid, quantity]
   );
   if (!decremented) {
     return { ok: false, reason: 'insufficient_holdings' };
@@ -349,11 +352,23 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
   // call in the function, and a single call has no span to be atomic with.
   if (!player.addMoney('bank', proceeds)) {
     // The decrement already committed — refund the coins rather than leave the
-    // player short with nothing to show for it.
-    await Database.update('UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [
-      quantity,
-      holding.id
-    ]);
+    // player short with nothing to show for it. If the refund misses too, say so as buy does:
+    // a server owner reading the line is the only path left to making the player whole.
+    let refunded = false;
+    try {
+      refunded = await Database.update(
+        'UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ? AND `citizenid` = ?',
+        [quantity, holding.id, citizenid]
+      );
+    } catch (error) {
+      console.error(`[hodlr] sell could not refund ${quantity} coins to ${citizenid}:`, error);
+    }
+    if (!refunded) {
+      console.error(
+        `[hodlr] sell took ${quantity} coins from ${citizenid} and could neither credit ` +
+          `${proceeds} nor refund the coins.`
+      );
+    }
     return { ok: false, reason: 'credit_failed' };
   }
 
