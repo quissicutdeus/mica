@@ -19,6 +19,8 @@ import { media } from '../../services/media';
 import { mailStore } from '../../services/mail';
 import { notes } from '../../apps/notes/store';
 import * as accountModule from '../../services/account';
+import * as imageHostModule from '../../services/imageHost';
+import { fetchNui } from '../../nui/fetchNui';
 import * as ownerConfigModule from './ownerConfig';
 import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
 import { registeredApps } from './registry';
@@ -36,7 +38,6 @@ describe('bootstrapStores', () => {
   });
 
   it('preloads all primary stores in parallel', async () => {
-    const spyCitizenId = vi.spyOn(accountModule, 'fetchCitizenId').mockResolvedValue('CIT-101');
     const spyBalance = vi.spyOn(accountModule, 'fetchBalance').mockResolvedValue();
     const spyContacts = vi.spyOn(contacts, 'load').mockResolvedValue();
     const spyMessages = vi.spyOn(conversationsStore, 'loadConversations').mockResolvedValue();
@@ -46,13 +47,15 @@ describe('bootstrapStores', () => {
 
     await bootstrapStores(true);
 
-    expect(spyCitizenId).toHaveBeenCalledOnce();
     expect(spyBalance).toHaveBeenCalledOnce();
     expect(spyContacts).toHaveBeenCalledOnce();
     expect(spyMessages).toHaveBeenCalledOnce();
     expect(spyPhotos).toHaveBeenCalledOnce();
     expect(spyMail).toHaveBeenCalledOnce();
     expect(spyNotes).toHaveBeenCalledOnce();
+    // MICA-433: the shell no longer reads the citizenid into the page at all.
+    const asked = vi.mocked(fetchNui).mock.calls.map(([event]) => event);
+    expect(asked).not.toContain('getCitizenId');
   });
 
   describe('MICA-234: an app the owner already disabled', () => {
@@ -69,14 +72,14 @@ describe('bootstrapStores', () => {
       ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: ['notes'] });
       vi.spyOn(ownerConfigModule, 'refreshOwnerConfig').mockResolvedValue();
 
-      const spyCitizenId = vi.spyOn(accountModule, 'fetchCitizenId').mockResolvedValue('CIT-101');
+      const spyShellRead = vi.spyOn(imageHostModule, 'refreshImageHost').mockResolvedValue();
       vi.spyOn(accountModule, 'fetchBalance').mockResolvedValue();
       const spyContacts = vi.spyOn(contacts, 'load').mockResolvedValue();
       const spyNotes = vi.spyOn(notes, 'load').mockResolvedValue();
       // `vi.spyOn` on a method the earlier test already spied (and never restored) hands
       // back that same mock, carry-over calls and all — clear each one so this test's
       // assertions are about what *this* run did, not the file's whole history.
-      spyCitizenId.mockClear();
+      spyShellRead.mockClear();
       spyContacts.mockClear();
       spyNotes.mockClear();
 
@@ -85,7 +88,7 @@ describe('bootstrapStores', () => {
       expect(spyNotes).not.toHaveBeenCalled();
       // Proof this is a targeted skip, not every preload going quiet.
       expect(spyContacts).toHaveBeenCalledOnce();
-      expect(spyCitizenId).toHaveBeenCalledOnce();
+      expect(spyShellRead).toHaveBeenCalledOnce();
     });
   });
 
@@ -98,7 +101,7 @@ describe('bootstrapStores', () => {
 
     it('is skipped on the tablet, while an app the tablet shows preloads as usual', async () => {
       setActiveDevice('tablet');
-      const spyCitizenId = vi.spyOn(accountModule, 'fetchCitizenId').mockResolvedValue('CIT-101');
+      const spyShellRead = vi.spyOn(imageHostModule, 'refreshImageHost').mockResolvedValue();
       vi.spyOn(accountModule, 'fetchBalance').mockResolvedValue();
       // Contacts, Messages, Photos and Mail are phone apps (no `devices`); Notes is on both.
       const spyContacts = vi.spyOn(contacts, 'load').mockResolvedValue();
@@ -106,7 +109,7 @@ describe('bootstrapStores', () => {
       const spyPhotos = vi.spyOn(media, 'load').mockResolvedValue();
       const spyMail = vi.spyOn(mailStore, 'load').mockResolvedValue();
       const spyNotes = vi.spyOn(notes, 'load').mockResolvedValue();
-      for (const spy of [spyCitizenId, spyContacts, spyMessages, spyPhotos, spyMail, spyNotes]) {
+      for (const spy of [spyShellRead, spyContacts, spyMessages, spyPhotos, spyMail, spyNotes]) {
         spy.mockClear();
       }
 
@@ -118,7 +121,7 @@ describe('bootstrapStores', () => {
       expect(spyMail).not.toHaveBeenCalled();
       expect(spyNotes).toHaveBeenCalledOnce();
       // The shell's own reads are not app preloads, and still run.
-      expect(spyCitizenId).toHaveBeenCalledOnce();
+      expect(spyShellRead).toHaveBeenCalledOnce();
 
       // And the phone, after a switch back, preloads its apps again.
       setActiveDevice('phone');
@@ -150,13 +153,13 @@ describe('bootstrapStores', () => {
     });
 
     const spies = () => {
-      const citizenId = vi.spyOn(accountModule, 'fetchCitizenId').mockResolvedValue('CIT-101');
+      const shellRead = vi.spyOn(imageHostModule, 'refreshImageHost').mockResolvedValue();
       vi.spyOn(accountModule, 'fetchBalance').mockResolvedValue();
       const notesLoad = vi.spyOn(notes, 'load').mockResolvedValue();
       const contactsLoad = vi.spyOn(contacts, 'load').mockResolvedValue();
       const unread = vi.spyOn(notificationsModule, 'loadUnreadCounts').mockResolvedValue();
-      for (const spy of [citizenId, notesLoad, contactsLoad, unread]) spy.mockClear();
-      return { citizenId, notesLoad, contactsLoad, unread };
+      for (const spy of [shellRead, notesLoad, contactsLoad, unread]) spy.mockClear();
+      return { shellRead, notesLoad, contactsLoad, unread };
     };
 
     /**
@@ -173,10 +176,10 @@ describe('bootstrapStores', () => {
     };
 
     it('starts the shell reads with the open and the app preloads after the fly-in', async () => {
-      const { citizenId, notesLoad, contactsLoad } = spies();
+      const { shellRead, notesLoad, contactsLoad } = spies();
 
       const done = bootstrapStores();
-      expect(citizenId).toHaveBeenCalledOnce();
+      expect(shellRead).toHaveBeenCalledOnce();
 
       await vi.advanceTimersByTimeAsync(FLY_IN_MS - 1);
       expect(notesLoad).not.toHaveBeenCalled();
@@ -225,7 +228,7 @@ describe('bootstrapStores', () => {
     });
 
     it('shares a run still in flight with a reopen inside the window', async () => {
-      const { citizenId } = spies();
+      const { shellRead } = spies();
       const preload = contactsPreload();
 
       const first = bootstrapStores();
@@ -233,7 +236,7 @@ describe('bootstrapStores', () => {
       await vi.advanceTimersByTimeAsync(FLY_IN_MS);
       await Promise.all([first, second]);
       // One run: the shell reads were asked once, not once per open.
-      expect(citizenId).toHaveBeenCalledOnce();
+      expect(shellRead).toHaveBeenCalledOnce();
       expect(preload).toHaveBeenCalledOnce();
     });
 
@@ -270,7 +273,6 @@ describe('bootstrapStores and the capabilities answer', () => {
     const capabilitiesModule = await import('../../services/capabilities');
     const account = await import('../../services/account');
     const bootstrap = await import('./bootstrap');
-    vi.spyOn(account, 'fetchCitizenId').mockResolvedValue('CIT-101');
     vi.spyOn(account, 'fetchBalance').mockResolvedValue();
     const transportMock = vi.mocked(transport);
     // Only now: the modules just imported start their own `setInterval`s at import, and

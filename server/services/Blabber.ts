@@ -21,7 +21,7 @@ import { defineContract } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Database } from '../lib/Database';
-import { isDuplicateKey } from '../lib/sqlErrors';
+import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
 import {
   registerImportTarget,
   type AccountPlan,
@@ -613,7 +613,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
             tag
           ])
         )
-      ).catch((error) => console.error('[blabber] Tag indexing failed for', id, error));
+      ).catch((error) => console.error('[blabber] Tag indexing failed for', id, traceOf(error)));
     }
 
     /**
@@ -627,7 +627,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
      * way, and the author should not see an error for something that already happened.
      */
     void notifyMentions(text, account.id, account.handle, id).catch((error) =>
-      console.error('[blabber] Mention notification failed for', id, error)
+      console.error('[blabber] Mention notification failed for', id, traceOf(error))
     );
 
     /**

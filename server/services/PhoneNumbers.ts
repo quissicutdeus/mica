@@ -18,8 +18,9 @@ import {
   type PhoneNumberRow
 } from '../lib/phoneNumbers';
 import { PhoneNumberRepository } from '../repositories/PhoneNumberRepository';
-import { isDuplicateKey } from '../lib/sqlErrors';
+import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
 import { resolvePhone, type ActiveDevice } from './Devices';
+import { who } from '../lib/who';
 
 /**
  * The one table micaOS owns a phone number in (MICA-151), and the phone each number belongs
@@ -203,8 +204,8 @@ const claimRow = async (row: AssignedNumberRow, citizenid: string): Promise<stri
     );
     if (!reactivated) {
       console.error(
-        `[mica] could not reactivate the soft-deleted phone number row for ${row.number}. ` +
-          `It is still ${citizenid}'s — every read of ${PHONE_NUMBERS_TABLE} is status-blind ` +
+        `[mica] could not reactivate the soft-deleted phone number row for ${who(row.number)}. ` +
+          `It is still ${who(citizenid)}'s — every read of ${PHONE_NUMBERS_TABLE} is status-blind ` +
           `on purpose — but the row is still marked '${row.status}'.`
       );
     }
@@ -214,9 +215,9 @@ const claimRow = async (row: AssignedNumberRow, citizenid: string): Promise<stri
     const moved = await repo.transferToHolder(row.id, citizenid);
     if (!moved) {
       console.error(
-        `[mica] could not record that ${number(row)} is now held by ${citizenid}. They are ` +
+        `[mica] could not record that ${who(number(row))} is now held by ${who(citizenid)}. They are ` +
           `using the phone it is on, so the phone answers to that number for them this ` +
-          `session, but ${PHONE_NUMBERS_TABLE} still names ${row.citizenid}.`
+          `session, but ${PHONE_NUMBERS_TABLE} still names ${who(row.citizenid)}.`
       );
     }
   }
@@ -272,10 +273,10 @@ const assign = async (
     } catch (error) {
       if (!isDuplicateKey(error)) {
         console.error(
-          `[mica] could not assign a phone number to ${citizenid}. They will have a phone ` +
+          `[mica] could not assign a phone number to ${who(citizenid)}. They will have a phone ` +
             `that cannot be dialled until this is fixed; nothing else is affected. If the ` +
             `table is missing, import the schema for this server (${PHONE_NUMBERS_TABLE}).`,
-          error
+          traceOf(error)
         );
         return null;
       }
@@ -285,7 +286,7 @@ const assign = async (
 
       if (candidate === preferred) {
         console.warn(
-          `[mica] the framework's number ${preferred} for ${citizenid} is already on another ` +
+          `[mica] the framework's number ${preferred} for ${who(citizenid)} is already on another ` +
             `phone, so they are being issued a fresh one. It is written back into the ` +
             `framework, so other resources see the new number too.`
         );
@@ -294,7 +295,7 @@ const assign = async (
   }
 
   console.error(
-    `[mica] gave up assigning a phone number to ${citizenid} after ${MAX_ASSIGN_ATTEMPTS} ` +
+    `[mica] gave up assigning a phone number to ${who(citizenid)} after ${MAX_ASSIGN_ATTEMPTS} ` +
       `attempts, every one of which collided with a number already issued. That means the ` +
       `number space is close to exhausted rather than that this player was unlucky — see ` +
       `lib/phoneNumbers.ts, which sizes it. No number was issued and none was reused.`
@@ -348,13 +349,13 @@ const attachLegacy = async (
     const attached = await repo.attachToPhone(legacy.id, deviceId);
     if (!attached) {
       console.error(
-        `[mica] could not attach ${number(legacy)} to the phone ${citizenid} is using. It ` +
+        `[mica] could not attach ${who(number(legacy))} to the phone ${who(citizenid)} is using. It ` +
           `stays their number for this session; the next sync tries again.`
       );
     }
   } catch (error) {
     if (!isDuplicateKey(error)) {
-      console.error(`[mica] could not attach ${number(legacy)} to a phone.`, error);
+      console.error(`[mica] could not attach ${who(number(legacy))} to a phone.`, traceOf(error));
       return null;
     }
     const winner = await readRowByPhoneId(deviceId);
@@ -428,8 +429,8 @@ const writeBack = (player: FrameworkPlayer, value: string): void => {
     written = player.setPhone(value);
   } catch (error) {
     console.error(
-      `[mica] writing ${player.citizenid}'s number back to the framework threw.`,
-      error
+      `[mica] writing ${who(player.citizenid)}'s number back to the framework threw.`,
+      traceOf(error)
     );
     return;
   }
@@ -437,14 +438,13 @@ const writeBack = (player: FrameworkPlayer, value: string): void => {
   if (!written) {
     reportOnce(
       'write-refused',
-      `[mica] the framework refused to take ${player.citizenid}'s phone number. micaOS is ` +
+      `[mica] the framework refused to take ${who(player.citizenid)}'s phone number. micaOS is ` +
         `still the source of truth and the phone works; other resources reading ` +
         `charinfo.phone will see a stale number. Reported once per resource start.`
     );
     return;
   }
-
-  console.log(`[mica] ${player.citizenid} is now on ${value}; written back to the framework.`);
+  // No line for a write-back that worked (MICA-433): it paired a citizenid with a number.
 };
 
 const ESX_KEEPS_THE_NUMBER =

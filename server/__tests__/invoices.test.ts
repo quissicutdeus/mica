@@ -75,7 +75,7 @@ import { __resetRateLimits } from '../lib/rateLimit';
 import { __setSchemaReadyForTests } from '../lib/schemaReady';
 import { callAsResource } from './invokingResource';
 import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
-import type { Invoice } from '@mica/shared/types';
+import type { InvoiceRow } from '../repositories/InvoiceRepository';
 
 /**
  * MICA-240. What matters here is the money discipline around a row a client can only ever
@@ -85,7 +85,7 @@ import type { Invoice } from '@mica/shared/types';
  */
 
 const NOW = 1_800_000_000;
-const OPEN: Invoice = {
+const OPEN: InvoiceRow = {
   id: 7,
   citizenid: 'CID_PAYER',
   from_label: 'Los Santos Customs',
@@ -157,10 +157,18 @@ describe('what a client can reach', () => {
   });
 
   it('lists only the caller’s open, unexpired invoices', async () => {
-    dbMock.query.mockResolvedValueOnce([OPEN]);
+    // What the projection selects: the wire type's columns, so neither citizenid.
+    const wire: Record<string, unknown> = { ...OPEN };
+    delete wire.citizenid;
+    delete wire.payee;
+    dbMock.query.mockResolvedValueOnce([wire]);
     const reply = await fire('getOpen', {});
-    expect(reply).toEqual([OPEN]);
+    expect(reply).toEqual([wire]);
     const [sql, params] = dbMock.query.mock.calls[0];
+    // By name, never `*` (MICA-433): `payee` is the biller's citizenid.
+    expect(String(sql)).not.toContain('*');
+    expect(String(sql)).not.toContain('payee');
+    expect(String(sql)).toContain('`from_label`, `amount`');
     expect(String(sql).replace(/\s+/g, ' ')).toContain(
       "`citizenid` = ? AND `status` = 'active' AND `expires_at` > ?"
     );

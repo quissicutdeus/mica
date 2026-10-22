@@ -16,6 +16,7 @@ import {
 } from './lockScreen';
 import { hydrateSettingsOnCharacterLoad } from '../../host/facets/storage';
 import { flushPendingWrites } from '../../host/settingsSync';
+import { distrustWallpaperOwner, trustWallpaperOwner } from './wallpaper';
 import { forgetPasscodeAnswer, refreshPasscodeStatus } from '../../services/passcode';
 
 /**
@@ -67,9 +68,16 @@ export async function switchDeviceIdentity(device: DeviceId, previous: DeviceId)
 /**
  * The sweeping hydrate, and the saved lock policy trusted again only if it applied — and
  * only if no later identity change has distrusted it since (`policyGeneration`).
+ *
+ * The wallpaper photo's owner the same way (MICA-433): a failed sweep leaves the previous
+ * identity's `wallpaperOwner`, so no photo shows from here until this sweep applies.
  */
 async function sweepAndTrust(policyGeneration: number): Promise<void> {
-  if (await hydrateSettingsOnCharacterLoad()) trustLockPolicy(policyGeneration);
+  const wallpaperGeneration = distrustWallpaperOwner();
+  if (await hydrateSettingsOnCharacterLoad()) {
+    trustLockPolicy(policyGeneration);
+    trustWallpaperOwner(wallpaperGeneration);
+  }
 }
 
 /**

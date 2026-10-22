@@ -321,7 +321,7 @@ describe('staffFor (MICA-307)', () => {
     expect(staffFor(line(), 1)).toEqual([3]);
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining('could not read jobs for player 4'),
-      expect.any(Error)
+      expect.any(String)
     );
     error.mockRestore();
   });

@@ -30,7 +30,6 @@ const logCall = (kind: PhoneCallLogEntry['kind'], number: string, duration: numb
   const now = new Date().toISOString();
   mockCallLog.unshift({
     id: nextCallLogId++,
-    citizenid: 'mock_citizenid',
     kind,
     number,
     duration,
@@ -52,7 +51,6 @@ const postCallStatus = (status: 'connected' | 'idle'): void => {
 const mockCallLog: PhoneCallLogEntry[] = [
   {
     id: 3,
-    citizenid: 'mock_citizenid',
     kind: 'missed',
     number: '555-0199',
     duration: 0,
@@ -61,7 +59,6 @@ const mockCallLog: PhoneCallLogEntry[] = [
   },
   {
     id: 2,
-    citizenid: 'mock_citizenid',
     kind: 'incoming',
     number: '555-0133',
     duration: 45,
@@ -70,7 +67,6 @@ const mockCallLog: PhoneCallLogEntry[] = [
   },
   {
     id: 1,
-    citizenid: 'mock_citizenid',
     kind: 'outgoing',
     number: '555-0144',
     duration: 122,

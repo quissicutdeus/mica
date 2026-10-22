@@ -94,18 +94,30 @@ is how to see it in a test ([Testing it](#testing-it)); outside it, the
 in `sdk/manifest.ts`.
 
 A `core: false` add-on may only declare a permission that gives it something.
-`app-registry-write`, `keybinds-write`, `lock-screen-write` and
-`notification-settings-write` give an add-on nothing: the shell answers a
-sandboxed frame "core only" for every member behind them, so listing one would
-put a line on the Store's permission sheet that grants nothing. `defineApp`
-throws on a `core: false` manifest that declares one, naming it, in the add-on's
-own build and again when the Store installs it. Ten hooks on the add-on barrel —
+`app-registry-write`, `keybinds-write`, `lock-screen-write`,
+`notification-settings-write` and `admin` give an add-on nothing: the shell
+answers a sandboxed frame "core only" for every member behind them, so listing
+one would put a line on the Store's permission sheet that grants nothing.
+`defineApp` throws on a `core: false` manifest that declares one, naming it, in
+the add-on's own build and again when the Store installs it. `admin` is refused
+outright rather than merely empty: the moderation queue shows who reported whom
+and who sits behind a Dark Chat alias, so it is core only whatever a facet row
+says (`CORE_ONLY_PERMISSIONS` in `sdk/permissions.ts`), and the shell shuts a
+frame whose manifest declares it. Thirteen hooks on the add-on barrel —
 `useKeybindsWrite`, `useLockScreenWrite`, `useAppRegistryWrite`, `useMail`,
-`useMessages` and `useLocale` among them — are typed without the thirty-four
-members the shell would refuse, so a call that could never work does not
-compile. Import one of those hooks anyway and the build's permission scan says
-it "is core only" and to stop importing it, rather than asking you to declare
-the permission.
+`useMessages`, `useLocale`, `useAccount`, `useAdmin` and `useReports` among them
+— are typed without the members the shell would refuse, so a call that could
+never work does not compile. Import one of those hooks anyway and the build's
+permission scan says it "is core only" and to stop importing it, rather than
+asking you to declare the permission.
+
+**`useAccount` gives no citizenid** (MICA-433). There is no `citizenid` or
+`fetchCitizenId` on it for any app, core ones included, and the page never holds
+the player's citizenid: it is the character's key in every table, and on ESX it
+is the player's licence. `account` still gives the phone number, the balance and
+the transactions, and a frame is never sent a `citizenid` or `device_id` key
+from anywhere, your own `useService` rows included. Do not build on either being
+there.
 
 **For a `core: false` add-on, the build derives the list and refuses a manifest
 that understates it** (MICA-205). A Vite plugin reads every module that entered
@@ -206,7 +218,8 @@ of `index.svelte` while the tablet is on screen, with the same props and deep
 links. The frame learns the device from `useDisplay().device`, so the manifest
 must declare the `display` permission; the build refuses a tablet root without
 it. Only one root is mounted at a time, so each registers its own `useDeepLink`
-and `useSearchProvider`. Notes is the shipped example.
+and `useSearchProvider` (the manifest declares `search`). Notes is the shipped
+example.
 
 An app that lists only the phone is simply absent on the tablet: no icon, no
 search result, no deep link. Nothing about its server half changes.
@@ -855,6 +868,14 @@ listings because the shell holds all six. It holds nothing your app owns, and
 for a `core: false` app it never can: core may not name an app the Store
 installs, and your rows live in a sandboxed frame the shell cannot read. So you
 answer for them.
+
+**A search provider declares `search`** (MICA-433). The shell hands every
+running provider the player's query as they type it, one keystroke at a time,
+whether or not they ever opened your app. That used to be implicit, on the
+reasoning that being found is only a way into your app; the query is what the
+player typed, and reading it is an ask, so the Store's permission sheet now says
+so. `useSearchProvider` without `search` throws `AppPermissionError`, and the
+build's permission scan names it.
 
 ```ts
 useSearchProvider('notes', (needle) =>

@@ -241,11 +241,9 @@ export interface Facets {
     transactionsLoaded: Writable<boolean>;
     /** Where `transactions` came from, and whether the script can say (MICA-241). */
     historySource: Writable<BankHistorySource>;
-    citizenid: Writable<string>;
     fetchPhoneNumber: () => Promise<string>;
     fetchBalance: () => Promise<void>;
     fetchTransactions: () => Promise<void>;
-    fetchCitizenId: () => Promise<string>;
   };
   accounts: () => {
     getMyAccounts: (app: string) => Promise<{

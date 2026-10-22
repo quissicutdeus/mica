@@ -235,11 +235,14 @@ describe('micaOS SDK (@mica/sdk)', () => {
       expect(get(is24Hour)).toBe(true);
     });
 
-    it('useAccount exposes bankBalance, transactions, citizenid, and phone number', () => {
-      const { bankBalance, transactions, citizenid, myPhoneNumber } = useAccount();
+    it('useAccount exposes bankBalance, transactions and phone number, and no citizenid', () => {
+      const account = useAccount();
+      const { bankBalance, transactions, myPhoneNumber } = account;
       expect(bankBalance).toBeDefined();
       expect(transactions).toBeDefined();
-      expect(citizenid).toBeDefined();
+      // MICA-433: the facet has no citizenid member at all, core or add-on.
+      expect(Object.keys(account)).not.toContain('citizenid');
+      expect(Object.keys(account)).not.toContain('fetchCitizenId');
       expect(get(myPhoneNumber)).toBe('555-0199');
     });
 

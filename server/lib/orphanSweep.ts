@@ -13,6 +13,7 @@ import {
   type PurgeResult,
   type SweepFailure
 } from './sweep/purge';
+import { traceOf } from './sqlErrors';
 
 export { cascadeEdges, ownedTables, registerOwnedExternal, type OwnedTable } from './sweep/tables';
 export { OWNER_OVERRIDE_CONVAR, type SkipReason } from './sweep/owner';
@@ -157,6 +158,7 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
   const { owner, match } = verdict;
 
   try {
+    // log-identity-ok: the owner table and column, a schema name, not a player
     const done = await purgePlanned(orphanScope(owner, match, label), tables, {
       cascade: options.cascade,
       except: options.except
@@ -166,7 +168,7 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
     // Everything that throws here does so before any DELETE: a plan that cannot be made at all
     // (a cycle, a key not on `id`), or the evidence it keeps that could not be recorded and
     // hidden (MICA-426). The error says which.
-    console.error(`[${label}] orphan sweep stopped before deleting anything:`, error);
+    console.error(`[${label}] orphan sweep stopped before deleting anything:`, traceOf(error));
     return { removed: 0, kept: 0, byTable: {}, skipped: null, failures: [{ table: '*', error }] };
   }
 };
@@ -199,6 +201,7 @@ export async function purgeOwnedRows(
   const owner = typeof citizenid === 'string' ? citizenid.trim() : '';
   if (owner.length === 0) return { removed: 0, kept: 0, failures: [] };
   const purpose = options.purpose ?? "for a player's own delete";
+  // log-identity-ok: the citizenid is bound in SQL; the scope's label and purpose are logged
   const { removed, kept, failures } = await purgePlanned(
     citizenScope(owner, purpose),
     options.only ?? ownedTables(),

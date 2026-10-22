@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import { mockRegistry } from './registry';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import { MockRegistry, mockRegistry } from './registry';
 
 /**
  * The one-file-per-service split (MICA-323) is collected by glob, so the failure to guard
@@ -53,6 +54,37 @@ describe('the mock registry', () => {
     for (const [file, text] of Object.entries(sources)) {
       expect(text, file).toMatch(/^export const mocks\b[^\n]*=\s*\{$/m);
       expect(text.match(/^export const mocks\b/gm), file).toHaveLength(1);
+    }
+  });
+
+  /**
+   * MICA-433: the server strips both keys from every service reply, at any depth
+   * (`server/lib/replyShape.ts`). A mock that still sent them let the page come to depend on a
+   * field the game never delivers, and showed other players' citizenids in `pnpm dev`.
+   */
+  it('answers no service request with a citizenid or a device_id, at any depth', async () => {
+    const generic = (service: string, action: string, data?: unknown) =>
+      MockRegistry.handle(GENERIC_SERVICE_ACTION, { service, action, data });
+    const reads: [string, () => Promise<unknown>][] = [
+      // Named routes reach the same server dispatch as the generic action does.
+      ['getContacts', () => MockRegistry.handle('getContacts')],
+      ['getMedia', () => MockRegistry.handle('getMedia')],
+      ['getCallLog', () => MockRegistry.handle('getCallLog')],
+      ['notes:get', () => generic('notes', 'get')],
+      [
+        'notifications:getShadeNotifications',
+        () => generic('notifications', 'getShadeNotifications')
+      ],
+      ['invoices:getOpen', () => generic('invoices', 'getOpen')],
+      ['marketplace:feed', () => generic('marketplace', 'feed')],
+      ['marketplace:search', () => generic('marketplace', 'search', { q: '' })],
+      ['marketplace:mine', () => generic('marketplace', 'mine')],
+      ['marketplace:view', () => generic('marketplace', 'view', { id: 1 })]
+    ];
+    for (const [name, read] of reads) {
+      const wire = JSON.stringify(await read());
+      expect(wire, `${name} answered nothing to check`).toMatch(/"id":/);
+      expect(wire, name).not.toMatch(/"(citizenid|device_id|payee)":/);
     }
   });
 });

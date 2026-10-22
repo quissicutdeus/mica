@@ -131,7 +131,6 @@ export const mocks: Record<string, MockHandler> = {
       const [app, ...rest] = composite.split(':');
       return {
         id: index + 1,
-        citizenid: 'mock_citizenid',
         app,
         setting_key: rest.join(':'),
         setting_value,

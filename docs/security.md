@@ -768,6 +768,101 @@ screen by the round trip. A cash-out that wins pays the server's reading, a
 little more than the screen showed; a cash-out clicked just under the point can
 arrive past it and bust.
 
+## Identity hygiene: who can see a citizenid
+
+A citizenid is the character's key in every micaOS table, and **on ESX it is the
+player's Rockstar licence** (`users.identifier`). A device id names the phone
+item a row was written from. Another player's phone number is a handle anybody
+can dial. None of the three is a secret from the server, and none should travel
+further than whatever receives it needs (MICA-433).
+
+- **A player** sees their own phone number and nothing else of the three. No
+  reply to them carries a citizenid or a device id, and a reply about another
+  player never carries that player's citizenid or number: sending money to a
+  number answers only whether it went through.
+- **No app, core or add-on,** sees them. The `account` permission gives a phone
+  number, a balance and transactions, and `useAccount` has no citizenid for
+  anyone. The `getCitizenId` NUI callback is gone, and CEF never holds the
+  player's citizenid, so an XSS in the page has none to read. The server knows
+  who is asking and never needs the page to say.
+- **The server console** names a character, or a number, by a `who()` token and
+  never by the id. A payment that went through is not logged at all.
+- **Discord** gets the same token in the Actor, From, To and Reporter fields,
+  unless `mica_discord_webhook_content` is on, which puts the raw citizenid
+  back. A society (`society:police`) is not a person and passes as it is.
+- **Staff in Admin** are the deliberate exception. A report records the
+  reporter's and the author's citizenid, and Admin reads them, which is what
+  moderation is. That is why `admin` is core only.
+
+The mechanisms, from the server outward:
+
+- **`withoutOwnerKeys`** (`server/lib/replyShape.ts`) runs on every
+  `ServiceEndpoint` reply, generic or custom, and removes every `citizenid` and
+  `device_id` key at any depth. Owner reads used to answer whole rows (the
+  generic `get` is a `SELECT *`), so a player's citizenid rode on every contact,
+  photo and note, and on every add-on's own rows. It is applied at the reply,
+  not per query, so an action written tomorrow is covered. A key that holds a
+  citizenid under another name (`target_author`, `payee`) is that reply's own
+  projection to leave out; the helper does not guess at it.
+- **`checkReply`** (same file) holds a custom action's reply to the `output` its
+  contract declares. Under test, or on a server with `mica_integration` set, a
+  reply with an undeclared field throws, so the suite that drives the handler
+  fails. On a live server the reply is sent as the schema reads it, so the
+  undeclared field is stripped rather than leaked, and the mismatch is logged
+  once per action, naming the fields and never their values. A reply the schema
+  refuses outright is sent as it was and logged once, because a player should
+  not lose a working action to a declaration that lagged. A `responseType<T>()`
+  output has nothing to check against and passes untouched, so an action that
+  answers about another player wants a real schema. `bank:sendMoney` is the case
+  that wanted this: it answered the transfer's whole outcome, recipient
+  citizenid included, so sending $1 to a number was a lookup of who holds it. It
+  now answers `{ ok: true }` or the failure reason.
+- **`withoutWithheldKeys`** (`web/src/shell/addon/IframeHostServer.ts`) is the
+  fence on the shell side. Everything posted to an add-on's frame, whether a
+  reply, a push, a callback's arguments or the hydrate payload, passes through
+  it, and `citizenid` and `device_id` are removed at any depth. It is the layer
+  that still holds when a server read forgets.
+- **`admin` is refused for `core: false`** (`CORE_ONLY_PERMISSIONS` in
+  `sdk/permissions.ts`). The moderation queue holds who reported whom and
+  `target_author`, which unmasks a Dark Chat alias. Its facet rows are empty,
+  `defineApp` refuses a manifest declaring it, and the shell shuts a frame whose
+  manifest declares it before any facet answers, in case that manifest never met
+  `defineApp`. `useAdmin` and `useReports` are typed empty on the add-on barrel.
+- **`account` no longer includes the citizenid, and neither does anything
+  else.** `citizenid` and `fetchCitizenId` left `useAccount` for core apps too;
+  the client's `getCitizenId` callback and its route are removed, and
+  `web/src/services/account.ts` keeps no citizenid store. `account` still gives
+  the phone number, the balance and the transactions.
+- **`search` is a permission.** A search provider is pushed every query the
+  player types, a keystroke at a time, while the app runs, opened or not. That
+  used to be implicit; it is now declared and shown on the Store's permission
+  sheet.
+- **`who()`** (`server/lib/who.ts`) is what a log line or a Discord field says
+  instead of an id: HMAC-SHA-256 under a per-install salt, ten hex characters,
+  stable across lines and restarts, and giving nothing back. The salt is drawn
+  once and stored in `mica_schema_migrations` as `log-salt:<hex>`, so it costs
+  no table and no `micaschema apply`. It is deliberately not the content key,
+  which is optional and rotated: a token under it would change the day an owner
+  enabled encryption, and every earlier line would stop matching. Until the salt
+  is read a token carries a leading `~` and is good for one process only. A bare
+  hash would not do: a citizenid is short and guessable.
+- **`traceOf()`** (`server/lib/sqlErrors.ts`) is how an unexpected error is
+  logged: the reason's one line and the stack's frames, never the message above
+  them. An oxmysql error's message embeds the statement and every bound value,
+  so `console.error('…', error)` printed whatever the query was about.
+  `reasonOf()` is the one-line form.
+- **`server/__tests__/logHygiene.test.ts`** reads every `console.*` call under
+  `server/` and fails a raw error object, or a word naming an identity
+  (`citizenid`, `phone`, `from`, `to` and the like), outside `who()`,
+  `reasonOf()` or `traceOf()`. A line naming something that is not a player says
+  so with a `// log-identity-ok: <reason>` comment above it. It fails closed: a
+  file it cannot read to the end is a failure naming the file. It reads source,
+  not a run, so a path no test reaches is still checked.
+
+**What this does not cover.** The database holds every citizenid, the audit
+ledger records them by design, and staff with Admin read the ones on a report. A
+server owner's own scripts that log what they are given are theirs.
+
 ## A takedown is hidden evidence, and a reopen puts it back
 
 When staff action a report, the reported row is not deleted: its `status`
@@ -946,18 +1041,20 @@ by this list until someone re-weighs it.
   against `HOOK_OF_FACET` before answering a call — the frame's own check is a
   courtesy, not the boundary. `sdk/permissions.ts` maps every host hook to a
   permission; `permissions.test.ts` fails the build where a manifest understates
-  its imports. **Consent is the shell's own record, not the manifest**
-  (MICA-201). It used to be neither: MICA-196 compared an update's permissions
-  against the _installed manifest_, so the manifest was its own authorization
-  and anything able to write one — a modified Store, or any core path that
-  installs a catalog entry — widened what an add-on could reach with nobody
-  asked. The set the player accepted now lives in
-  `web/src/shell/state/addOnGrants.ts`, keyed by add-on id and persisted per
-  character alongside the install list itself; it is written **only** through
-  `appRegistryWrite`'s `recordConsent`, a member no add-on can name
-  (`FACET_MEMBERS.appRegistryWrite` is empty, so a raw `postMessage` gets "core
-  only"), and it is read by `IframeHostServer` before every call. A manifest
-  permission with no matching grant is refused with the same
+  its imports. `account` gives no citizenid, `admin` can never be declared by an
+  add-on, and a search provider declares `search`
+  ([Identity hygiene](#identity-hygiene-who-can-see-a-citizenid), MICA-433).
+  **Consent is the shell's own record, not the manifest** (MICA-201). It used to
+  be neither: MICA-196 compared an update's permissions against the _installed
+  manifest_, so the manifest was its own authorization and anything able to
+  write one — a modified Store, or any core path that installs a catalog entry —
+  widened what an add-on could reach with nobody asked. The set the player
+  accepted now lives in `web/src/shell/state/addOnGrants.ts`, keyed by add-on id
+  and persisted per character alongside the install list itself; it is written
+  **only** through `appRegistryWrite`'s `recordConsent`, a member no add-on can
+  name (`FACET_MEMBERS.appRegistryWrite` is empty, so a raw `postMessage` gets
+  "core only"), and it is read by `IframeHostServer` before every call. A
+  manifest permission with no matching grant is refused with the same
   `AppPermissionError` an undeclared one gets, so an update that adds a
   permission does nothing at all until the player answers the Store's prompt —
   and the Store now compares against that grant rather than against a manifest

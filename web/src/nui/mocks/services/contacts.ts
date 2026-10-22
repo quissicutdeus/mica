@@ -22,7 +22,6 @@ parseDefaultContacts(
   const now = new Date().toISOString();
   mockContacts.push({
     id: OWNER_DEFAULT_CONTACT_ID_BASE + index,
-    citizenid: `owner-default-${index}`,
     firstname: entry.name,
     lastname: '',
     phone: entry.number,

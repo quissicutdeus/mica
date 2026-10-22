@@ -86,7 +86,8 @@ describe('bank: sendMoney', () => {
       account: 'bank',
       reason: 'Phone transfer'
     });
-    expect(reply).toEqual({ ok: true, from: 'CID_CALLER', to: 'CID_TARGET', amount: 100 });
+    // `transfer()`'s outcome names both characters; the reply names neither (MICA-433).
+    expect(reply).toEqual({ ok: true });
   });
 
   it('includes a trimmed, truncated note in the transfer reason', async () => {

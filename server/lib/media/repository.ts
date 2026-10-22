@@ -20,6 +20,8 @@ import {
   storedBytesSql,
   usedBytesQuery
 } from './quota';
+import { traceOf } from '../sqlErrors';
+import { who } from '../who';
 
 /**
  * The columns a proximity drop copies onto each recipient's own row.
@@ -272,7 +274,7 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
           }
           return id ? citizenid : null;
         } catch (error) {
-          console.error(`[media] copy to ${citizenid} failed:`, error);
+          console.error(`[media] copy to ${who(citizenid)} failed:`, traceOf(error));
           return null;
         }
       })

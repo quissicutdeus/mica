@@ -25,6 +25,7 @@ import {
   type FrameworkPlayer,
   type OwnerTable
 } from './runtime';
+import { traceOf } from '../sqlErrors';
 
 /* ──────────────────────────────────────────────────────────────────────────────
  * ESX (`es_extended`)
@@ -236,7 +237,7 @@ const esxBalance = (xPlayer: any, type: 'bank' | 'cash', src: number): number =>
       return balanceOf(xPlayer.getMoney(), 'ESX.getMoney', src);
     }
   } catch (error) {
-    console.error(`[FrameworkBridge] ${call} for source ${src} threw:`, error);
+    console.error(`[FrameworkBridge] ${call} for source ${src} threw:`, traceOf(error));
     return -Infinity;
   }
   return balanceOf(undefined, call, src);
@@ -294,7 +295,7 @@ const esxMove = (
   try {
     xPlayer[method](account, amount);
   } catch (error) {
-    console.error(`[FrameworkBridge] ${call} for source ${src} threw:`, error);
+    console.error(`[FrameworkBridge] ${call} for source ${src} threw:`, traceOf(error));
     return false;
   }
 
@@ -345,7 +346,10 @@ const esxRemoveItem = (xPlayer: any, src: number, item: string, count: number): 
   try {
     result = xPlayer.removeInventoryItem(item, count);
   } catch (error) {
-    console.error(`[FrameworkBridge] ESX.removeInventoryItem('${item}') for ${src} threw:`, error);
+    console.error(
+      `[FrameworkBridge] ESX.removeInventoryItem('${item}') for ${src} threw:`,
+      traceOf(error)
+    );
     return false;
   }
   if (result === undefined) return true;
@@ -399,7 +403,10 @@ const esxSetMeta = (xPlayer: any, src: number, key: string, value: any): void =>
       return;
     }
   } catch (error) {
-    console.error(`[FrameworkBridge] ESX setMeta('${key}') for source ${src} failed:`, error);
+    console.error(
+      `[FrameworkBridge] ESX setMeta('${key}') for source ${src} failed:`,
+      traceOf(error)
+    );
     return;
   }
 
@@ -470,7 +477,7 @@ const esxSetDuty = (xPlayer: any, src: number, name: string, onDuty: boolean): b
   try {
     xPlayer.setJob(name, numberOr(raw.grade, 0), onDuty);
   } catch (error) {
-    console.error(`[FrameworkBridge] ESX.setJob for source ${src} threw:`, error);
+    console.error(`[FrameworkBridge] ESX.setJob for source ${src} threw:`, traceOf(error));
     return false;
   }
   return booleanOf(esxRawJob(xPlayer)?.onDuty, 'ESX job.onDuty', src) === onDuty;

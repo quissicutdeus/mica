@@ -10,6 +10,8 @@ import {
   type AppEventNotification
 } from '@mica/shared/appEvents';
 import { getNotificationsRepository, notificationFailureReason } from '../services/Notifications';
+import { who } from './who';
+import { withoutOwnerKeys } from './replyShape';
 
 type PushOutcome =
   | { delivered: true; source: number }
@@ -65,7 +67,8 @@ const envelopeFor = (
 ): AppEventEnvelope => ({
   app,
   event,
-  payload,
+  // No push carries a citizenid or a phone id either (MICA-433), as no reply does.
+  payload: withoutOwnerKeys(payload) as Record<string, unknown>,
   at: Date.now(),
   notify: options?.notify,
   deepLink: options?.deepLink,
@@ -185,7 +188,7 @@ export function appEventChannel(appId: string): AppEventChannel {
     const size = measure(payload);
     if (size !== 'ok') {
       console.error(
-        `[appEvents] Refused '${app}:${event}' to ${citizenid}: payload is ${size}. ` +
+        `[appEvents] Refused '${app}:${event}' to ${who(citizenid)}: payload is ${size}. ` +
           'A push carries a reference, not a document.'
       );
       return { delivered: false, reason: size };

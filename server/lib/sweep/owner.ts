@@ -6,7 +6,7 @@ import { Database } from '../Database';
 import { FrameworkBridge, type OwnerTable } from '../FrameworkBridge';
 import { SAFE_IDENTIFIER, identifier } from './sql';
 import type { OwnedTable } from './tables';
-import { reasonOf } from '../sqlErrors';
+import { reasonOf, traceOf } from '../sqlErrors';
 
 /** How many distinct owners are sampled to check the two sides speak the same identity. */
 const IDENTITY_SAMPLE = 25;
@@ -73,7 +73,7 @@ export const resolveOwnerOverride = async (): Promise<OwnerOverride> => {
     // Could not verify the convar names a real table — never trust an unverified name to
     // decide which rows this sweep is allowed to delete. The refusal is announced by the
     // caller; why it could not be verified is only known here (MICA-299).
-    console.error(`[mica] could not verify ${OWNER_OVERRIDE_CONVAR} '${raw}':`, error);
+    console.error(`[mica] could not verify ${OWNER_OVERRIDE_CONVAR} '${raw}':`, traceOf(error));
     return { owner: null, invalid: true, raw };
   }
 

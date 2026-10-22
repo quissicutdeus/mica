@@ -14,6 +14,7 @@ import {
   type OwnedTable
 } from './tables';
 import type { OwnerScope } from './scope';
+import { traceOf } from '../sqlErrors';
 
 /**
  * How many rows one statement may name.
@@ -76,7 +77,10 @@ const releaseCollected = async (
   try {
     await external.release(refs);
   } catch (error) {
-    console.error(`[${label}] releasing what the deleted ${table} rows named failed:`, error);
+    console.error(
+      `[${label}] releasing what the deleted ${table} rows named failed:`,
+      traceOf(error)
+    );
   }
 };
 
@@ -427,7 +431,7 @@ export const purgePlanned = async (
   const failed = new Map<string, unknown>();
   const fail = (table: string, error: unknown): void => {
     if (failed.has(table)) return;
-    console.error(`[${scope.label}] purging ${table} ${scope.purpose} failed:`, error);
+    console.error(`[${scope.label}] purging ${table} ${scope.purpose} failed:`, traceOf(error));
     failed.set(table, error);
   };
   /** Tables whose held rows, or whose rows' parents, are not known. */

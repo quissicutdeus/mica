@@ -11,10 +11,12 @@ import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
 import { registerCustomAction, registerService } from './services';
 import { allow, installRateLimitCleanup } from './rateLimit';
 import { type ActionInput, type ContractAction, type ServiceContract } from '@mica/shared/contract';
+import { checkReply, withoutOwnerKeys } from './replyShape';
 import { checkPayload, SchemaError, type Schema } from '@mica/shared/schema';
 import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
 import { deviceForRequest, requireDeviceInHand } from './deviceIdentity';
 import { appDisabledError, disabledAppFor } from './ownerConfig';
+import { traceOf } from './sqlErrors';
 
 // Once per process, not once per service: `on('playerDropped')` would otherwise be registered
 // thirteen times and do the same sweep thirteen times per disconnect.
@@ -580,7 +582,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
         citizenid: string,
         player: FrameworkPlayer,
         deviceId?: string
-      ) => Promise<any>
+      ) => Promise<any>,
+      declared.output
     );
   }
 
@@ -595,14 +598,16 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       citizenid: string,
       player: FrameworkPlayer,
       deviceId?: string
-    ) => Promise<any>
+    ) => Promise<any>,
+    /** The contract's declared reply, checked on the way out (`lib/replyShape.ts`, MICA-433). */
+    output?: Schema
   ) {
     // Both names come from shared/rpc.ts so the client derives exactly the same ones.
     const eventName = requestEventFor(this.serviceName, action);
     const clientEventName = responseEventFor(this.serviceName, action);
 
     const dispatch = (request: EndpointRequest): Promise<void> =>
-      this.dispatch(eventName, action, input, handler, request);
+      this.dispatch(eventName, action, input, handler, request, output);
     dispatchers.set(`${this.serviceName}:${action}`, dispatch);
 
     onNet(eventName, async (cbId: CallbackId, data: unknown, rawDevice?: unknown) => {
@@ -639,7 +644,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       player: FrameworkPlayer,
       deviceId?: string
     ) => Promise<any>,
-    { src, cbId, data, rawDevice, lookup, reply }: EndpointRequest
+    { src, cbId, data, rawDevice, lookup, reply }: EndpointRequest,
+    output?: Schema
   ): Promise<void> {
     const devices: readonly DeviceId[] = this.options.devices ?? [DEFAULT_DEVICE];
     try {
@@ -794,7 +800,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       const result = await handler(src, cbId, payload, player.citizenid, holder, deviceId);
 
       if (result !== undefined) {
-        reply(result);
+        // Held to the contract's declared reply, where it declares a real one, and never
+        // carrying the caller's citizenid or phone id (MICA-433, `lib/replyShape.ts`).
+        reply(withoutOwnerKeys(await checkReply(eventName, output, result)));
       }
     } catch (error) {
       /**
@@ -809,7 +817,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
        * a server owner needs and the player needs none of it.
        */
       const disclosable = error instanceof PlayerFacingError || error instanceof SchemaError;
-      if (!disclosable) console.error(`Error in ${eventName}:`, error);
+      if (!disclosable) console.error(`Error in ${eventName}:`, traceOf(error));
 
       // The key rides beside the text (MICA-216): a client whose catalog knows it says
       // it in the player's language, one that does not shows the English. A `SchemaError`

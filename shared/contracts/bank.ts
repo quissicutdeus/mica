@@ -6,8 +6,16 @@ import { defineContract, responseType } from '../contract';
 import { s } from '../schema';
 import type { BankHistory } from '../types';
 
-/** What a `sendMoney` can answer with. Every reason but the last comes from `Payments`. */
-type SendMoneyResult = { ok: true } | { ok: false; reason: string };
+/**
+ * What a `sendMoney` can answer with, and nothing else (MICA-433). A real schema rather than a
+ * `responseType`, so the server checks its own reply against it: `transfer()`'s outcome carries
+ * both citizenids, and passing it through let anyone turn a $1 send into a number→citizenid
+ * lookup. Every reason comes from `Payments`, or is `exceeds_limit`.
+ */
+const sendMoneyResult = s.union([
+  s.object({ ok: s.literal(true) }, { unknownKeys: 'strip' }),
+  s.object({ ok: s.literal(false), reason: s.string({ max: 64 }) }, { unknownKeys: 'strip' })
+]);
 
 /**
  * Bank has no micaOS table — it reads the banking resource's own export — so every action it
@@ -47,7 +55,7 @@ export const bankContract = defineContract({
         /** Player-supplied and never player-facing: it only reaches `transfer`'s server log. */
         note: s.string({ max: 140 }).optional()
       }),
-      output: responseType<SendMoneyResult>()
+      output: sendMoneyResult
     }
   }
 });

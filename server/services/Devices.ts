@@ -23,6 +23,8 @@ import {
   lastUsedDeviceSlot,
   onDeviceStateChanged
 } from '../lib/deviceItem';
+import { traceOf } from '../lib/sqlErrors';
+import { who } from '../lib/who';
 
 /**
  * The phone as a thing with an identity of its own (MICA-280, on MICA-279's seam), and the
@@ -334,9 +336,9 @@ const runCreated = async (
     } catch (error) {
       failed.push(hook);
       console.error(
-        `[mica] new-phone hook '${hook.name}' failed for phone ${deviceId} ` +
+        `[mica] new-phone hook '${hook.name}' failed for phone ${who(deviceId)} ` +
           `(attempt ${failures}); retrying ${when}.`,
-        error
+        traceOf(error)
       );
     }
   }
@@ -348,9 +350,9 @@ const runCreated = async (
     await repo.markSetupFinished(deviceId);
   } catch (error) {
     console.error(
-      `[mica] phone ${deviceId}'s set-up finished, but could not be recorded as finished ` +
+      `[mica] phone ${who(deviceId)}'s set-up finished, but could not be recorded as finished ` +
         `(attempt ${failures}); retrying ${when}.`,
-      error
+      traceOf(error)
     );
     owedSetup.set(deviceId, { hooks: [], kind, failures, retryAt: Date.now() + wait });
     return;
@@ -379,7 +381,7 @@ const resumeSetup = (
   if (!setupPending(row) || owedSetup.has(deviceId)) return;
   owedSetup.set(deviceId, { hooks: createdHooks, kind, failures: 0, retryAt: 0 });
   console.log(
-    `[mica] phone ${deviceId}'s set-up did not finish before micaOS last stopped; ` +
+    `[mica] phone ${who(deviceId)}'s set-up did not finish before micaOS last stopped; ` +
       'running it again.'
   );
 };
@@ -566,27 +568,27 @@ const handOver = async (
 ): Promise<HandoverWork> => {
   const tables: DeviceKeyedRepository[] = [];
   const hooks: HandoverHook[] = [];
-  // Most walks move nothing — the first resolve after a start re-checks a phone whose rows all
-  // name its holder already — so only one that moved a row says so.
-  let moved = false;
   for (const keyed of work.tables) {
     if (keyed === repo) continue;
     try {
-      if (await keyed.transferDeviceRows(deviceId, citizenid)) moved = true;
+      await keyed.transferDeviceRows(deviceId, citizenid);
     } catch (error) {
       tables.push(keyed);
       console.error(
-        `[mica] could not move ${keyed.table} on phone ${deviceId} to ${citizenid}.`,
-        error
+        `[mica] could not move ${keyed.table} on phone ${who(deviceId)} to ${who(citizenid)}.`,
+        traceOf(error)
       );
     }
   }
   for (const hook of work.hooks) {
     try {
-      if ((await hook.run(deviceId, citizenid)) === true) moved = true;
+      await hook.run(deviceId, citizenid);
     } catch (error) {
       hooks.push(hook);
-      console.error(`[mica] handover hook '${hook.name}' failed for phone ${deviceId}.`, error);
+      console.error(
+        `[mica] handover hook '${hook.name}' failed for phone ${who(deviceId)}.`,
+        traceOf(error)
+      );
     }
   }
   if (work.tables.includes(repo)) {
@@ -594,27 +596,25 @@ const handOver = async (
       tables.push(repo);
     } else {
       try {
-        if (await repo.transferDeviceRows(deviceId, citizenid)) moved = true;
+        await repo.transferDeviceRows(deviceId, citizenid);
       } catch (error) {
         tables.push(repo);
         console.error(
-          `[mica] could not move ${repo.table} on phone ${deviceId} to ${citizenid}.`,
-          error
+          `[mica] could not move ${repo.table} on phone ${who(deviceId)} to ${who(citizenid)}.`,
+          traceOf(error)
         );
       }
     }
   }
-  if (tables.length === 0 && hooks.length === 0) {
-    if (moved) {
-      console.log(`[mica] phone ${deviceId} is now held by ${citizenid}; its rows moved with it.`);
-    }
-  } else {
+  // A handover that finished says nothing (MICA-433): the line named the phone's new holder on
+  // every one. One that left something behind still says what, by `who()`'s token.
+  if (tables.length > 0 || hooks.length > 0) {
     const stuck = [
       ...tables.map((keyed) => keyed.table),
       ...hooks.map((hook) => `hook '${hook.name}'`)
     ];
     console.error(
-      `[mica] phone ${deviceId} is held by ${citizenid}, but ${stuck.join(', ')} still name ` +
+      `[mica] phone ${who(deviceId)} is held by ${who(citizenid)}, but ${stuck.join(', ')} still name ` +
         `its previous holder; a later request retries them, and ${repo.table} moves last.`
     );
   }
@@ -770,7 +770,7 @@ const settleHolder = async (
     return kind;
   } catch (error) {
     // Not fatal and not cached: the id is on the item either way, so the next resolve retries.
-    console.error(`[mica] could not record the phone row for ${deviceId}`, error);
+    console.error(`[mica] could not record the phone row for ${who(deviceId)}`, traceOf(error));
     // Read and of this kind, or read and absent: still the caller's kind. Not read at all:
     // nobody can say, and the caller decides what that costs.
     return kindOf.get(deviceId) ?? (read ? kind : null);
@@ -1014,11 +1014,15 @@ const resolveCounted = async (
     if (carriedKind === null) {
       // Which device this id is could not be read. Using it might be a phone id on a tablet;
       // minting over it might be overwriting a real device's id. Neither, until a read works.
-      throw new Error(`[mica] could not read which device ${carried} is; refusing the resolve.`);
+      throw new Error(
+        `[mica] could not read which device ${who(carried)} is; refusing the resolve.`
+      );
     }
+    // The one sign an operator gets of a tampered or mixed-up item. By token since MICA-433,
+    // and without the slot, which said nothing an operator acts on.
     console.warn(
-      `[mica] ${player.citizenid}'s ${kind} item in slot ${chosen.slot} carried ${carried}, ` +
-        `which is a ${carriedKind}. Refused; the item is given a ${kind} id of its own.`
+      `[mica] ${who(player.citizenid)}'s ${kind} item carried ${who(carried)}, which is a ` +
+        `${carriedKind}. Refused; the item is given a ${kind} id of its own.`
     );
   }
 
@@ -1028,7 +1032,10 @@ const resolveCounted = async (
       adopted = (await readUnclaimed(player.citizenid, kind))?.device_id ?? null;
     } catch (error) {
       // A fresh id is the safe answer: nothing is lost, the unclaimed phone stays where it is.
-      console.error(`[mica] could not look for ${player.citizenid}'s unclaimed phone`, error);
+      console.error(
+        `[mica] could not look for ${who(player.citizenid)}'s unclaimed phone`,
+        traceOf(error)
+      );
     }
   }
   const deviceId = adopted ?? newDeviceId();

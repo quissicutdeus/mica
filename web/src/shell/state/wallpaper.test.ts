@@ -14,7 +14,7 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../host/registerFacets';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import {
   wallpaperStore,
@@ -29,6 +29,20 @@ import {
 import { themeStore, resetTheme } from './theme';
 import { buildSchemes } from '../../../../sdk/host/seam/theme';
 import { backgroundForSeed } from './wallpaper';
+import { hydrateSettingsOnCharacterLoad } from '../../host/facets/storage';
+import { flushPendingWrites } from '../../host/settingsSync';
+
+/**
+ * MICA-433: the character-load sweep is driven for real below, so the settings transport is
+ * stubbed with explicitly successful answers (`dock.test.ts` does the same, and says why).
+ */
+const serviceMock = vi.hoisted(() => ({
+  fetchSettings: vi.fn().mockResolvedValue([]),
+  saveSetting: vi.fn().mockResolvedValue(true),
+  removeSetting: vi.fn().mockResolvedValue(true),
+  clearAppSettings: vi.fn().mockResolvedValue(true)
+}));
+vi.mock('../../services/settings', () => serviceMock);
 
 describe('Wallpaper Store', () => {
   beforeEach(() => {
@@ -180,6 +194,68 @@ describe('Wallpaper Store', () => {
         wallpaperStore.set(bad as never);
         expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
       }
+    });
+  });
+
+  /**
+   * MICA-433: the photo is local to the PC and has no server row, so it used to carry into
+   * whichever character loaded next on the same machine — and out to any add-on reading
+   * `useWallpaper`. Driven through the real sweeping hydrate, not a storage write.
+   */
+  describe('on a character load', () => {
+    const photo = "url('data:image/png;base64,QUJD')";
+
+    /** What the server would answer for the character who set the photo. */
+    const ownersRows = () => {
+      flushPendingWrites();
+      const saved = serviceMock.saveSetting.mock.calls.filter(
+        ([app, key]) => app === 'settings' && key === 'wallpaperOwner'
+      );
+      expect(saved.length, 'setting a photo saves its owner fingerprint').toBeGreaterThan(0);
+      const [, , value] = saved[saved.length - 1];
+      return [{ app: 'settings', setting_key: 'wallpaperOwner', setting_value: value }];
+    };
+
+    it('starts a different character on the default, not the previous one’s photo', async () => {
+      setWallpaperImage(photo);
+      const rowsOfA = ownersRows();
+
+      serviceMock.fetchSettings.mockResolvedValueOnce(rowsOfA);
+      expect(await hydrateSettingsOnCharacterLoad()).toBe(true);
+      expect(get(wallpaperStore)).toEqual({ type: 'image', image: photo });
+
+      // Character B has no rows at all: a real, successful, empty answer.
+      serviceMock.fetchSettings.mockResolvedValueOnce([]);
+      expect(await hydrateSettingsOnCharacterLoad()).toBe(true);
+
+      expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
+      expect(get(wallpaperBackground)).not.toContain('url(');
+    });
+
+    it('keeps the photo for the same character across a reload', async () => {
+      setWallpaperImage(photo);
+      const rowsOfA = ownersRows();
+
+      serviceMock.fetchSettings.mockResolvedValueOnce([]);
+      await hydrateSettingsOnCharacterLoad();
+      expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
+
+      // A comes back on this PC, and nobody set a photo in between.
+      serviceMock.fetchSettings.mockResolvedValueOnce(rowsOfA);
+      await hydrateSettingsOnCharacterLoad();
+      expect(get(wallpaperStore)).toEqual({ type: 'image', image: photo });
+      expect(get(wallpaperBackground)).toContain(photo);
+    });
+
+    it('shows a new character’s own photo once they set one', async () => {
+      setWallpaperImage(photo);
+      flushPendingWrites();
+      serviceMock.fetchSettings.mockResolvedValueOnce([]);
+      await hydrateSettingsOnCharacterLoad();
+
+      const theirs = "url('data:image/png;base64,REVG')";
+      setWallpaperImage(theirs);
+      expect(get(wallpaperStore)).toEqual({ type: 'image', image: theirs });
     });
   });
 });

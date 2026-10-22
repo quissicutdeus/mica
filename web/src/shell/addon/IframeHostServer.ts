@@ -8,6 +8,7 @@ import { AppPermissionError } from '../../../../sdk/host/protocol';
 import { facets } from '../../../../sdk/host/current';
 import {
   appIdArgOf,
+  CORE_ONLY_PERMISSIONS,
   permissionOfFacet,
   DENIED_FACETS,
   membersOfFacet
@@ -184,6 +185,84 @@ function toCloneable(value: unknown, seen = new Map<object, unknown>()): unknown
 }
 
 /**
+ * Keys no frame is ever sent, at any depth of anything posted to it (MICA-433).
+ *
+ * `citizenid` is the character's key in every table, and on ESX it is the player's Rockstar
+ * licence. `device_id` names the phone item a row was written from. Neither is anything an
+ * add-on can use, and both arrived anyway: an owner read answers whole rows, so contacts,
+ * media, notifications and an add-on's own `useService` replies all carried them. The server
+ * strips them from owner reads too. This is the fence that still holds when a server read
+ * forgets to.
+ */
+export const WITHHELD_FROM_FRAMES: ReadonlySet<string> = new Set(['citizenid', 'device_id']);
+
+/**
+ * `value` with every `WITHHELD_FROM_FRAMES` key taken out, wherever it sits.
+ *
+ * A copy, never an edit: what is posted is very often a live store's own value, and the
+ * shell's in-process readers still need it whole. Objects, arrays, `Map`s and `Set`s are
+ * walked; an object that is none of those becomes a plain object of its own enumerable keys,
+ * which is what structured clone makes of it anyway. A `Date`, `RegExp`, `Error`, binary
+ * data, a `Blob` and an `Event` pass as they are: none carries a row's keys, and each is
+ * something `postMessage` either clones whole or refuses whole. A shared or cyclic reference
+ * stays shared, as in `toCloneable`.
+ */
+export function withoutWithheldKeys(value: unknown, seen = new Map<object, unknown>()): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  const already = seen.get(value);
+  if (already !== undefined) return already;
+  if (
+    value instanceof Date ||
+    value instanceof RegExp ||
+    value instanceof Error ||
+    value instanceof Promise ||
+    value instanceof WeakMap ||
+    value instanceof WeakSet ||
+    value instanceof ArrayBuffer ||
+    ArrayBuffer.isView(value) ||
+    (typeof Blob !== 'undefined' && value instanceof Blob) ||
+    (typeof Event !== 'undefined' && value instanceof Event) ||
+    (typeof EventTarget !== 'undefined' && value instanceof EventTarget)
+  ) {
+    return value;
+  }
+  if (value instanceof Map) {
+    const out = new Map<unknown, unknown>();
+    seen.set(value, out);
+    for (const [k, v] of value) {
+      if (typeof k === 'string' && WITHHELD_FROM_FRAMES.has(k)) continue;
+      out.set(withoutWithheldKeys(k, seen), withoutWithheldKeys(v, seen));
+    }
+    return out;
+  }
+  if (value instanceof Set) {
+    const out = new Set<unknown>();
+    seen.set(value, out);
+    for (const v of value) out.add(withoutWithheldKeys(v, seen));
+    return out;
+  }
+  if (Array.isArray(value)) {
+    const out: unknown[] = [];
+    seen.set(value, out);
+    for (const v of value as unknown[]) out.push(withoutWithheldKeys(v, seen));
+    return out;
+  }
+  const out: Record<string, unknown> = {};
+  seen.set(value, out);
+  for (const [k, v] of Object.entries(value)) {
+    if (WITHHELD_FROM_FRAMES.has(k)) continue;
+    // Defined, not assigned, for the `__proto__` reason in `toCloneable`.
+    Object.defineProperty(out, k, {
+      value: withoutWithheldKeys(v, seen),
+      enumerable: true,
+      writable: true,
+      configurable: true
+    });
+  }
+  return out;
+}
+
+/**
  * Every `mica:<appId>:` key, raw — the frame's sync storage reads come from this.
  *
  * Keys stay **full** (`mica:<appId>:<key>`), not stripped of their prefix: the iframe
@@ -302,7 +381,28 @@ export const ADDON_HELLO_TIMEOUT_MS = 8_000;
 
 export function createIframeHostServer(opts: IframeHostServerOptions) {
   const { host, manifest, guest } = opts;
-  const post = (msg: ToFrame) => guest()?.postMessage(msg, '*');
+  /**
+   * The one way anything reaches the frame, so the one place `WITHHELD_FROM_FRAMES` is
+   * applied: a reply, a push, a callback's arguments, the hydrate payload and its props all
+   * pass through here.
+   */
+  const post = (msg: ToFrame) => {
+    const target = guest();
+    if (target) target.postMessage(withoutWithheldKeys(msg) as ToFrame, '*');
+  };
+  /**
+   * What this manifest declares that no add-on may hold whatever the rows say:
+   * `CORE_ONLY_PERMISSIONS`, which is `admin` (MICA-433). `defineApp` refuses such a manifest
+   * already, but a manifest reaches this server from the registry, a catalog or a dev
+   * registration, and not every one of those went through `defineApp` in this window. The
+   * frame is shut down at its first message, before any facet is built or answers.
+   *
+   * Not every `ADD_ON_REFUSED_PERMISSIONS` entry. The rest are refused because their rows are
+   * empty, and `requireMember` already answers each of their members "core only".
+   */
+  const refusedDeclared = [
+    ...new Set([...(manifest.permissions ?? []), ...host.permissions])
+  ].filter((permission) => CORE_ONLY_PERMISSIONS.includes(permission));
   const instances = new Map<string, Record<string, unknown>>();
   const subscriptions = new Map<number, () => void>();
   const handles = new Map<number, (...a: unknown[]) => unknown>();
@@ -988,6 +1088,15 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       }
       const msg = event.data as ToShell;
       if (!msg || typeof msg !== 'object' || typeof msg.kind !== 'string') return;
+      if (refusedDeclared.length > 0) {
+        const names = refusedDeclared.map((permission) => `'${permission}'`).join(', ');
+        escaped(
+          `its manifest declares ${names}, which only a core app may hold`,
+          `${manifest.name} asks for access only the phone's own apps may have, and has been ` +
+            `stopped.`
+        );
+        return;
+      }
       switch (msg.kind) {
         case 'hello':
           if (msg.appId !== manifest.id) {

@@ -63,6 +63,21 @@ describe('push', () => {
     });
   });
 
+  it('carries no citizenid or phone id in its payload, at any depth (MICA-433)', () => {
+    online({ 5: 'CIT_A' });
+
+    appEventChannel('blabber').push('CIT_A', 'mention', {
+      blab_id: 7,
+      citizenid: 'CIT_A',
+      row: { id: 1, device_id: 'PHONE_1', body: 'x' }
+    });
+
+    expect(parseAppEventEnvelope(emitted[0][2])?.payload).toEqual({
+      blab_id: 7,
+      row: { id: 1, body: 'x' }
+    });
+  });
+
   it('reports an offline recipient rather than reporting success', () => {
     online({});
 

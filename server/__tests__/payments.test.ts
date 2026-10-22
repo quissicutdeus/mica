@@ -12,6 +12,7 @@ vi.mock('../lib/Database', () => ({
 }));
 
 import { transfer } from '../lib/Payments';
+import { who } from '../lib/who';
 import { FrameworkBridge, __setResourceLookup } from '../lib/FrameworkBridge';
 
 /**
@@ -77,6 +78,28 @@ describe('transfer', () => {
     expect(payee.read()).toBe(350);
   });
 
+  it('logs nothing for a payment that went through (MICA-433)', async () => {
+    // The line named both characters, the amount and the player's own note.
+    install({ 1: makePlayer('CIT_A', 500), 2: makePlayer('CIT_B', 100) });
+
+    await transfer({ from: 'CIT_A', to: 'CIT_B', amount: 250, reason: 'Phone transfer: rent' });
+
+    expect(console.log).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("names both sides of a failed credit by who()'s token, never the citizenid", async () => {
+    install({ 1: makePlayer('CIT_A', 500), 2: makePlayer('CIT_B', 100, { canAdd: false }) });
+
+    await transfer({ from: 'CIT_A', to: 'CIT_B', amount: 250, reason: 'sale' });
+
+    const line = String(vi.mocked(console.warn).mock.calls[0]?.[0]);
+    expect(line).toContain(`Credit to ${who('CIT_B')} failed`);
+    expect(line).toContain(`refunded 250 to ${who('CIT_A')}`);
+    expect(line).not.toContain('CIT_');
+  });
+
   it('tells the Discord mirror only once the money has moved (MICA-242)', async () => {
     forwardPayment.mockClear();
     const payer = makePlayer('CIT_A', 500);
@@ -121,6 +144,9 @@ describe('transfer', () => {
     expect(result).toEqual({ ok: false, reason: 'stranded' });
     expect(payer.read()).toBe(250);
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('STRANDED'));
+    const line = String(vi.mocked(console.error).mock.calls[0]?.[0]);
+    expect(line).toContain(`from ${who('CIT_A')} to ${who('CIT_B')}`);
+    expect(line).not.toContain('CIT_');
   });
 
   it('refuses rather than clamping when the payer cannot afford it', async () => {

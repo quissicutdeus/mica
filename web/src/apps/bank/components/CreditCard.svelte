@@ -7,11 +7,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import { formatCurrency, useLocale } from '@mica/sdk';
 
-  import { hashStringToCardNumber } from '../cardUtils';
+  import { MASKED_CARD_NUMBER } from '../cardUtils';
 
   const { t } = useLocale();
 
-  let { balance, citizenid }: { balance: number; citizenid: string } = $props();
+  let { balance }: { balance: number } = $props();
 </script>
 
 <!-- The gradient is three utility classes, not an inline `style=`. PostCSS never sees a
@@ -44,7 +44,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div class="mb-2 text-3xl font-bold">
     ${formatCurrency(balance)}
   </div>
-  <div class="text-on-surface text-body-medium font-mono tracking-wider">
-    {hashStringToCardNumber(citizenid)}
+  <!-- A fixed pattern, the same for everyone, never a number derived from the citizenid
+       (MICA-433). Hidden from assistive tech: read aloud it is sixteen "bullet"s. -->
+  <div class="text-on-surface text-body-medium font-mono tracking-wider" aria-hidden="true">
+    {MASKED_CARD_NUMBER}
   </div>
 </div>

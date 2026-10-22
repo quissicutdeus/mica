@@ -10,10 +10,8 @@ import {
   transactions,
   transactionsLoaded,
   historySource,
-  citizenid,
   fetchBalance,
-  fetchTransactions,
-  fetchCitizenId
+  fetchTransactions
 } from '../../services/account';
 
 /**
@@ -26,11 +24,9 @@ export function account() {
     transactions,
     transactionsLoaded,
     historySource,
-    citizenid,
     fetchPhoneNumber: () => fetchPhoneNumber(),
     fetchBalance: () => fetchBalance(),
-    fetchTransactions: () => fetchTransactions(),
-    fetchCitizenId: () => fetchCitizenId()
+    fetchTransactions: () => fetchTransactions()
   };
 }
 

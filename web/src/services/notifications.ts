@@ -198,7 +198,6 @@ export function addNotificationItem(item: {
 }): NotificationItem {
   const newItem: NotificationItem = {
     id: Date.now() + Math.floor(Math.random() * 1000),
-    citizenid: 'me',
     app: item.app || 'system',
     kind: 'info',
     title: item.title || 'Notification',

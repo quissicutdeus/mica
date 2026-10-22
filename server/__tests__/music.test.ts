@@ -189,7 +189,8 @@ describe('who hears it', () => {
       {
         source: 1,
         token: expect.any(String),
-        label: 'Player1 Smith',
+        // No personal label (MICA-433): a stranger hears a stereo, not a character's name.
+        label: null,
         videoId: VIDEO,
         playlistId: null,
         startedAt: expect.any(Number),
@@ -289,7 +290,7 @@ describe('a tick reads ids, not player records (MICA-354)', () => {
     world.players[String(src)] = { PlayerData: {} };
   };
 
-  it('walks ids, and asks for a record only for the broadcaster and listeners in range', async () => {
+  it('walks ids, and asks for a record only for listeners in range', async () => {
     place(1, [0, 0, 0]);
     place(2, [5, 0, 0]);
     place(6, [500, 0, 0]);
@@ -301,10 +302,11 @@ describe('a tick reads ids, not player records (MICA-354)', () => {
       place(5, [8, 0, 0]);
       pollMusic();
 
-      expect(lastPushTo(5)?.broadcasters[0].label).toBe('Player1 Smith');
+      // No label to look up since MICA-433, so the broadcaster's record is not asked for.
+      expect(lastPushTo(5)?.broadcasters[0].label).toBeNull();
       expect(all).not.toHaveBeenCalled();
       const asked = one.mock.calls.map(([src]) => src);
-      expect(asked).toContain(1);
+      expect(asked).not.toContain(1);
       expect(asked).toContain(5);
       // Out of range, with nothing to hear: never looked up.
       expect(asked).not.toContain(6);

@@ -7,6 +7,7 @@ import { registerService } from '../lib/services';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { playerCoords } from '../lib/playerCoords';
 import { forgetOnPlayerLoaded } from '../lib/shell';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * Cellular reception: a city-wide level, a set of dead zones, and per-player overrides.
@@ -195,7 +196,7 @@ export const pollSignal = (): void => {
         emitNet('mica:client:signal:set', src, level);
         lastPushed.set(src, level);
       } catch (error) {
-        console.error(`[mica] signal push to ${src} failed:`, error);
+        console.error(`[mica] signal push to ${src} failed:`, traceOf(error));
       }
     }
   }

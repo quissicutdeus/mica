@@ -4,6 +4,7 @@
 
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@mica/shared/devices';
+import { CLIENT_ONLY_ACTIONS } from '@mica/shared/routes';
 
 /**
  * What a handler knows about the request beyond its payload (MICA-264): the device it speaks
@@ -82,10 +83,10 @@ export const mockRegistry: Readonly<Record<string, MockHandler>> = (() => {
  * it.
  *
  * Scoped to the generic `svc` action alone, in `getMockData` below, because that is the
- * only door the real refusal sits behind: `getCitizenId` and `getBankBalance`
- * (`services/account.ts`) are answered by the *client*'s own `RegisterNuiCallbackType`
- * handlers (`client/client.ts`), never routed through `ServiceEndpoint`, so they keep
- * answering here too rather than joining a failure they would never see in game.
+ * only door the real refusal sits behind: `getBankBalance` (`services/account.ts`) is
+ * answered by the *client*'s own `RegisterNuiCallbackType` handler (`client/client.ts`),
+ * never routed through `ServiceEndpoint`, so it keeps answering here too rather than
+ * joining a failure it would never see in game.
  */
 let mockAuthenticated =
   (typeof window === 'undefined'
@@ -126,6 +127,26 @@ function resolveGeneric(
   };
 }
 
+const CLIENT_ONLY: ReadonlySet<string> = new Set(CLIENT_ONLY_ACTIONS);
+
+/** The two keys no server reply carries (MICA-433), as `server/lib/replyShape.ts` has them. */
+const OWNER_KEYS: ReadonlySet<string> = new Set(['citizenid', 'device_id']);
+
+/**
+ * A reply with every `citizenid` and `device_id` key removed, at any depth: the mock twin of
+ * the server's `withoutOwnerKeys`. Copies rather than mutates, so a fixture row is never
+ * changed under the mock that keeps it.
+ */
+const withoutOwnerKeys = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(withoutOwnerKeys);
+  if (value === null || typeof value !== 'object' || value instanceof Date) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, inner] of Object.entries(value)) {
+    if (!OWNER_KEYS.has(key)) out[key] = withoutOwnerKeys(inner);
+  }
+  return out;
+};
+
 async function getMockData(
   eventName: string,
   data?: unknown,
@@ -151,7 +172,13 @@ async function getMockData(
 
   const handler = mockRegistry[eventName];
   if (handler) {
-    return handler(data, context);
+    const reply: unknown = await handler(data, context);
+    // Every reply the server answers leaves it without these two keys, at any depth
+    // (`server/lib/replyShape.ts`'s `withoutOwnerKeys`, MICA-433), whether it was asked by
+    // a named route or the generic action. Stripped here at the same layer, so no fixture can
+    // hand the page a field the game never would. The client's own answers are not the
+    // server's and pass as they are.
+    return CLIENT_ONLY.has(eventName) ? reply : withoutOwnerKeys(reply);
   }
   // A missing mock used to warn and answer `null`, which reads to the caller as "the
   // server sent nothing" rather than "nobody wired this up" — the exact failure this

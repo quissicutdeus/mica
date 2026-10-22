@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { NO_REASON, reasonOf } from './sqlErrors';
+import { NO_REASON, reasonOf, traceOf } from './sqlErrors';
 
 /**
  * The gate every start-up job that reads the database waits behind (MICA-306): the outcome of
@@ -56,9 +56,9 @@ export const installSchemaCheck = (fn: () => Promise<SchemaOutcome>): void => {
 export const schemaCheckInstalled = (): boolean => check !== null;
 
 const notInstalled = async (): Promise<SchemaOutcome> => {
-  const error = 'the first-start schema check was never installed (schemaBootstrap.ts)';
-  console.error(`[mica] ${error}; start-up jobs run without it.`);
-  return { kind: 'unknown', error };
+  const problem = 'the first-start schema check was never installed (schemaBootstrap.ts)';
+  console.error(`[mica] ${problem}; start-up jobs run without it.`);
+  return { kind: 'unknown', error: problem };
 };
 
 /**
@@ -106,7 +106,7 @@ export const whenSchemaReady = (job: () => unknown): void => {
   void schemaReady()
     .then((outcome) => (startupJobsMayRun(outcome) ? job() : undefined))
     .catch((error: unknown) => {
-      console.error('[mica] a start-up job failed:', error);
+      console.error('[mica] a start-up job failed:', traceOf(error));
     });
 };
 

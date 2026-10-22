@@ -42,7 +42,7 @@
 
 import { Database } from './Database';
 import { SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
-import { reasonOf } from './sqlErrors';
+import { reasonOf, traceOf } from './sqlErrors';
 
 export const UPLOAD_URL_CONVAR = 'mica_media_upload_url';
 export const UPLOAD_HEADER_CONVAR = 'mica_media_upload_header';
@@ -615,7 +615,10 @@ export const releaseHostedImages = async (
   } catch (error) {
     // Unsure what is still referenced, so nothing is deleted: a file left behind costs
     // storage, a file deleted under a live row costs somebody a photo.
-    console.error('[micamedia] could not check which hosted photos are still in use:', error);
+    console.error(
+      '[micamedia] could not check which hosted photos are still in use:',
+      traceOf(error)
+    );
     outcome.failed = considered.length;
     return outcome;
   }

@@ -37,7 +37,8 @@
  */
 
 import type { AuditLogOptions } from './AuditLogger';
-import { reasonOf } from './sqlErrors';
+import { reasonOf, traceOf } from './sqlErrors';
+import { who } from './who';
 
 export const WEBHOOK_CONVAR = 'mica_discord_webhook';
 export const PAYMENT_MIN_CONVAR = 'mica_discord_webhook_payment_min';
@@ -130,6 +131,16 @@ export const isStaffRelevant = (entry: AuditLogOptions): boolean => {
   }
 };
 
+/**
+ * A character as the staff channel sees one (MICA-433): `who()`'s token, the same one the
+ * server console prints for them, so a channel post and a log line can be matched — and the
+ * raw citizenid only where the owner opted into content (`mica_discord_webhook_content`). On
+ * ESX a citizenid is the player's Rockstar licence, and a webhook channel is read by more
+ * people than the console. A society (`society:police`) is not a person and passes as it is.
+ */
+const character = (citizenid: string): string =>
+  citizenid.startsWith('society:') || contentAllowed() ? citizenid : who(citizenid);
+
 const truncate = (value: string): string =>
   value.length > FIELD_MAX ? `${value.slice(0, FIELD_MAX - 1)}…` : value;
 
@@ -144,7 +155,7 @@ const auditEmbed = (entry: AuditLogOptions, at: Date): DiscordEmbed => {
     : `#${entry.targetId}`;
   const fields: DiscordEmbed['fields'] = [
     { name: 'Action', value: `${entry.action} · ${entry.service}.${entry.method}`, inline: true },
-    { name: 'Actor', value: entry.citizenid, inline: true },
+    { name: 'Actor', value: character(entry.citizenid), inline: true },
     { name: 'Target', value: target, inline: true }
   ];
   if (entry.details !== undefined && entry.details !== null && contentAllowed()) {
@@ -171,8 +182,8 @@ export interface PaymentEvent {
 const paymentEmbed = (event: PaymentEvent, at: Date): DiscordEmbed => {
   const fields: DiscordEmbed['fields'] = [
     { name: 'Amount', value: String(event.amount), inline: true },
-    { name: 'From', value: event.from, inline: true },
-    { name: 'To', value: event.to, inline: true },
+    { name: 'From', value: character(event.from), inline: true },
+    { name: 'To', value: character(event.to), inline: true },
     { name: 'Via', value: event.service, inline: true }
   ];
   if (event.reason && contentAllowed()) {
@@ -194,7 +205,7 @@ export interface ReportFiledEvent {
 const reportEmbed = (event: ReportFiledEvent, at: Date): DiscordEmbed => {
   const fields: DiscordEmbed['fields'] = [
     { name: 'Report', value: `#${event.reportId} · ${event.category}`, inline: true },
-    { name: 'Reporter', value: event.citizenid, inline: true },
+    { name: 'Reporter', value: character(event.citizenid), inline: true },
     { name: 'Target', value: `${event.targetTable} #${event.targetId}`, inline: true }
   ];
   if (event.note && contentAllowed()) {
@@ -336,7 +347,7 @@ const guarded = (fn: () => void): void => {
   try {
     fn();
   } catch (error) {
-    console.error('[DiscordWebhook] Dropped an event:', error);
+    console.error('[DiscordWebhook] Dropped an event:', traceOf(error));
   }
 };
 

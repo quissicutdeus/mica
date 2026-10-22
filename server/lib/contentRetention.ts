@@ -6,6 +6,7 @@ import { Database } from './Database';
 import { declaredServices, type ColumnDef, type ColumnType } from './defineService';
 import { SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
 import { whenSchemaReady } from './schemaReady';
+import { traceOf } from './sqlErrors';
 
 /**
  * Age-based retention for player content (MICA-167): messages, DMs and media.
@@ -608,7 +609,10 @@ export const pruneTable = async (policy: RetentionPolicy): Promise<number> => {
         try {
           await policy.external.release(refs);
         } catch (error) {
-          console.error(`[${policy.label}] releasing what the pruned rows named failed:`, error);
+          console.error(
+            `[${policy.label}] releasing what the pruned rows named failed:`,
+            traceOf(error)
+          );
         }
       }
 
@@ -636,7 +640,7 @@ const runOne = async (policy: RetentionPolicy): Promise<number> => {
     }
     return removed;
   } catch (error) {
-    console.error(`[${policy.label}] retention prune failed:`, error);
+    console.error(`[${policy.label}] retention prune failed:`, traceOf(error));
     return 0;
   }
 };

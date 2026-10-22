@@ -14,6 +14,7 @@ import { GlimpseCommentRepository } from '../repositories/GlimpseCommentReposito
 import { glimpseCommentsContract } from '@mica/shared/contracts/glimpse_comments';
 import { buildDeepLink } from '@mica/shared/deepLink';
 import type { GlimpseComment } from '@mica/shared/types';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * Comments under a Glimpse post (MICA-253).
@@ -148,10 +149,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       );
     }
   } catch (error) {
-    console.error('[glimpse] Comment notification failed for', id, error);
+    console.error('[glimpse] Comment notification failed for', id, traceOf(error));
   }
   void notifyGlimpseMentions(body, account, post.id, [post.citizenid, citizenid]).catch((error) =>
-    console.error('[glimpse] Mention notification failed for comment', id, error)
+    console.error('[glimpse] Mention notification failed for comment', id, traceOf(error))
   );
 
   const echo = await repo.findPublicById(id);

@@ -5,6 +5,7 @@
 import { FrameworkBridge } from './FrameworkBridge';
 import { BankingBridge } from './BankingBridge';
 import { forwardPayment } from './DiscordWebhook';
+import { who } from './who';
 
 /**
  * Moving money between two players.
@@ -153,19 +154,20 @@ export async function transfer(request: TransferRequest): Promise<PaymentOutcome
     const refunded = payer.addMoney(account, amount);
     if (!refunded) {
       console.error(
-        `[Payments] STRANDED ${amount} (${account}) from ${from} to ${to} for '${reason}': ` +
+        `[Payments] STRANDED ${amount} (${account}) from ${who(from)} to ${who(to)} for '${reason}': ` +
           'the credit failed and the refund failed. The payer has been debited and nobody ' +
           'was paid. This needs a human.'
       );
       return { ok: false, reason: 'stranded' };
     }
     console.warn(
-      `[Payments] Credit to ${to} failed for '${reason}'; refunded ${amount} to ${from}.`
+      `[Payments] Credit to ${who(to)} failed for '${reason}'; refunded ${amount} to ${who(from)}.`
     );
     return { ok: false, reason: 'credit_failed' };
   }
 
-  console.log(`[Payments] ${from} -> ${to}: ${amount} (${account}) for '${reason}'.`);
+  // No line for a payment that went through (MICA-433): it named both characters, the amount
+  // and the player's own note. A failure above still says who, by `who()`'s token.
   // The Discord mirror (MICA-242) hears about the money only once it has actually moved;
   // it filters by `mica_discord_webhook_payment_min` itself and never throws.
   forwardPayment({ from, to, amount, service: account, reason });
@@ -235,19 +237,18 @@ export async function payFromSociety(request: SocietyPaymentRequest): Promise<Pa
     const refunded = BankingBridge.addSocietyMoney(job, amount);
     if (!refunded) {
       console.error(
-        `[Payments] STRANDED ${amount} from society '${job}' to ${to} for '${reason}': the ` +
+        `[Payments] STRANDED ${amount} from society '${job}' to ${who(to)} for '${reason}': the ` +
           'credit failed and the refund failed. The society has been debited and nobody ' +
           'was paid. This needs a human.'
       );
       return { ok: false, reason: 'stranded' };
     }
     console.warn(
-      `[Payments] Credit to ${to} failed for '${reason}'; refunded ${amount} to society '${job}'.`
+      `[Payments] Credit to ${who(to)} failed for '${reason}'; refunded ${amount} to society '${job}'.`
     );
     return { ok: false, reason: 'credit_failed' };
   }
 
-  console.log(`[Payments] society '${job}' -> ${to}: ${amount} (bank) for '${reason}'.`);
   forwardPayment({ from: `society:${job}`, to, amount, service: 'society', reason });
   return { ok: true, from: `society:${job}`, to, amount };
 }
@@ -305,19 +306,18 @@ export async function payToSociety(request: SocietyChargeRequest): Promise<Payme
     const refunded = payer.addMoney('bank', amount);
     if (!refunded) {
       console.error(
-        `[Payments] STRANDED ${amount} from ${from} to society '${job}' for '${reason}': the ` +
+        `[Payments] STRANDED ${amount} from ${who(from)} to society '${job}' for '${reason}': the ` +
           'credit failed and the refund failed. The payer has been debited and nobody ' +
           'was paid. This needs a human.'
       );
       return { ok: false, reason: 'stranded' };
     }
     console.warn(
-      `[Payments] Credit to society '${job}' failed for '${reason}'; refunded ${amount} to ${from}.`
+      `[Payments] Credit to society '${job}' failed for '${reason}'; refunded ${amount} to ${who(from)}.`
     );
     return { ok: false, reason: 'credit_failed' };
   }
 
-  console.log(`[Payments] ${from} -> society '${job}': ${amount} (bank) for '${reason}'.`);
   forwardPayment({ from, to: `society:${job}`, amount, service: 'society', reason });
   return { ok: true, from, to: `society:${job}`, amount };
 }

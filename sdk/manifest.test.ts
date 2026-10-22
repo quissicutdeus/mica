@@ -656,6 +656,15 @@ describe('defineApp: permissions an add-on cannot use', () => {
     }
   });
 
+  it('refuses admin on an add-on and keeps it for a core app (MICA-433)', () => {
+    expect(() => defineApp({ id: 'moderator', ...addOn, permissions: ['admin'] })).toThrow(
+      /add-on 'moderator' declares 'admin', which only a core app can use/
+    );
+    expect(
+      defineApp({ id: 'moderator', ...addOn, core: true, permissions: ['admin'] }).permissions
+    ).toEqual(['admin']);
+  });
+
   it('names every one it refuses, alongside the ones it would allow', () => {
     expect(() =>
       defineApp({

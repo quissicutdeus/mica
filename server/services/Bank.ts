@@ -11,6 +11,9 @@ import { bankContract } from '@mica/shared/contracts/bank';
 import { transfer, type PaymentOutcome } from '../lib/Payments';
 import { Transaction } from '@mica/shared/types';
 
+/** Why a transfer failed, as `Payments` names it. */
+type PaymentFailure = Extract<PaymentOutcome, { ok: false }>['reason'];
+
 /**
  * Bank: read-only, and backed by the banking resource's own export rather than its
  * database.
@@ -67,7 +70,7 @@ app.registerEvent(
     cbId,
     data,
     citizenid
-  ): Promise<PaymentOutcome | { ok: false; reason: 'exceeds_limit' }> => {
+  ): Promise<{ ok: true } | { ok: false; reason: PaymentFailure | 'exceeds_limit' }> => {
     // `phoneNumberFrom` still runs: the contract bounds the string, and this is what turns a
     // blank-but-present number into a refusal before it reaches somebody else's lookup.
     const phone = phoneNumberFrom(data.phone);
@@ -97,13 +100,19 @@ app.registerEvent(
     // logged by `transfer()` itself. A second entry through `AuditLogger` would need a
     // `targetId` naming a specific owned row, which a peer-to-peer payment does not have;
     // forcing one on would document a row that was never written.
-    return await transfer({
+    const outcome = await transfer({
       from: citizenid,
       to: targetPlayer.citizenid,
       amount,
       account: 'bank',
       reason: note ? `Phone transfer: ${note}` : 'Phone transfer'
     });
+    /**
+     * The outcome's own shape never leaves the server (MICA-433): a success carries both
+     * citizenids, and answering it whole made sending $1 to a number a lookup of who holds it.
+     * The contract's reply schema checks this too (`lib/replyShape.ts`).
+     */
+    return outcome.ok ? { ok: true } : { ok: false, reason: outcome.reason };
   }
 );
 

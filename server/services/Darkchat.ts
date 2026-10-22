@@ -7,7 +7,7 @@ import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { isDuplicateKey } from '../lib/sqlErrors';
+import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
 import { RETENTION_BATCH } from '../lib/contentRetention';
 import { onBeforeSelfServiceDelete } from './Privacy';
 import { defineContract, responseType } from '@mica/shared/contract';
@@ -688,7 +688,7 @@ app.registerEvent('removeMember', async (_source, _cbId, data, citizenid) => {
   try {
     channel.push(target, 'removed', { channel_id: data.channel_id });
   } catch (error) {
-    console.error('[darkchat] removal push failed for channel', data.channel_id, error);
+    console.error('[darkchat] removal push failed for channel', data.channel_id, traceOf(error));
   }
   return true;
 });

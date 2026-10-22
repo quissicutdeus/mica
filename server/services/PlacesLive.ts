@@ -23,6 +23,7 @@ import { places } from './Places';
 import { contacts } from './Contacts';
 import { blockedBy } from './Blocklist';
 import { syncNumber } from './PhoneNumbers';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * The Places map and live location sharing (MICA-244).
@@ -193,7 +194,7 @@ const announce = (citizenid: string, share: LiveShare | null): void => {
       share ? { active: true, expires_at: share.expiresAt } : { active: false }
     );
   } catch (error) {
-    console.error('[micaOS] places: could not announce a live share change', error);
+    console.error('[micaOS] places: could not announce a live share change', traceOf(error));
   }
 };
 
@@ -259,7 +260,7 @@ const schedule = (): void => {
     try {
       tickLiveShares();
     } catch (error) {
-      console.error('[micaOS] places: live share tick failed', error);
+      console.error('[micaOS] places: live share tick failed', traceOf(error));
     }
     schedule();
   }, locationIntervalSeconds() * 1000);

@@ -131,14 +131,13 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'shareContact',
   // Hardware and framework reads
   'getBankBalance',
-  'getCitizenId',
   'getPhoneNumber',
   'setBatteryLevel',
   'takePhoto',
   // Front/rear toggle on the scripted camera.
   'flipCamera',
   // `mica_camera_quality`. The NUI cannot read a convar, so the client reads it and
-  // answers with it — a hardware read like the four above, not a service call.
+  // answers with it — a hardware read like the ones above, not a service call.
   'cameraQuality',
   // `mica_addon_hosts` and `mica_addon_catalog`, the same way and for the same reason
   // (MICA-126). Asked once at page load, before the registry re-verifies saved remote

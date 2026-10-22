@@ -33,6 +33,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import { SendSystemEmail } from '../services/Mail';
+import { who } from '../lib/who';
 
 const CITIZEN = 'CID_A';
 const SOURCE = 7;
@@ -78,7 +79,9 @@ describe('SendSystemEmail after the row is written', () => {
     expect(sent?.id).toBe(MAIL_ID);
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
     expect(error).toHaveBeenCalledTimes(1);
-    expect(logged()).toMatch(/stored system mail 42 for CID_A, but its live push failed/);
+    expect(logged()).toContain(
+      `stored system mail 42 for ${who('CID_A')}, but its live push failed`
+    );
     // The second step ran regardless: the app event went out.
     expect(emitted('mica:client:shell:appEvent')).toHaveLength(1);
   });
@@ -92,8 +95,19 @@ describe('SendSystemEmail after the row is written', () => {
 
     expect(sent?.id).toBe(MAIL_ID);
     expect(error).toHaveBeenCalledTimes(1);
-    expect(logged()).toMatch(/stored system mail 42 for CID_A, but its app event failed/);
+    expect(logged()).toContain(
+      `stored system mail 42 for ${who('CID_A')}, but its app event failed`
+    );
     expect(emitted(LIVE_PUSH)).toHaveLength(1);
+  });
+
+  it("pushes the mail without the recipient's own citizenid (MICA-433)", async () => {
+    await send();
+
+    const [push] = emitted(LIVE_PUSH);
+    expect(push?.[1]).toBe(SOURCE);
+    expect(push?.[2]).toMatchObject({ id: MAIL_ID, subject: SUBJECT });
+    expect(push?.[2]).not.toHaveProperty('citizenid');
   });
 
   it('never logs the subject or the body', async () => {

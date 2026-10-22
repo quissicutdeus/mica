@@ -25,7 +25,7 @@ import {
 } from './Darkchat';
 import { darkchatMessagesContract } from '@mica/shared/contracts/darkchat_messages';
 import type { DarkchatMessage } from '@mica/shared/types';
-import { reasonOf } from '../lib/sqlErrors';
+import { reasonOf, traceOf } from '../lib/sqlErrors';
 
 const TABLE = 'mica_darkchat_messages';
 
@@ -294,7 +294,7 @@ app.registerEvent('send', async (_source, _cbId, data, citizenid) => {
   try {
     announce(message, citizenid);
   } catch (error) {
-    console.error('[darkchat] push failed for message', id, error);
+    console.error('[darkchat] push failed for message', id, traceOf(error));
   }
   return message;
 });

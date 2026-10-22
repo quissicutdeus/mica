@@ -135,7 +135,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const nowStr = new Date().toISOString();
     const testMail = {
       id: Date.now(),
-      citizenid: 'DEV12345',
       sender: 'boss@ls-gov.org',
       subject: $t('settings.devtools.testMailSubject'),
       content: $t('settings.devtools.testMailContent'),

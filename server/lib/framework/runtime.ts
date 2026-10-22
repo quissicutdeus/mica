@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { traceOf } from '../sqlErrors';
+
 /**
  * The FiveM runtime seam, and the coercions every framework adapter needs (MICA-197).
  *
@@ -576,7 +578,7 @@ export const offlineLookup = async <T>(
       console.error(
         `[FrameworkBridge] ${what} failed. Offline players will render without a name until ` +
           `this is fixed; nothing else is affected. Reported once per resource start.`,
-        error
+        traceOf(error)
       );
     }
     return null;
@@ -627,7 +629,7 @@ const reportRemovalOnce = (call: string, item: string, message: string, error?: 
   // Once, because a broken inventory fails on every use, and a line per use would bury the
   // one that names it.
   if (error === undefined) console.error(`[FrameworkBridge] ${message}`);
-  else console.error(`[FrameworkBridge] ${message}`, error);
+  else console.error(`[FrameworkBridge] ${message}`, traceOf(error));
 };
 
 /**

@@ -4,6 +4,8 @@
 
 import { Database } from './Database';
 import type { FrameworkKind, FrameworkPlayer } from './framework/runtime';
+import { traceOf } from './sqlErrors';
+import { who } from './who';
 
 /**
  * Phone numbers micaOS owns, and the phone each one belongs to (MICA-151, MICA-284).
@@ -267,8 +269,8 @@ export const numberOfPhone = async (
     await sources.sync(holder.source);
   } catch (error) {
     console.error(
-      `[mica] could not sync the number of the phone ${holder.citizenid} holds.`,
-      error
+      `[mica] could not sync the number of the phone ${who(holder.citizenid)} holds.`,
+      traceOf(error)
     );
   }
 

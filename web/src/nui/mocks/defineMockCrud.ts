@@ -28,7 +28,7 @@ export interface MockCrudOptions<T> {
   visible?: (row: T) => boolean;
   /** Where a created row lands. */
   insert?: 'append' | 'prepend';
-  /** Fields the server would fill in beyond id, citizenid and timestamps. */
+  /** Fields the server would fill in beyond id and timestamps. */
   defaults?: Record<string, unknown>;
 }
 
@@ -62,7 +62,6 @@ export function defineMockCrud<T extends { id: number }>(
       await delay(wait);
       const now = new Date().toISOString();
       const created = {
-        citizenid: 'mock-id',
         ...options.defaults,
         ...draft,
         id: nextId++,

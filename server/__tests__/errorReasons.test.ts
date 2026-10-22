@@ -33,7 +33,8 @@ describe('reasonOf', () => {
       duplicateEntry('7-a', 'pair_key')
     );
     expect(thrown instanceof Error).toBe(false);
-    expect(reasonOf(thrown)).toBe("Duplicate entry '7-a' for key 'pair_key'");
+    // The driver's line, its value redacted (MICA-433): the key stays, what collided goes.
+    expect(reasonOf(thrown)).toBe("Duplicate entry '…' for key 'pair_key'");
   });
 
   it('answers nothing, never the parameters, when the driver said nothing', () => {

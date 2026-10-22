@@ -9,7 +9,7 @@ import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { pageBounds } from '../lib/payload';
-import { isDuplicateKey, reasonOf } from '../lib/sqlErrors';
+import { isDuplicateKey, reasonOf, traceOf } from '../lib/sqlErrors';
 import { RETENTION_BATCH } from '../lib/contentRetention';
 import { recordOwnerDeletion } from '../lib/moderation';
 import { whenSchemaReady } from '../lib/schemaReady';
@@ -567,7 +567,7 @@ const pushQuietly = (run: () => unknown, what: string): void => {
   try {
     run();
   } catch (error) {
-    console.error(`[spark] ${what} push failed:`, error);
+    console.error(`[spark] ${what} push failed:`, traceOf(error));
   }
 };
 

@@ -27,7 +27,7 @@ vi.mock('../../nui/fetchNui', () => ({
 import { fetchNui } from '../../nui/fetchNui';
 
 import Bank from './index.svelte';
-import { transactions, transactionsLoaded, bankBalance, citizenid } from '../../services/account';
+import { transactions, transactionsLoaded, bankBalance } from '../../services/account';
 import { invoices, invoicesLoaded } from '../../services/bank';
 import { toast } from '../../shell/state/toast';
 
@@ -47,7 +47,6 @@ let replies: Record<string, (data?: unknown) => unknown> = {};
 
 beforeEach(() => {
   bankBalance.set(0);
-  citizenid.set('TEST1');
   transactions.set([]);
   // Module-scoped, so it survives between tests: without the reset the second test
   // inherits the first one's completed fetch and never sees the loading frame.
@@ -73,7 +72,7 @@ const answerHistory = (source: { provider: string | null; available: boolean }) 
   replies.getTransactions = () => ({ ...source, transactions: [] });
 };
 
-/** The shape of `mockInvoices` in `nui/mocks/services/bank.ts`, minus what a row does not need. */
+/** The shape of `mockInvoices` in `nui/mocks/services/bank.ts`: what the wire carries (MICA-433). */
 const invoice = (
   id: number,
   from_label: string,
@@ -83,12 +82,10 @@ const invoice = (
   status: Invoice['status'] = 'active'
 ): Invoice => ({
   id,
-  citizenid: 'TEST1',
   from_label,
   amount,
   memo,
   society: 'mechanic',
-  payee: null,
   resource: 'test',
   expires_at: Math.floor(Date.now() / 1000) + days * 86_400,
   paid_at: status === 'paid' ? Math.floor(Date.now() / 1000) : null,

@@ -794,7 +794,8 @@ describe('a failing statement is logged where it fails', () => {
     expect(result.failures.map((f) => f.table)).toEqual(['mica_notes']);
     const logged = errors.mock.calls.find((call) => String(call[0]).includes('mica_notes'));
     expect(String(logged?.[0])).toContain('[micamedia]');
-    expect(logged?.[1]).toBeInstanceOf(Error);
+    // The reason and frames, never the error object (MICA-433).
+    expect(typeof logged?.[1]).toBe('string');
   });
 
   it('logs a table whose purge errors', async () => {
@@ -816,7 +817,7 @@ describe('a failing statement is logged where it fails', () => {
     try {
       const result = await sweepOrphanedRows();
       expect(result.skipped).toBe('owner-override-invalid');
-      expect(errors.mock.calls.some((call) => call[1] instanceof Error)).toBe(true);
+      expect(errors.mock.calls.some((call) => typeof call[1] === 'string')).toBe(true);
     } finally {
       (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
     }

@@ -98,13 +98,6 @@ on('__cfx_nui:getBankBalance', (_: any, cb: Function) => {
   cb(balance);
 });
 
-// NUI Callback to get citizen ID
-RegisterNuiCallbackType('getCitizenId');
-on('__cfx_nui:getCitizenId', (_: any, cb: Function) => {
-  const citizenId = FrameworkBridge.getCitizenId();
-  cb(citizenId);
-});
-
 // NUI Callback to get phone number
 RegisterNuiCallbackType('getPhoneNumber');
 on('__cfx_nui:getPhoneNumber', (_: any, cb: Function) => {

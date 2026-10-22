@@ -7,7 +7,7 @@ import { defineService, SchemaRepository, type ResolvedService } from '../lib/de
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { isReactableTable, reactableRule } from '../lib/reactions';
-import { isDuplicateKey } from '../lib/sqlErrors';
+import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
 import { Account } from '@mica/shared/types';
 import { pageBounds, requirePositiveInt } from '../lib/payload';
 import { accountsContract } from '@mica/shared/contracts/accounts';
@@ -810,7 +810,10 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
     try {
       await onBlocked(blocker, blocked);
     } catch (error) {
-      console.error(`[accounts] The ${appId} block handler failed for ${blocker.id}:`, error);
+      console.error(
+        `[accounts] The ${appId} block handler failed for ${blocker.id}:`,
+        traceOf(error)
+      );
     }
   }
 

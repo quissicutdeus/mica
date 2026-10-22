@@ -45,7 +45,8 @@ let checksRun = 0;
  * shape, and a keyed micaseed on qb. Plus MICA-306's first-start schema, below. Plus
  * `uniqueAfterDelete: 'revive'` on Hodlr and Battery, the seeded schema's one and eighteen on
  * each shape (REVIVE_CHECKS). Plus MICA-426's takedown and restore (MODERATION_CHECKS) and its
- * moderated rows through the purges (PURGE_MODERATED_CHECKS), on each shape.
+ * moderated rows through the purges (PURGE_MODERATED_CHECKS), and MICA-433's log-token salt
+ * (LOG_SALT_CHECKS), on each shape.
  */
 const IMPORT_CHECKS = 16;
 const RETENTION_CHECKS = 22;
@@ -86,11 +87,17 @@ const REVIVE_CHECKS = 19;
  * one and nine), on each shape.
  */
 const MODERATION_CHECKS = 11;
+/**
+ * MICA-433: the log-token salt on each shape, the seeded schema's one and three: minted once,
+ * read back alike by a second server, and a later second salt row leaving the choice alone.
+ */
+const LOG_SALT_CHECKS = 4;
 const PURGE_MODERATED_CHECKS = 10;
 const MINIMUM_CHECKS =
   52 +
   REVIVE_CHECKS * 2 +
   MODERATION_CHECKS * 2 +
+  LOG_SALT_CHECKS * 2 +
   PURGE_MODERATED_CHECKS * 2 +
   BOOTSTRAP_CHECKS * 2 +
   CRYPT_CHECKS * 2 +
@@ -275,6 +282,8 @@ const loadServerModule = async () => {
     `export { deleteThread } from '${root}/server/services/DirectMessages.ts';`,
     // MICA-426: the takedown and the restore, whose status move must leave `updated_at` alone.
     `export { moderateTarget, restoreTarget } from '${root}/server/lib/moderation.ts';`,
+    // MICA-433: the log-token salt, minted once into the migrations ledger and read back.
+    `export { __setLogSaltForTests, loadLogSalt, who } from '${root}/server/lib/who.ts';`,
     `import '${root}/server/services/Marketplace.ts';`,
     // MICA-165: the cipher and the backfill, in the same bundle as the importer, so an import
     // seals through the same registry and keyring the backfill reads.
@@ -1473,6 +1482,49 @@ const runModerationVariant = async ({ connection, schemaFile, hasPlayers, module
     (await q('SELECT id, status FROM mica_messages ORDER BY id')).map((r) => [r.id, r.status]),
     [[2, 'moderated']]
   );
+};
+
+/**
+ * MICA-433 on each shape: `who()`'s salt, minted into the migrations ledger by the statement a
+ * live server runs (`INSERT … SELECT … WHERE NOT EXISTS` on the ledger itself), read back alike
+ * by a second server, and chosen by `(applied_at, id)` when a second row lands later.
+ */
+const runLogSaltVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const label = `log-token salt on ${framework}`;
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'log_salt' });
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+  const salts = async () =>
+    (await q("SELECT id FROM mica_schema_migrations WHERE id LIKE 'log-salt:%'")).length;
+
+  step(`${label} — first start mints it`);
+  modules.__setLogSaltForTests(null);
+  await modules.loadLogSalt();
+  const first = modules.who('CID_A');
+  check(
+    `${label}: one salt row, and a token taken under it`,
+    [await salts(), first[0] !== '~'],
+    [1, true]
+  );
+
+  step(`${label} — a second server on the same database`);
+  modules.__setLogSaltForTests(null);
+  await modules.loadLogSalt();
+  check(
+    `${label}: it mints nothing and tokens alike`,
+    [await salts(), modules.who('CID_A')],
+    [1, first]
+  );
+
+  // What READ COMMITTED can leave: a second salt, written after the first.
+  await q(
+    'INSERT INTO mica_schema_migrations (id, applied_at) VALUES (?, NOW() + INTERVAL 1 MINUTE)',
+    [`log-salt:${'0'.repeat(64)}`]
+  );
+  modules.__setLogSaltForTests(null);
+  await modules.loadLogSalt();
+  check(`${label}: a later second row leaves the choice alone`, modules.who('CID_A'), first);
+  modules.__setLogSaltForTests(null);
 };
 
 /**
@@ -3594,6 +3646,10 @@ const main = async () => {
       hasPlayers: false,
       modules
     });
+
+    // MICA-433: the log-token salt, minted once and read back alike.
+    await runLogSaltVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
+    await runLogSaltVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, modules });
 
     // MICA-292: a reported photo outlives the purges and the sweep until its report resolves.
     await runEvidenceVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });

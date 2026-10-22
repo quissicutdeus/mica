@@ -6,6 +6,13 @@ import type { Listing } from '@mica/shared/types';
 import { mockListings } from '../data';
 import type { MockHandler } from '../registry';
 
+/**
+ * The listings this mock's player put up. Kept beside the rows rather than as a `citizenid` on
+ * them: no listing on the wire names its seller (MICA-433), and `view`'s `isOwn` is how the
+ * server answers "is this mine" without one.
+ */
+const mine = new Set<number>([1]);
+
 export const mocks: Record<string, MockHandler> = {
   'marketplace:feed': () => ({
     rows: mockListings.filter((l) => l.status === 'active'),
@@ -23,9 +30,7 @@ export const mocks: Record<string, MockHandler> = {
   'marketplace:mine': () => ({ rows: mockListings, nextCursor: null }),
   'marketplace:view': ({ id }: { id: number }) => {
     const listing = mockListings.find((l) => l.id === id);
-    return listing
-      ? { ...listing, contactPhone: '555-0100', isOwn: listing.citizenid === 'MOCK1' }
-      : null;
+    return listing ? { ...listing, contactPhone: '555-0100', isOwn: mine.has(listing.id) } : null;
   },
   'marketplace:create': ({
     title,
@@ -40,7 +45,6 @@ export const mocks: Record<string, MockHandler> = {
     const now = new Date().toISOString();
     const created: Listing = {
       id,
-      citizenid: 'MOCK1',
       title,
       price,
       description,
@@ -50,6 +54,7 @@ export const mocks: Record<string, MockHandler> = {
       attachments: []
     };
     mockListings.push(created);
+    mine.add(id);
     return created;
   },
   'marketplace:markSold': ({ id }: { id: number }) => {

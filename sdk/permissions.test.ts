@@ -32,6 +32,7 @@ import { ALL_PERMISSIONS, defineApp, type AppManifest, type AppPermission } from
 import {
   ADD_ON_REFUSED_PERMISSIONS,
   ANSWERED_IN_FRAME,
+  CORE_ONLY_PERMISSIONS,
   HOOK_OF_FACET,
   PERMISSION_OF,
   permissionOfFacet,
@@ -627,7 +628,11 @@ describe('an add-on naming a core-only write is refused at the shell', () => {
     { facet: 'messages', member: 'addReceivedMessage', permission: 'messages' },
     { facet: 'lockScreenWrite', member: 'setPasscode', permission: 'lock-screen-write' },
     { facet: 'lockScreenWrite', member: 'clearPasscode', permission: 'lock-screen-write' },
-    { facet: 'lockScreenWrite', member: 'setAutoLockPolicy', permission: 'lock-screen-write' }
+    { facet: 'lockScreenWrite', member: 'setAutoLockPolicy', permission: 'lock-screen-write' },
+    // MICA-433: the citizenid is the character's key, and the licence on ESX. The facet has
+    // no such member any more; a raw message naming one is still refused before it is built.
+    { facet: 'account', member: 'citizenid', permission: 'account' },
+    { facet: 'account', member: 'fetchCitizenId', permission: 'account' }
   ] as const;
   const originals = new Map<keyof Facets, Facets[keyof Facets]>();
 
@@ -701,8 +706,13 @@ describe('an add-on can name only what the shell will answer', () => {
   type ReturnOf<T> = T extends (...args: never[]) => infer R ? R : never;
   type InFrame = typeof ANSWERED_IN_FRAME;
 
-  /** Every `facet.member` hidden from an add-on, frozen: the finding's 29 plus the 5 above. */
+  /**
+   * Every `facet.member` hidden from an add-on, frozen: the finding's 29 plus the 5 above,
+   * and MICA-433's nine — all of `admin` and `reports`.
+   */
   const CORE_ONLY = [
+    'admin.isAdmin',
+    'admin.refreshAdmin',
     'appRegistryWrite.fetchRemoteCatalog',
     'appRegistryWrite.grantedPermissions',
     'appRegistryWrite.installFromCatalog',
@@ -728,6 +738,13 @@ describe('an add-on can name only what the shell will answer', () => {
     'notificationSettingsWrite.setDndEnabled',
     'notificationSettingsWrite.setNotificationSoundEnabled',
     'notificationSettingsWrite.setToastsEnabled',
+    'reports.loadPendingReports',
+    'reports.loadReportHistory',
+    'reports.pendingReportCount',
+    'reports.pendingReports',
+    'reports.reopenReport',
+    'reports.resolveReport',
+    'reports.resolvedReports',
     'streamerMode.setStreamerMode',
     'systemHardwareWrite.setCharge',
     'systemHardwareWrite.setNotificationTone',
@@ -743,7 +760,7 @@ describe('an add-on can name only what the shell will answer', () => {
     type Derived = { [F in FacetWithCoreOnly]: `${F}.${CoreOnlyMember<F>}` }[FacetWithCoreOnly];
     const exact: Equal<Derived, (typeof CORE_ONLY)[number]> = true;
     expect(exact).toBe(true);
-    expect(CORE_ONLY).toHaveLength(34);
+    expect(CORE_ONLY).toHaveLength(43);
 
     // The runtime half of the same claim: on neither list a frame is answered from.
     const answered = CORE_ONLY.filter((key) => {
@@ -791,6 +808,7 @@ describe('an add-on can name only what the shell will answer', () => {
 
   it('refuses add-ons exactly the permissions with nothing behind them, and the scan agrees', () => {
     expect(ADD_ON_REFUSED_PERMISSIONS).toEqual([
+      'admin',
       'app-registry-write',
       'keybinds-write',
       'lock-screen-write',
@@ -806,10 +824,33 @@ describe('an add-on can name only what the shell will answer', () => {
     expect(declaring).toEqual([]);
   });
 
+  it('keeps every facet behind a CORE_ONLY_PERMISSIONS entry empty for a frame (MICA-433)', () => {
+    expect(CORE_ONLY_PERMISSIONS).toEqual(['admin']);
+    const behind = Object.entries(HOOK_OF_FACET)
+      .filter(([, hook]) => {
+        const needed = PERMISSION_OF[hook];
+        const list: readonly string[] = needed === null ? [] : [needed].flat();
+        return list.some((p) => (CORE_ONLY_PERMISSIONS as readonly string[]).includes(p));
+      })
+      .map(([facet]) => facet)
+      .sort();
+    expect(behind).toEqual(['admin', 'reports']);
+    const reachable = behind.flatMap((facet) => [
+      ...(membersOfFacet(facet) ?? []).map((m) => `${facet}.${m}`),
+      ...((ANSWERED_IN_FRAME as Record<string, readonly string[]>)[facet] ?? []).map(
+        (m) => `${facet}.${m} (in frame)`
+      )
+    ]);
+    expect(reachable).toEqual([]);
+    for (const permission of CORE_ONLY_PERMISSIONS) {
+      expect(ADD_ON_REFUSED_PERMISSIONS).toContain(permission);
+    }
+  });
+
   it('re-types the hook of every facet with a core-only member, and only those', () => {
     const exact: Equal<keyof typeof addOnHooks, HookOf<FacetWithCoreOnly>> = true;
     expect(exact).toBe(true);
-    expect(Object.keys(addOnHooks)).toHaveLength(10);
+    expect(Object.keys(addOnHooks)).toHaveLength(12);
     for (const [name, hook] of Object.entries(addOnHooks)) {
       expect(hook, `${name} must be the core hook itself, only re-typed`).toBe(
         hostHooks[name as keyof typeof hostHooks]

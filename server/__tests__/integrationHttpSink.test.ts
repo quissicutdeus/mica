@@ -45,6 +45,7 @@ import { selfSignedIdentity } from '../../integration/lib/selfSigned';
 import { releaseHostedImages, resetMediaHostForTests, uploadImage } from '../lib/mediaHost';
 import { __resetDiscordWebhook, forwardAudit, WEBHOOK_CONVAR } from '../lib/DiscordWebhook';
 import { catalogEntries, resetStoreCatalogForTests } from '../services/Store';
+import { who } from '../lib/who';
 
 const PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -306,7 +307,7 @@ describe('the Discord webhook (MICA-242), on the wire', () => {
         title: 'Moderation',
         fields: [
           { name: 'Action', value: 'moderated · reports.resolve', inline: true },
-          { name: 'Actor', value: 'ADMIN_1', inline: true },
+          { name: 'Actor', value: who('ADMIN_1'), inline: true },
           { name: 'Target', value: 'mica_media #42', inline: true }
         ]
       });

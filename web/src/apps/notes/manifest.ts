@@ -19,7 +19,7 @@ export default defineApp({
    */
   preload: () => import('./store').then((m) => m.notes.load()),
   description: 'Create and store personal notes',
-  permissions: ['storage', 'display'],
+  permissions: ['storage', 'display', 'search'],
   /**
    * MICA-261: Notes is usable in the wide frame, with a root of its own for it. It is
    * `core: false`, so the shell does not mount `tablet.svelte` itself as it would a core

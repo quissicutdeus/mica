@@ -15,7 +15,7 @@ import {
   type LiveTable,
   type MigrationPlan
 } from './migrate';
-import { NO_REASON, reasonOf } from './sqlErrors';
+import { NO_REASON, reasonOf, traceOf } from './sqlErrors';
 
 /**
  * Reconcile the live database with the schema declarations, additively.
@@ -135,7 +135,7 @@ export const SchemaMigrator = {
     try {
       plans = await SchemaMigrator.plan();
     } catch (e) {
-      console.error('[mica] schema check failed:', e);
+      console.error('[mica] schema check failed:', traceOf(e));
       return;
     }
 

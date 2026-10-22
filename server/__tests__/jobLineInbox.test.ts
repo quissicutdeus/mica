@@ -569,7 +569,7 @@ describe('lineReply (MICA-307)', () => {
     expect(reply).toMatchObject({ id: 555, side: 'line' });
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining("could not tell 911's staff"),
-      expect.any(Error)
+      expect.any(String)
     );
   });
 });
@@ -705,7 +705,7 @@ describe('a job line notifies once per wait, not once per text (MICA-307)', () =
     expect(optionsOf(0)).toMatchObject({ notify: { message: 'From 555-0003' } });
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining('could not read thread 9101 on 911'),
-      expect.any(Error)
+      expect.any(String)
     );
   });
 });

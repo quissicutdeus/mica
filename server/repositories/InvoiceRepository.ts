@@ -7,6 +7,34 @@ import { Database } from '../lib/Database';
 import type { Invoice } from '@mica/shared/types';
 
 /**
+ * The row as the server holds it: the wire `Invoice` plus the two columns no reply carries —
+ * the billed player's `citizenid`, and `payee`, the character paid, which is somebody else's
+ * citizenid (MICA-433).
+ */
+export type InvoiceRow = Invoice & { citizenid: string; payee: string | null };
+
+/**
+ * What `findOpen` selects, by name rather than `*` (MICA-433): every column of the wire type
+ * and nothing else. A `SELECT *` here put the biller's citizenid in `payee` on every row of the
+ * billed player's list.
+ */
+const OPEN_COLUMNS = [
+  'id',
+  'from_label',
+  'amount',
+  'memo',
+  'society',
+  'resource',
+  'expires_at',
+  'paid_at',
+  'status',
+  'created_at',
+  'updated_at'
+]
+  .map((column) => `\`${column}\``)
+  .join(', ');
+
+/**
  * The three writes an invoice's life needs and the generic path cannot express (MICA-240).
  *
  * All three are **named** methods with the predicate written out, which is what §2.9 asks of a
@@ -16,11 +44,11 @@ import type { Invoice } from '@mica/shared/types';
  * go through after the claim. `expireDue` is the sweep, and is the one write here with no
  * citizen in its predicate, because it is the server's own housekeeping over every row.
  */
-export class InvoiceRepository extends SchemaRepository<Invoice> {
+export class InvoiceRepository extends SchemaRepository<InvoiceRow> {
   /** Open invoices for one citizen that have not lapsed, newest first. */
   async findOpen(citizenid: string, now: number): Promise<Invoice[]> {
     return await Database.query<Invoice[]>(
-      `SELECT * FROM \`mica_invoices\`
+      `SELECT ${OPEN_COLUMNS} FROM \`mica_invoices\`
         WHERE \`citizenid\` = ? AND \`status\` = 'active' AND \`expires_at\` > ?
         ORDER BY \`id\` DESC`,
       [citizenid, now]

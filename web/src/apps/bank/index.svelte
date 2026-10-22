@@ -45,10 +45,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     transactions,
     transactionsLoaded,
     historySource,
-    citizenid,
     fetchBalance,
-    fetchTransactions,
-    fetchCitizenId
+    fetchTransactions
   } = useAccount();
   const { invoices, fetchInvoices } = useBank();
   const { toast } = usePhoneNotification('bank');
@@ -66,7 +64,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   onAppForeground('bank', () => {
     void fetchBalance();
     void fetchTransactions();
-    void fetchCitizenId();
     void fetchInvoices();
   });
 
@@ -126,7 +123,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          hides underneath the nav. -->
     <div class="p-4 pb-20">
       <!-- Card -->
-      <CreditCard balance={$bankBalance} citizenid={$citizenid} />
+      <CreditCard balance={$bankBalance} />
 
       <Button class="mb-6 w-full" onclick={() => (showSendMoney = true)}
         >{$t('bank.sendMoney')}</Button

@@ -18,6 +18,7 @@ import {
   type NearbyBroadcast,
   type NearbyMusicEnvelope
 } from '@mica/shared/musicBroadcast';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * MICA-111 phase 2 — the half that makes a phone audible to the people standing next to
@@ -335,17 +336,6 @@ app.registerEvent('broadcastStop', async (source) => {
   return { ok: true };
 });
 
-/** `Firstname Lastname` off the framework's in-memory character, or null. */
-const labelFor = (player: unknown): string | null => {
-  const charinfo = (player as { PlayerData?: { charinfo?: Record<string, unknown> } })?.PlayerData
-    ?.charinfo;
-  if (!charinfo) return null;
-  const first = typeof charinfo.firstname === 'string' ? charinfo.firstname : '';
-  const last = typeof charinfo.lastname === 'string' ? charinfo.lastname : '';
-  const name = `${first} ${last}`.trim();
-  return name ? name.slice(0, 64) : null;
-};
-
 /**
  * Is this source still a live client?
  *
@@ -363,7 +353,7 @@ const send = (src: number, envelope: NearbyMusicEnvelope): boolean => {
     emitNet(MUSIC_BROADCAST_NET_EVENT, src, envelope);
     return true;
   } catch (error) {
-    console.error(`[mica] music push to ${src} failed:`, error);
+    console.error(`[mica] music push to ${src} failed:`, traceOf(error));
     return false;
   }
 };
@@ -401,16 +391,13 @@ export const pollMusic = (): void => {
   const located: {
     broadcast: Broadcast;
     coords: [number, number, number];
-    label: string | null;
   }[] = [];
   for (const broadcast of active) {
     const coords = playerCoords(broadcast.source);
     // No ped — spawning, or between characters. Inaudible this tick, but still theirs: a
     // player walking back into the world should not have to press play again.
     if (!coords) continue;
-    // One record per audible broadcaster, for the name — never one per player (MICA-354).
-    const label = labelFor(FrameworkBridge.getPlayer(broadcast.source)?.rawPlayer);
-    located.push({ broadcast, coords, label });
+    located.push({ broadcast, coords });
   }
 
   const range = rangeMeters();
@@ -441,7 +428,7 @@ export const pollMusic = (): void => {
     /**
      * Only a loaded character hears anything (MICA-354 review). The ids are the registry's,
      * which still holds a player on character select after a multichar logout, under the
-     * character they left — and a push would hand them the stereo and its owner's label.
+     * character they left — and a push would hand them the stereo.
      * Such a listener hears nothing, so one who was listening is told once that it stopped,
      * exactly as if they had walked away. Asked only of a listener with something in range,
      * so the lookup is paid per audible listener, never per player.
@@ -476,12 +463,18 @@ export const pollMusic = (): void => {
 
     if (!isLive(listener)) continue;
 
-    const payload: NearbyBroadcast[] = audible.map(({ broadcast, label }) => ({
+    const payload: NearbyBroadcast[] = audible.map(({ broadcast }) => ({
       source: broadcast.source,
       // Issued here rather than at start, so the lookup is touched only for a broadcast
       // somebody can actually hear.
       token: tokenFor(broadcast.citizenid),
-      label,
+      /**
+       * No personal label (MICA-433). This was the broadcaster's character name off charinfo,
+       * pushed to everyone within earshot every tick — a real name to strangers who had only
+       * heard a stereo. The app reads null as "someone nearby"; `token` is what tells two
+       * broadcasters apart for a mute.
+       */
+      label: null,
       videoId: broadcast.videoId,
       playlistId: broadcast.playlistId,
       /**

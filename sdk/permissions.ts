@@ -84,13 +84,6 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   // reads it for every app — so gating it would mean a kit component every app renders
   // needs a permission no app has a reason to declare. The setter is core only.
   useStreamerMode: null,
-  // MICA-286: an app listing its own rows in the phone's search. Implicit for the same
-  // reason `useAppLevels` and `useDeepLink` are — it is a way *into* this app and nothing
-  // else. The shell pushes it one string, the player's own query, which the player is
-  // typing at a sheet the app cannot see; the app answers with rows it already holds. A
-  // permission here would gate an app's ability to be found, which is the one thing every
-  // app on the home screen already is.
-  useSearchProvider: null,
   // data
   useAccount: 'account',
   useAdmin: 'admin',
@@ -142,6 +135,11 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   useThemeWrite: 'theme-write',
   useWallpaper: 'wallpaper',
   useWallpaperWrite: 'wallpaper-write',
+  // MICA-286 made this implicit, as a way *into* the app and nothing else. MICA-433 gated
+  // it: the shell pushes every provider the player's query as they type it, one keystroke
+  // at a time, to every running add-on that provides search, whether or not the player has
+  // opened it. Being found costs the app nothing; reading what the player types is an ask.
+  useSearchProvider: 'search',
   // kit components that call a host hook on the app's behalf
   // MICA-392: the DM inbox and thread read and write through `useDirectMessages` and listen
   // for the `dm` push through `useAppEvents`; neither toasts, so no `notifications`.
@@ -284,13 +282,7 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
   'locale',
   // MICA-249. One boolean every picture-drawing surface reads; `setStreamerMode` is not
   // on the allowlist, so a frame can honour the flag and cannot flip the player's.
-  'streamerMode',
-  // MICA-286. Returns a real object with two named members, so it is nothing like the
-  // bare-function shape `DENIED_FACETS` exists for. What it takes is an app id, and an app
-  // id is a claim: it decides which heading a frame's hits appear under, so it is pinned
-  // in `IframeHostServer.ts`'s `APP_SCOPED_FACETS` alongside `storage`/`notifications`
-  // rather than trusted. Safe *because* of that pin, not independently of it.
-  'searchProvider'
+  'streamerMode'
 ]);
 
 /**
@@ -362,6 +354,7 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
  *   one, so `clearPasscode` removes the player's and `setPasscode` replaces it with one they
  *   do not know. `setAutoLockPolicy` goes too: `'never'` skips the lock screen entirely,
  *   which is the passcode removed by another name.
+ * - `admin` and `reports` are empty (MICA-433): see `CORE_ONLY_PERMISSIONS`.
  */
 export const FACET_MEMBERS = {
   // Player data.
@@ -371,11 +364,9 @@ export const FACET_MEMBERS = {
     'transactions',
     'transactionsLoaded',
     'historySource',
-    'citizenid',
     'fetchPhoneNumber',
     'fetchBalance',
-    'fetchTransactions',
-    'fetchCitizenId'
+    'fetchTransactions'
   ],
   accounts: [
     'getMyAccounts',
@@ -394,7 +385,7 @@ export const FACET_MEMBERS = {
     'reactToTarget',
     'unreactToTarget'
   ],
-  admin: ['isAdmin', 'refreshAdmin'],
+  admin: [],
   bank: [
     'sendMoney',
     'invoices',
@@ -466,15 +457,7 @@ export const FACET_MEMBERS = {
     'clearAll'
   ],
   report: ['submit'],
-  reports: [
-    'pendingReports',
-    'resolvedReports',
-    'pendingReportCount',
-    'loadPendingReports',
-    'loadReportHistory',
-    'resolveReport',
-    'reopenReport'
-  ],
+  reports: [],
   storage: ['setItem', 'removeItem', 'markUnsynced', 'clear'],
 
   // The phone itself.
@@ -677,8 +660,21 @@ export const ANSWERED_IN_FRAME = {
 const IN_FRAME_INDEX = new Map<string, readonly string[]>(Object.entries(ANSWERED_IN_FRAME));
 
 /**
+ * Permissions no `core: false` manifest may declare, whatever the rows above say.
+ *
+ * `admin` reads the moderation queue: who reported whom, and `target_author`, which unmasks a
+ * Dark Chat alias (MICA-433). Its rows are empty, which already lands it in
+ * `ADD_ON_REFUSED_PERMISSIONS` by derivation. It is named here too, so that giving one of
+ * those rows a member later does not quietly hand the queue to the Store.
+ * `permissions.test.ts` holds every facet behind one of these to an empty row, and
+ * `IframeHostServer` shuts a frame whose manifest declares one before answering anything.
+ */
+export const CORE_ONLY_PERMISSIONS: readonly AppPermission[] = ['admin'];
+
+/**
  * The permissions a `core: false` manifest may not declare: every facet behind each one has
- * nothing an add-on can use, on the wire or in the frame.
+ * nothing an add-on can use, on the wire or in the frame, or it is in
+ * `CORE_ONLY_PERMISSIONS`.
  *
  * Disclosing one would put a line on the Store's permission sheet that grants nothing, and a
  * player would be asked to accept it. `defineApp` refuses such a manifest by name, and
@@ -686,15 +682,18 @@ const IN_FRAME_INDEX = new Map<string, readonly string[]>(Object.entries(ANSWERE
  * add-on builds; `permissions.test.ts` holds the two equal.
  *
  * Derived from the tables above, so emptying a row is all it takes to land a permission here,
- * and giving a row a member takes it back out.
+ * and giving a row a member takes it back out, unless `CORE_ONLY_PERMISSIONS` names it.
  */
 export const ADD_ON_REFUSED_PERMISSIONS: readonly AppPermission[] = (() => {
-  const reachable = new Map<AppPermission, number>();
+  const reachable = new Map<AppPermission, number>(
+    CORE_ONLY_PERMISSIONS.map((permission) => [permission, 0])
+  );
   for (const [facet, hook] of Object.entries(HOOK_OF_FACET)) {
     const needed = PERMISSION_OF[hook];
     if (typeof needed !== 'string') continue;
     const onWire = DENIED_FACETS.has(facet) ? 0 : (membersOfFacet(facet)?.length ?? 0);
     const inFrame = IN_FRAME_INDEX.get(facet)?.length ?? 0;
+    if (CORE_ONLY_PERMISSIONS.includes(needed)) continue;
     reachable.set(needed, (reachable.get(needed) ?? 0) + onWire + inFrame);
   }
   return [...reachable]
@@ -933,7 +932,6 @@ export interface UnpinnedAppIdArg {
  */
 export const MEMBER_APP_ARGS = {
   'account.fetchBalance': null,
-  'account.fetchCitizenId': null,
   'account.fetchPhoneNumber': null,
   'account.fetchTransactions': null,
   'accounts.blockAccount': { arg: 0, field: 'app' },
@@ -953,7 +951,6 @@ export const MEMBER_APP_ARGS = {
   // Names a row by `id`, not an app. Its `app` field is optional and the server refuses it
   // on a generic write, so there is nothing here to pin.
   'accounts.updateAccount': null,
-  'admin.refreshAdmin': null,
   'appAction.notify': null,
   'appEvents.clear': null,
   'appEvents.on': null,
@@ -1052,10 +1049,6 @@ export const MEMBER_APP_ARGS = {
   'phoneNotification.dismissNotification': null,
   'phoneNotification.sendNotification': null,
   'report.submit': null,
-  'reports.loadPendingReports': null,
-  'reports.loadReportHistory': null,
-  'reports.reopenReport': null,
-  'reports.resolveReport': null,
   'searchProvider.publish': null,
   'service.call': null,
   'sound.play': null,

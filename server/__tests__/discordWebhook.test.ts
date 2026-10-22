@@ -20,6 +20,7 @@ import {
   PAYMENT_MIN_CONVAR
 } from '../lib/DiscordWebhook';
 import type { AuditLogOptions } from '../lib/AuditLogger';
+import { who } from '../lib/who';
 
 /**
  * The Discord mirror of the moderation ledger (MICA-242). Everything here runs on fake
@@ -139,7 +140,8 @@ describe('payload shape', () => {
     expect(embed.timestamp).toBe('2026-09-09T12:00:00.000Z');
     expect(embed.fields).toEqual([
       { name: 'Action', value: 'moderated · reports.resolve', inline: true },
-      { name: 'Actor', value: 'ADMIN_1', inline: true },
+      // `who()`'s token outside the content gate (MICA-433): a citizenid is an ESX licence.
+      { name: 'Actor', value: who('ADMIN_1'), inline: true },
       { name: 'Target', value: 'mica_media #42', inline: true }
     ]);
   });
@@ -194,6 +196,48 @@ describe('the content gate', () => {
     expect(audit.fields.at(-1)).toEqual({ name: 'Details', value: '{"reason":"harassment"}' });
     expect(report.fields.at(-1)).toEqual({ name: 'Note', value: 'reporter note' });
     expect(payment.fields.at(-1)).toEqual({ name: 'Reason', value: 'rent' });
+  });
+
+  /**
+   * MICA-433: a character is `who()`'s token in the channel unless the owner opted into content,
+   * where the staff channel is trusted with the raw id. A society is not a person either way.
+   */
+  it('names characters by token by default, and raw only under the content gate', async () => {
+    convars.set(PAYMENT_MIN_CONVAR, '0');
+    const send = () => {
+      forwardAudit(moderation());
+      forwardReportFiled({
+        reportId: 1,
+        citizenid: 'CIT_B',
+        targetTable: 'mica_messages',
+        targetId: 3,
+        category: 'other'
+      });
+      forwardPayment({ from: 'CIT_A', to: 'society:police', amount: 5, service: 'society' });
+    };
+    const named = (embeds: any[]) => [
+      embeds[0].fields.find((f: any) => f.name === 'Actor').value,
+      embeds[1].fields.find((f: any) => f.name === 'Reporter').value,
+      embeds[2].fields.find((f: any) => f.name === 'From').value,
+      embeds[2].fields.find((f: any) => f.name === 'To').value
+    ];
+
+    send();
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(named(posts()[0].embeds)).toEqual([
+      who('ADMIN_1'),
+      who('CIT_B'),
+      who('CIT_A'),
+      'society:police'
+    ]);
+    expect(JSON.stringify(posts()[0])).not.toMatch(/CIT_|ADMIN_1/);
+
+    fetchMock.mockClear();
+    convars.set(CONTENT_CONVAR, '1');
+    await vi.advanceTimersByTimeAsync(60_000);
+    send();
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(named(posts()[0].embeds)).toEqual(['ADMIN_1', 'CIT_B', 'CIT_A', 'society:police']);
   });
 
   it('truncates a detail to what Discord accepts in one field', async () => {

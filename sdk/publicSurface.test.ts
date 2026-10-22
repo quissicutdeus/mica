@@ -1791,7 +1791,10 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
     'notification-settings-write',
     'system-hardware-write',
     'theme-write',
-    'wallpaper-write'
+    'wallpaper-write',
+    // MICA-433: `useSearchProvider` was implicit, and every running add-on providing search
+    // was handed each keystroke of the player's query. Appended, like the block above.
+    'search'
   ]
 };
 
@@ -1812,11 +1815,12 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
  * only reason to edit a line is a removal, which is a `SDK_CONTRACT_VERSION` bump.
  */
 const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
+  // MICA-433 removed `citizenid` and `fetchCitizenId` from the facet for every app, core
+  // included: nothing in the phone reads the citizenid any more. A removal, which would be a
+  // bump, but SDK 1 is unreleased and the contract stays at 1 (523c1bbc).
   useAccount: [
     'bankBalance',
-    'citizenid',
     'fetchBalance',
-    'fetchCitizenId',
     'fetchPhoneNumber',
     'fetchTransactions',
     'historySource',
@@ -2126,7 +2130,7 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
  * by hook. They were taken off the add-on types on 2026-10-19 in the add-on boundary wave,
  * and the contract stayed at 1 because SDK 1 is unreleased.
  *
- * `addon.ts` re-types ten hooks (`host/iframe/addOnHooks.ts`) so that a member the shell
+ * `addon.ts` re-types twelve hooks (`host/iframe/addOnHooks.ts`) so that a member the shell
  * refuses a sandboxed frame as "core only" no longer type-checks in an add-on: before that,
  * `useKeybindsWrite().setBinding` compiled in a `core: false` bundle and failed at run time.
  * Each list here is exactly that hook's `CoreOnlyMember` set from `sdk/permissions.ts`.
@@ -2138,12 +2142,19 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
  * member here takes it away from every published add-on, which is a `SDK_CONTRACT_VERSION`
  * bump, and taking one out is an addition and breaks nobody.
  *
- * `useAppRegistryWrite`, `useKeybindsWrite`, `useLockScreenWrite` and
- * `useNotificationSettingsWrite` lose every member, and a `core: false` manifest may not
+ * `useAdmin`, `useAppRegistryWrite`, `useKeybindsWrite`, `useLockScreenWrite`,
+ * `useNotificationSettingsWrite` and `useReports` lose every member, and a `core: false` manifest may not
  * declare their permissions at all (`ADD_ON_REFUSED_PERMISSIONS`). They stay exported, so
  * an add-on that imported one still compiles until it reaches for a member.
  */
 const ADD_ON_HOOK_OMISSIONS: Record<string, string[]> = {
+  /**
+   * MICA-433, the same terms as the rest: SDK 1 is unreleased, so the contract stays at 1
+   * (523c1bbc). `useAdmin` and `useReports` lose everything because `admin` is in
+   * `CORE_ONLY_PERMISSIONS`: the moderation queue names
+   * reporters and unmasks Dark Chat aliases.
+   */
+  useAdmin: ['isAdmin', 'refreshAdmin'],
   useAppRegistryWrite: [
     'fetchRemoteCatalog',
     'grantedPermissions',
@@ -2168,6 +2179,15 @@ const ADD_ON_HOOK_OMISSIONS: Record<string, string[]> = {
     'setDndEnabled',
     'setNotificationSoundEnabled',
     'setToastsEnabled'
+  ],
+  useReports: [
+    'loadPendingReports',
+    'loadReportHistory',
+    'pendingReportCount',
+    'pendingReports',
+    'reopenReport',
+    'resolveReport',
+    'resolvedReports'
   ],
   useStreamerMode: ['setStreamerMode'],
   useSystemHardwareWrite: [
@@ -2352,7 +2372,13 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
   ],
   Contact: [
     'avatar?',
-    'citizenid',
+    // MICA-433: `citizenid` became optional on Contact, Invoice, Mail and Note, because the
+    // server strips it from every reply and the shell strips it again from everything posted
+    // to a frame. This is a narrowing for a reader: an add-on that treated the field as a
+    // `string` no longer type-checks. The differ strips `?` and does not report it (the
+    // stated blind spot above), so it is recorded here. No bump: SDK 1 is unreleased
+    // (523c1bbc).
+    'citizenid?',
     'created_at',
     'device_id?',
     'email?',
@@ -2446,14 +2472,16 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
   HostRuntime: ['|browser', '|cef', '|headless'],
   Invoice: [
     'amount',
-    'citizenid',
+    'citizenid?', // MICA-433, see Contact.
     'created_at',
     'expires_at',
     'from_label',
     'id',
     'memo',
     'paid_at',
-    'payee',
+    // MICA-433 took `payee` off the wire type: it was the biller's citizenid, sent to the
+    // player being billed. A removal, which would be a bump, but SDK 1 is unreleased and
+    // the contract stays at 1 (523c1bbc).
     'resource',
     'society',
     'status',
@@ -2477,7 +2505,7 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
   KeybindGroup: ['actions', 'ownerId', 'ownerLabel'],
   ListingPage: ['nextCursor', 'rows'],
   Mail: [
-    'citizenid',
+    'citizenid?', // MICA-433, see Contact.
     'content',
     'created_at',
     'id',
@@ -2497,7 +2525,7 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
   MusicStatus: ['|error', '|idle', '|loading', '|paused', '|playing'],
   NearbyBroadcast: ['label', 'paused', 'playlistId', 'source', 'startedAt', 'token', 'videoId'],
   Note: [
-    'citizenid',
+    'citizenid?', // MICA-433, see Contact.
     'content',
     'created_at',
     'device_id?',
@@ -3427,7 +3455,7 @@ describe('the SDK public surface (MICA-125)', () => {
 
   /**
    * The arm above reads hooks off `index.ts`, which a core app builds against; `addon.ts`
-   * now types ten of them narrower, so what an add-on compiled against is read off the add-on
+   * now types twelve of them narrower, so what an add-on compiled against is read off the add-on
    * barrel here. Its baseline is `BASELINE_HOOK_RETURNS` minus
    * `ADD_ON_HOOK_OMISSIONS`, and the second half holds the omissions to the live checker, so
    * the add-on surface is exactly the frozen one minus the list and cannot drift in silence.

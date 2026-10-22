@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineService } from '../lib/defineService';
-import { InvoiceRepository } from '../repositories/InvoiceRepository';
+import { InvoiceRepository, type InvoiceRow } from '../repositories/InvoiceRepository';
 import { invoicesContract } from '@mica/shared/contracts/invoices';
 import { buildDeepLink } from '@mica/shared/deepLink';
 import type { Invoice, InvoiceActionOutcome } from '@mica/shared/types';
@@ -11,6 +11,8 @@ import { appEventChannel } from '../lib/appEvents';
 import { payToSociety, transfer, type PaymentOutcome } from '../lib/Payments';
 import { onResourceReleased } from '../lib/resourceStop';
 import { startupJobsMayRunNow, whenSchemaReady } from '../lib/schemaReady';
+import { traceOf } from '../lib/sqlErrors';
+import { who } from '../lib/who';
 
 /**
  * Invoices (MICA-240): a resource bills a player, and the player pays or declines from the
@@ -34,7 +36,7 @@ import { startupJobsMayRunNow, whenSchemaReady } from '../lib/schemaReady';
  * charge once. A payee who is offline is `recipient_offline` and the invoice stays open;
  * crediting an offline character would mean writing the framework's own tables (§10).
  */
-export const invoices = defineService<Invoice, typeof invoicesContract>({
+export const invoices = defineService<InvoiceRow, typeof invoicesContract>({
   id: 'invoices',
   app: 'bank',
   contract: invoicesContract,
@@ -88,7 +90,7 @@ export const expireDueInvoices = async (): Promise<void> => {
   try {
     await repo.expireDue(nowSeconds());
   } catch (error) {
-    console.error('[Invoices] the expiry sweep failed; it runs again next hour.', error);
+    console.error('[Invoices] the expiry sweep failed; it runs again next hour.', traceOf(error));
   }
 };
 
@@ -107,8 +109,8 @@ on('onResourceStart', (resource: string) => {
 /* --------------------------------------------------------------- callbacks */
 
 export interface InvoiceCallbacks {
-  onPaid?: (invoice: Invoice) => unknown;
-  onDeclined?: (invoice: Invoice) => unknown;
+  onPaid?: (invoice: InvoiceRow) => unknown;
+  onDeclined?: (invoice: InvoiceRow) => unknown;
 }
 
 /**
@@ -133,20 +135,25 @@ export const __resetInvoiceCallbacks = (): void => {
 };
 
 /** Tell the biller, and never let its handler's failure reach the player's request. */
-const notifyBiller = (invoice: Invoice, event: 'onPaid' | 'onDeclined'): void => {
+const notifyBiller = (invoice: InvoiceRow, event: 'onPaid' | 'onDeclined'): void => {
   const entry = callbacks.get(invoice.id);
   callbacks.delete(invoice.id);
   const handler = entry?.[event];
   if (!handler) return;
   try {
     Promise.resolve(handler(invoice)).catch((error: unknown) => {
+      // log-identity-ok: the resource that registered the callback, not a player
       console.error(
         `[Invoices] ${entry?.owner}'s ${event} for invoice ${invoice.id} rejected:`,
-        error
+        traceOf(error)
       );
     });
   } catch (error) {
-    console.error(`[Invoices] ${entry?.owner}'s ${event} for invoice ${invoice.id} threw:`, error);
+    // log-identity-ok: the resource that registered the callback, not a player
+    console.error(
+      `[Invoices] ${entry?.owner}'s ${event} for invoice ${invoice.id} threw:`,
+      traceOf(error)
+    );
   }
 };
 
@@ -189,7 +196,7 @@ export const createInvoice = async (
   cbs: InvoiceCallbacks = {}
 ): Promise<number> => {
   const expires_at = nowSeconds() + expiryDays() * DAY_SECONDS;
-  const id = await repo.create({ ...input, expires_at, paid_at: null } as Partial<Invoice>);
+  const id = await repo.create({ ...input, expires_at, paid_at: null } as Partial<InvoiceRow>);
   rememberCallbacks(id, input.resource, cbs);
 
   const outcome = appEventChannel('bank').push(
@@ -209,7 +216,7 @@ export const createInvoice = async (
   );
   if (!outcome.delivered && outcome.reason !== 'offline') {
     console.error(
-      `[Invoices] could not push invoice ${id} to ${input.citizenid}: ${outcome.reason}`
+      `[Invoices] could not push invoice ${id} to ${who(input.citizenid)}: ${outcome.reason}`
     );
   }
   return id;
@@ -232,7 +239,7 @@ invoices.app.registerEvent('getOpen', async (source, cbId, data, citizenid) => {
 const ownOpenInvoice = async (
   id: number,
   citizenid: string
-): Promise<{ invoice: Invoice } | { refusal: InvoiceActionOutcome }> => {
+): Promise<{ invoice: InvoiceRow } | { refusal: InvoiceActionOutcome }> => {
   const invoice = await repo.findById(id, citizenid);
   if (!invoice) return { refusal: { ok: false, reason: 'unknown_invoice' } };
   if (invoice.status !== 'active') return { refusal: { ok: false, reason: 'not_open' } };
@@ -245,7 +252,7 @@ const ownOpenInvoice = async (
 };
 
 /** Route the money to whichever side the invoice names. */
-const settle = async (invoice: Invoice, payer: string): Promise<PaymentOutcome> => {
+const settle = async (invoice: InvoiceRow, payer: string): Promise<PaymentOutcome> => {
   const reason = `Invoice ${invoice.id} from ${invoice.from_label}`;
   const amount = Number(invoice.amount);
   if (invoice.society) {
@@ -291,7 +298,7 @@ const stampPaidAt = async (id: number, citizenid: string, paidAt: number): Promi
     await repo.stampPaid(id, citizenid, paidAt);
   } catch (error) {
     // The money moved and the row is `paid`; a missing timestamp is worth a line, not a refund.
-    console.error(`[Invoices] could not stamp paid_at on invoice ${id}:`, error);
+    console.error(`[Invoices] could not stamp paid_at on invoice ${id}:`, traceOf(error));
   }
 };
 

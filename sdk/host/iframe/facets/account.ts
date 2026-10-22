@@ -15,11 +15,9 @@ export function account(): Twin {
     transactions: store('account', [], 'transactions', []),
     transactionsLoaded: store('account', [], 'transactionsLoaded', false),
     historySource: store('account', [], 'historySource', { provider: null, available: false }),
-    citizenid: store('account', [], 'citizenid', ''),
     fetchPhoneNumber: fn('account', [], 'fetchPhoneNumber'),
     fetchBalance: fn('account', [], 'fetchBalance'),
-    fetchTransactions: fn('account', [], 'fetchTransactions'),
-    fetchCitizenId: fn('account', [], 'fetchCitizenId')
+    fetchTransactions: fn('account', [], 'fetchTransactions')
   };
 }
 // The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of

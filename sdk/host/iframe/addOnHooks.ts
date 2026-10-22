@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * The add-on barrel's own types for the ten hooks whose facet carries a member only a core
- * app can call.
+ * The add-on barrel's own types for the twelve hooks whose facet carries a member only a
+ * core app can call.
  *
  * `Facets` is one type for both sides, and every hook in `host/` returns its facet's whole
  * shape. So `useKeybindsWrite().setBinding` type-checked in an add-on and was refused at
@@ -24,6 +24,7 @@
  * fails there until its hook is narrowed here too.
  */
 import type { CoreOnlyMember, FacetWithCoreOnly } from '../../permissions';
+import { useAdmin as coreAdmin } from '../useAdmin';
 import { useAppRegistryWrite as coreAppRegistryWrite } from '../useAppRegistryWrite';
 import { useDisplayWrite as coreDisplayWrite } from '../useDisplayWrite';
 import { useKeybindsWrite as coreKeybindsWrite } from '../useKeybindsWrite';
@@ -32,6 +33,7 @@ import { useLockScreenWrite as coreLockScreenWrite } from '../useLockScreenWrite
 import { useMail as coreMail } from '../useMail';
 import { useMessages as coreMessages } from '../useMessages';
 import { useNotificationSettingsWrite as coreNotificationSettingsWrite } from '../useNotificationSettingsWrite';
+import { useReports as coreReports } from '../useReports';
 import { useStreamerMode as coreStreamerMode } from '../useStreamerMode';
 import { useSystemHardwareWrite as coreSystemHardwareWrite } from '../useSystemHardwareWrite';
 
@@ -40,6 +42,11 @@ type ForAddOn<H extends (...args: never[]) => object, F extends FacetWithCoreOnl
   ...args: Parameters<H>
 ) => Omit<ReturnType<H>, CoreOnlyMember<F>>;
 
+/**
+ * MICA-433: nothing at all, because `admin` is a `CORE_ONLY_PERMISSIONS` entry and no add-on
+ * manifest may declare it. `useReports` below is behind the same permission.
+ */
+export const useAdmin: ForAddOn<typeof coreAdmin, 'admin'> = coreAdmin;
 export const useAppRegistryWrite: ForAddOn<typeof coreAppRegistryWrite, 'appRegistryWrite'> =
   coreAppRegistryWrite;
 export const useDisplayWrite: ForAddOn<typeof coreDisplayWrite, 'displayWrite'> = coreDisplayWrite;
@@ -54,6 +61,7 @@ export const useNotificationSettingsWrite: ForAddOn<
   typeof coreNotificationSettingsWrite,
   'notificationSettingsWrite'
 > = coreNotificationSettingsWrite;
+export const useReports: ForAddOn<typeof coreReports, 'reports'> = coreReports;
 export const useStreamerMode: ForAddOn<typeof coreStreamerMode, 'streamerMode'> = coreStreamerMode;
 export const useSystemHardwareWrite: ForAddOn<
   typeof coreSystemHardwareWrite,

@@ -71,11 +71,47 @@ export const reasonOf = (error: unknown, fallback = ''): string => {
   ) {
     return fallback;
   }
-  return last === '' ? fallback : last;
+  return last === '' ? fallback : redactDuplicateValue(last);
 };
+
+/**
+ * A duplicate-key message with the value it names left out (MICA-433): mysql2's
+ * `Duplicate entry '<value>' for key '<key>'`. The value is whatever collided — a citizenid, a
+ * phone number, a phone id, a handle — and the key name is what an operator acts on, so the
+ * key stays and the value goes. Up to the last `' for key '`, since the value itself may hold
+ * a quote.
+ */
+const redactDuplicateValue = (line: string): string =>
+  line.replace(/(Duplicate entry ')[\s\S]*(' for key ')/i, '$1…$2');
 
 /** For a reason that would otherwise print as nothing at all. */
 export const NO_REASON = 'no reason was given';
+
+/**
+ * Why something failed, and where (MICA-433): `reasonOf`'s one line, then the stack's own
+ * frames and nothing else of it. For a failure nobody expected, where the frames are what a
+ * server owner needs, logged without the message above them — the first line of an oxmysql
+ * error's stack is its message, statement, bound values and all.
+ *
+ * A frame is a line that starts `at `; whatever else a stack carries is dropped. Never throws.
+ */
+export const traceOf = (error: unknown): string => {
+  const reason = reasonOf(error, NO_REASON);
+  let stack = '';
+  try {
+    if (error !== null && typeof error === 'object' && 'stack' in error) {
+      const raw: unknown = error.stack;
+      if (typeof raw === 'string') stack = raw;
+    }
+  } catch {
+    // A throwing `stack` getter; the reason alone will do.
+  }
+  const frames = stack
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('at '));
+  return frames.length > 0 ? `${reason}\n    ${frames.join('\n    ')}` : reason;
+};
 
 /**
  * Did this write fail on a unique key (ER 1062)?

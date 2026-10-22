@@ -7,6 +7,7 @@ import { phoneNumberFrom } from './netGuard';
 import { ok, fail, type ExportOutcome } from './exports';
 import { LINE_LABEL_MAX, RING_MAX } from '@mica/shared/ownerConfig';
 import { onResourceReleased } from './resourceStop';
+import { traceOf } from './sqlErrors';
 
 /**
  * Numbers owned by a script rather than by a character.
@@ -312,6 +313,7 @@ export async function askLine(line: RegisteredLine, call: IncomingLineCall): Pro
       Promise.resolve(line.onCall(call)),
       new Promise<null>((resolve) => {
         timer = setTimeout(() => {
+          // log-identity-ok: a registered line: a public number and the resource that owns it, no player
           console.error(
             `[mica] line ${line.number} (${line.owner}) did not answer within ` +
               `${HANDLER_TIMEOUT_MS}ms; treating the call as unreachable.`
@@ -322,7 +324,8 @@ export async function askLine(line: RegisteredLine, call: IncomingLineCall): Pro
     ]);
     return verdictFrom(verdict) ?? REJECT;
   } catch (error) {
-    console.error(`[mica] line ${line.number} (${line.owner}) threw:`, error);
+    // log-identity-ok: a registered line: a public number and the resource that owns it, no player
+    console.error(`[mica] line ${line.number} (${line.owner}) threw:`, traceOf(error));
     return REJECT;
   } finally {
     if (timer) clearTimeout(timer);
@@ -341,7 +344,8 @@ export function tellLine(line: RegisteredLine, message: IncomingLineMessage): bo
   const handler = line.onMessage;
   if (!handler) return false;
   const report = (error: unknown) =>
-    console.error(`[mica] line ${line.number} (${line.owner}) onMessage threw:`, error);
+    // log-identity-ok: a registered line: a public number and the resource that owns it, no player
+    console.error(`[mica] line ${line.number} (${line.owner}) onMessage threw:`, traceOf(error));
   try {
     Promise.resolve(handler(message)).catch(report);
   } catch (error) {

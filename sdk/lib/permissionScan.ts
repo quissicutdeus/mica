@@ -95,6 +95,8 @@ export interface ScanOptions {
  * holds the two equal.
  */
 export const ADD_ON_REFUSED_PERMISSIONS: readonly string[] = [
+  // MICA-433: the moderation queue. In `CORE_ONLY_PERMISSIONS` there, whatever its rows say.
+  'admin',
   'app-registry-write',
   'keybinds-write',
   'lock-screen-write',

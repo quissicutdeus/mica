@@ -854,7 +854,8 @@ describe('media:getDeleted (MICA-75-wiring)', () => {
 
     const reply = await callGetDeleted({});
 
-    expect(reply).toEqual([{ id: 12, citizenid: 'CID_A', status: 'deleted' }]);
+    // The owner's citizenid is the row's, never the reply's (MICA-433).
+    expect(reply).toEqual([{ id: 12, status: 'deleted' }]);
     const [sql, params] = dbMock.query.mock.calls[0];
     expect(String(sql)).toContain('FROM `mica_media`');
     expect(String(sql)).toContain("`status` = 'deleted'");

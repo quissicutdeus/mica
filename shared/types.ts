@@ -48,8 +48,13 @@ export interface ShellCapabilities {
 
 export interface Contact {
   id: number;
-  citizenid: string;
-  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
+  /**
+   * The phone this row is on (MICA-282). Set by the server; absent on a row written before
+   * phones were items.
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
   device_id?: string | null;
   firstname: string;
   lastname?: string;
@@ -242,19 +247,26 @@ export interface BankHistory extends BankHistorySource {
 }
 
 /**
- * A bill a resource presented to a player through the phone (MICA-240).
+ * A bill a resource presented to a player through the phone (MICA-240), as the billed player
+ * receives it.
  *
  * Created only by the server, through the `SendInvoice` export — no generic action on the
  * `invoices` service is registered, so nothing a client sends can mint, edit or delete one.
  * `status` is `active` while it can still be paid or declined; `paid`, `declined` and
  * `expired` are terminal, and `expires_at` is when an open one stops being payable, set from
- * `mica_invoice_expiry_days` at creation. Exactly one of `society` and `payee` names where the
- * money goes: a job's society account through the banking bridge, or a character's bank.
+ * `mica_invoice_expiry_days` at creation. Exactly one of `society` and the row's `payee` names
+ * where the money goes: a job's society account through the banking bridge, or a character's
+ * bank.
+ *
+ * Not the row (MICA-433): the row also names the character paid (`payee`), which is another
+ * player's citizenid and never leaves the server, and the owner's own `citizenid`, which no
+ * reply carries. The server's row type is `InvoiceRow` in
+ * `server/repositories/InvoiceRepository.ts`.
  */
 export interface Invoice {
   id: number;
-  /** Who is billed. */
-  citizenid: string;
+  /** Who is billed. Server-side only: no reply carries it (MICA-433). */
+  citizenid?: string;
   /** What the player reads as the biller: a business or a job name. */
   from_label: string;
   /** Whole currency units. */
@@ -262,8 +274,6 @@ export interface Invoice {
   memo: string | null;
   /** The job whose society account is paid, or null when a character is. */
   society: string | null;
-  /** The character paid, or null when a society is. */
-  payee: string | null;
   /** The resource that sent it, so a payment can be reported back to it. */
   resource: string;
   /** Epoch seconds. */
@@ -383,8 +393,12 @@ export type JobActionOutcome =
  */
 export interface PhoneBattery {
   id: number;
-  citizenid: string;
-  /** The phone this charge belongs to (MICA-283). */
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
+  /**
+   * The phone this charge belongs to (MICA-283).
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
   device_id?: string | null;
   level: number;
   status?: 'active' | 'deleted';
@@ -403,8 +417,13 @@ export interface PhoneBattery {
  */
 export interface PhoneCallLogEntry {
   id: number;
-  citizenid: string;
-  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
+  /**
+   * The phone this row is on (MICA-282). Set by the server; absent on a row written before
+   * phones were items.
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
   device_id?: string | null;
   kind: 'incoming' | 'outgoing' | 'missed';
   number: string;
@@ -430,8 +449,13 @@ export interface PhoneCallLogEntry {
  */
 export interface PhoneSetting {
   id: number;
-  citizenid: string;
-  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
+  /**
+   * The phone this row is on (MICA-282). Set by the server; absent on a row written before
+   * phones were items.
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
   device_id?: string | null;
   /** Storage namespace — `settings`, `blabber`, or an add-on's id. */
   app: string;
@@ -462,8 +486,11 @@ export type ReportResolution = 'pending' | 'actioned' | 'dismissed';
  */
 export interface Report {
   id: number;
-  /** The reporter, not the author of the reported content. */
-  citizenid: string;
+  /**
+   * The reporter, not the author of the reported content.
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
+  citizenid?: string;
   target_table: string;
   target_id: number;
   category: ReportCategory;
@@ -485,7 +512,8 @@ export interface Report {
 
 export interface Highscore {
   id: number;
-  citizenid: string;
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
   app: string;
   score: number;
   created_at: Date | string;
@@ -578,7 +606,11 @@ export interface Blab {
  */
 export interface Listing {
   id: number;
-  citizenid: string;
+  /**
+   * The seller. Server-side only: a public read withholds it and no reply carries it
+   * (MICA-433), so a listing on the wire has none.
+   */
+  citizenid?: string;
   title: string;
   price: number;
   description: string;
@@ -824,8 +856,13 @@ export interface SparkMatch {
 
 export interface Note {
   id: number;
-  citizenid: string;
-  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
+  /**
+   * The phone this row is on (MICA-282). Set by the server; absent on a row written before
+   * phones were items.
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
   device_id?: string | null;
   title: string;
   content: string;
@@ -845,8 +882,13 @@ export interface Note {
  */
 export interface SavedPlace {
   id: number;
-  citizenid: string;
-  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
+  /**
+   * The phone this row is on (MICA-282). Set by the server; absent on a row written before
+   * phones were items.
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
   device_id?: string | null;
   name: string;
   street_label?: string;
@@ -886,8 +928,13 @@ export type MediaKind =
  */
 export interface MediaItem {
   id: number;
-  citizenid: string;
-  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
+  /**
+   * The phone this row is on (MICA-282). Set by the server; absent on a row written before
+   * phones were items.
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
   device_id?: string | null;
   kind: MediaKind;
   /** Base64. Was `image`, and still the only field anything writes today. */
@@ -913,7 +960,8 @@ export interface MediaItem {
 
 export interface Mail {
   id: number;
-  citizenid: string;
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
   sender: string;
   sender_address?: string;
   subject: string;
@@ -937,7 +985,8 @@ export interface PricePoint {
  */
 export interface HodlrHolding {
   id: number;
-  citizenid: string;
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
   quantity: number;
   status?: 'active' | 'deleted';
   created_at: Date | string;
@@ -1008,8 +1057,13 @@ export interface CasinoRound {
  */
 export interface SavedPlace {
   id: number;
-  citizenid: string;
-  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
+  /**
+   * The phone this row is on (MICA-282). Set by the server; absent on a row written before
+   * phones were items.
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
   device_id?: string | null;
   name: string;
   street_label?: string;
@@ -1023,8 +1077,13 @@ export interface SavedPlace {
 
 export interface NotificationItem {
   id: number;
-  citizenid: string;
-  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  /** Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433). */
+  citizenid?: string;
+  /**
+   * The phone this row is on (MICA-282). Set by the server; absent on a row written before
+   * phones were items.
+   * Never on the wire: the server strips it from every reply (`withoutOwnerKeys`, MICA-433).
+   */
   device_id?: string | null;
   app: string;
   kind: string;

@@ -52,6 +52,15 @@ import { setActiveDevice } from './device';
 import { openDevice } from './phoneOpen';
 import { autoLockPolicy, evaluateLockOnOpen, isLocked, trustLockPolicy } from './lockScreen';
 import { hasPasscode, passcodeAnswerFor } from '../../services/passcode';
+import {
+  DEFAULT_WALLPAPER,
+  resetWallpaper,
+  setWallpaperImage,
+  trustWallpaperOwner,
+  wallpaperStore
+} from './wallpaper';
+import { flushPendingWrites } from '../../host/settingsSync';
+import { storage } from '../../host/facets/storage';
 
 /** Let every settled promise run its continuation. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -318,5 +327,85 @@ describe('a character load', () => {
     // B's policy never arrived: the strict one, not A's 'never'.
     expect(get(hasPasscode)).toBe(true);
     expect(get(isLocked)).toBe(true);
+  });
+});
+
+/**
+ * MICA-433: a failed sweep leaves the previous identity's `wallpaperOwner` behind, so the photo
+ * it vouches for is held back from the start of every identity change until that change's own
+ * sweep applies — the lock policy's fail-closed rule, above, applied to the photo.
+ */
+describe('a character load, for the wallpaper photo', () => {
+  const photo = "url('data:image/png;base64,QUJD')";
+
+  /** What the server answers for the character who set the photo. */
+  const ownersRows = () => {
+    // Through the settings namespace rather than a raw storage key, the way `dock.test.ts`
+    // reads one: a `mica:`-prefixed literal reads to `eventNames.test.ts` as a net event.
+    const owner = storage('settings').getItem<string>('wallpaperOwner');
+    expect(owner, 'setting a photo stored its owner').not.toBeNull();
+    return [
+      { app: 'settings', setting_key: 'wallpaperOwner', setting_value: JSON.stringify(owner) }
+    ];
+  };
+
+  beforeEach(() => {
+    trustWallpaperOwner();
+    setWallpaperImage(photo);
+    // Out of the debounce, so the sweep below is free to apply or clear the key.
+    flushPendingWrites();
+  });
+
+  afterEach(() => {
+    trustWallpaperOwner();
+    resetWallpaper();
+    flushPendingWrites();
+  });
+
+  it("shows no photo when the new character's settings fail to load", async () => {
+    expect(get(wallpaperStore)).toEqual({ type: 'image', image: photo });
+    settingsGetAll.mockImplementationOnce(() => Promise.reject(new Error('timeout')));
+
+    const done = reloadCharacterLock();
+    await answerStatus(false);
+    await done;
+
+    expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
+  });
+
+  it("holds it back while the sweep is out, and shows it once the owner's settings land", async () => {
+    const rows = ownersRows();
+    let finishSweep: (answer: unknown) => void = () => {};
+    settingsGetAll.mockImplementationOnce(() => new Promise((resolve) => (finishSweep = resolve)));
+
+    const done = reloadCharacterLock();
+    expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
+
+    await answerStatus(false);
+    finishSweep(rows);
+    await done;
+
+    expect(get(wallpaperStore)).toEqual({ type: 'image', image: photo });
+  });
+
+  it("does not let the previous character's late sweep vouch for the photo", async () => {
+    const rowsOfA = ownersRows();
+    let finishSweepA: (answer: unknown) => void = () => {};
+    settingsGetAll.mockImplementationOnce(() => new Promise((resolve) => (finishSweepA = resolve)));
+    const doneA = reloadCharacterLock();
+
+    // B loads, and B's own sweep fails.
+    settingsGetAll.mockImplementationOnce(() => Promise.reject(new Error('timeout')));
+    const doneB = reloadCharacterLock();
+
+    await answerStatus(false);
+    await answerStatus(false);
+    await doneB;
+
+    // A's sweep lands last and succeeds — restoring A's owner row, for A.
+    finishSweepA(rowsOfA);
+    await doneA;
+
+    expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
   });
 });

@@ -207,7 +207,8 @@ const ICONS: Record<AppPermission, string> = {
   theme: '\u{1F3A8}',
   'theme-write': '\u{1F3A8}',
   wallpaper: '\u{1F5BC}\u{FE0F}',
-  'wallpaper-write': '\u{1F5BC}\u{FE0F}'
+  'wallpaper-write': '\u{1F5BC}\u{FE0F}',
+  search: '\u{1F50D}'
 };
 
 /**

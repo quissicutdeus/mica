@@ -80,7 +80,6 @@ const asThumbnail = (photo: string): string => {
 
 const mockCaptures: MediaItem[] = sampleAvatars.map((url, index) => ({
   id: index + 1,
-  citizenid: 'mock-id',
   kind: 'photo' as const,
   data: url,
   thumbnail: asThumbnail(url),
@@ -107,7 +106,6 @@ const mockCaptures: MediaItem[] = sampleAvatars.map((url, index) => ({
 const mockThumbnaillessCaptures: MediaItem[] = [
   {
     id: 951,
-    citizenid: 'mock-id',
     kind: 'photo',
     data: placeholderPhoto('mica-gallery-legacy-b'),
     alt_text: 'Dropped in by another resource',
@@ -116,7 +114,6 @@ const mockThumbnaillessCaptures: MediaItem[] = [
   },
   {
     id: 950,
-    citizenid: 'mock-id',
     kind: 'photo',
     data: placeholderPhoto('mica-gallery-legacy-a'),
     alt_text: 'Taken before thumbnails existed',
@@ -131,7 +128,6 @@ const mockThumbnaillessCaptures: MediaItem[] = [
  */
 export const mockLocationShare: MediaItem = {
   id: 903,
-  citizenid: 'mock-id',
   kind: 'location',
   data: JSON.stringify({ x: 215.3, y: -810.6, z: 30.7 }),
   alt_text: 'Vespucci Beach',
@@ -157,7 +153,6 @@ export const mockLocationShare: MediaItem = {
 const mockOtherMedia: MediaItem[] = [
   {
     id: 900,
-    citizenid: 'mock-id',
     kind: 'video',
     thumbnail: sampleAvatars[0],
     url: 'https://example.invalid/clip.mp4',
@@ -169,7 +164,6 @@ const mockOtherMedia: MediaItem[] = [
   },
   {
     id: 901,
-    citizenid: 'mock-id',
     kind: 'gif',
     url: sampleAvatars[1],
     mime_type: 'image/gif',
@@ -179,7 +173,6 @@ const mockOtherMedia: MediaItem[] = [
   },
   {
     id: 902,
-    citizenid: 'mock-id',
     kind: 'audio',
     url: 'https://example.invalid/voice.ogg',
     mime_type: 'audio/ogg',
@@ -197,7 +190,6 @@ const mockOtherMedia: MediaItem[] = [
  */
 const deletedMedia: MediaItem = {
   id: 9998,
-  citizenid: 'mock-id',
   kind: 'photo',
   thumbnail: sampleAvatars[2],
   alt_text: 'An old screenshot',
@@ -217,7 +209,6 @@ const HOSTED_THUMBNAIL = `data:image/svg+xml,${encodeURIComponent(
 
 export const mockHostedPhoto: MediaItem = {
   id: 952,
-  citizenid: 'mock-id',
   kind: 'photo',
   thumbnail: HOSTED_THUMBNAIL,
   url: 'https://img.example.test/p/952.webp',
@@ -237,7 +228,6 @@ export const mockMedia: MediaItem[] = [
 export const mockListings: Listing[] = [
   {
     id: 1,
-    citizenid: 'MOCK1',
     title: 'Dirt Bike',
     price: 4500,
     description: 'Runs great, needs a new chain.',
@@ -247,7 +237,6 @@ export const mockListings: Listing[] = [
   },
   {
     id: 2,
-    citizenid: 'MOCK2',
     title: 'Burner Phone',
     price: 150,
     description: 'Clean, no questions.',
@@ -260,7 +249,6 @@ export const mockListings: Listing[] = [
 export const mockNotes: Note[] = [
   {
     id: 1,
-    citizenid: '1',
     title: 'Grocery List',
     content:
       '- Milk\n- Eggs\n- Bread\n- Butter\n\n1. Union Depository Blueprint\n2. Keycards\n3. Thermal Charges',
@@ -268,7 +256,6 @@ export const mockNotes: Note[] = [
   },
   {
     id: 2,
-    citizenid: '1',
     title: 'Project Ideas',
     content:
       '# Los Santos Jobs\n\n## Pacific Standard Heist\n### Diamond Casino Robbery\n#### Cayo Perico Freight',
@@ -280,7 +267,6 @@ export const mockNotes: Note[] = [
    */
   {
     id: 999,
-    citizenid: '1',
     title: 'Old Shopping List',
     content: 'Nails, rope, a burner phone',
     status: 'deleted',
@@ -300,7 +286,6 @@ export const mockNotes: Note[] = [
 export const mockSavedPlaces: SavedPlace[] = [
   {
     id: 1,
-    citizenid: 'mock-id',
     name: 'Home',
     street_label: 'Vespucci Beach',
     x: 215.3,
@@ -311,7 +296,6 @@ export const mockSavedPlaces: SavedPlace[] = [
   },
   {
     id: 2,
-    citizenid: 'mock-id',
     name: 'Work',
     street_label: 'Textile City',
     x: -34.9,
@@ -450,7 +434,6 @@ export const mockJobLineMessages: Record<number, JobLineMessage[]> = {
 const gtaCoreContacts: Contact[] = [
   {
     id: 1,
-    citizenid: 'gta-ursula',
     firstname: 'Ursula',
     lastname: '(Crazy Ex)',
     phone: '555-0199',
@@ -460,7 +443,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 2,
-    citizenid: 'gta-trevor',
     firstname: 'Trevor',
     lastname: 'Philips',
     phone: '555-0133',
@@ -470,7 +452,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 3,
-    citizenid: 'gta-simeon',
     firstname: 'Simeon',
     lastname: 'Yetarian',
     phone: '555-0144',
@@ -480,7 +461,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 4,
-    citizenid: 'gta-lester',
     firstname: 'Lester',
     lastname: 'Crest',
     phone: '555-0155',
@@ -490,7 +470,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 5,
-    citizenid: 'gta-michael',
     firstname: 'Michael',
     lastname: 'De Santa',
     phone: '555-0166',
@@ -500,7 +479,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 6,
-    citizenid: 'gta-franklin',
     firstname: 'Franklin',
     lastname: 'Clinton',
     phone: '555-0177',
@@ -510,7 +488,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 7,
-    citizenid: 'gta-lamar',
     firstname: 'Lamar',
     lastname: 'Davis',
     phone: '555-0188',
@@ -520,7 +497,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 8,
-    citizenid: 'gta-pavel',
     firstname: 'Pavel',
     lastname: '(Kosatka)',
     phone: '555-0111',
@@ -530,7 +506,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 9,
-    citizenid: 'gta-agent14',
     firstname: 'Agent',
     lastname: '14',
     phone: '555-0122',
@@ -540,7 +515,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 10,
-    citizenid: 'gta-tracey',
     firstname: 'Tracey',
     lastname: 'De Santa',
     phone: '555-0134',
@@ -550,7 +524,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 11,
-    citizenid: 'gta-ron',
     firstname: 'Ron',
     lastname: 'Jakowski',
     phone: '555-0145',
@@ -560,7 +533,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 12,
-    citizenid: 'gta-solomon',
     firstname: 'Solomon',
     lastname: 'Richards',
     phone: '555-0156',
@@ -570,7 +542,6 @@ const gtaCoreContacts: Contact[] = [
   },
   {
     id: 13,
-    citizenid: 'gta-brucie',
     firstname: 'Brucie',
     lastname: 'Kibbutz',
     phone: '555-0189',
@@ -750,7 +721,6 @@ const generatedContacts: Contact[] = Array.from({ length: 87 }, (_, i) => {
 
   return {
     id: i + 14,
-    citizenid: `cit-${i + 14}`,
     firstname: fn,
     lastname: ln,
     phone: `555-${String(200 + i).padStart(4, '0')}`,
@@ -766,7 +736,6 @@ const generatedContacts: Contact[] = Array.from({ length: 87 }, (_, i) => {
  */
 const deletedContact: Contact = {
   id: 9999,
-  citizenid: 'mock-id',
   firstname: 'Old',
   lastname: 'Contact',
   phone: '555-0001',
@@ -1178,7 +1147,6 @@ export const mockConversations: Conversation[] = conversationTitles.map((c, conv
 export const mockEmails: Mail[] = [
   {
     id: 1,
-    citizenid: 'mock-id',
     sender: 'Fleeca Bank',
     sender_address: 'alerts@fleeca.com',
     subject: 'Account Statement Available',
@@ -1191,7 +1159,6 @@ export const mockEmails: Mail[] = [
   },
   {
     id: 2,
-    citizenid: 'mock-id',
     sender: 'Los Santos Police Dept',
     sender_address: 'no-reply@lspd.gov',
     subject: 'Traffic Citation Notice',
@@ -1204,7 +1171,6 @@ export const mockEmails: Mail[] = [
   },
   {
     id: 3,
-    citizenid: 'mock-id',
     sender: 'Dynasty 8 Executive',
     sender_address: 'sales@dynasty8realestate.com',
     subject: 'Property Listing Update',

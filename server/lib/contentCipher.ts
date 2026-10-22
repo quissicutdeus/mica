@@ -4,6 +4,7 @@
 
 import { Buffer, type Bytes } from 'node:buffer';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
+import { NO_REASON, reasonOf } from './sqlErrors';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { cwd, platform } from 'node:process';
 import { Database } from './Database';
@@ -644,7 +645,7 @@ const recordEnabled = async (): Promise<void> => {
     sayOnce(
       'marker',
       `[micaOS] content encryption: could not record that this database holds ciphertext in ` +
-        `${LEDGER} (${String(error)}). Run micaschema apply; until then, writes of encrypted ` +
+        `${LEDGER} (${reasonOf(error, NO_REASON)}). Run micaschema apply; until then, writes of encrypted ` +
         'columns are refused.'
     );
     throw new Error('content encryption: the enabled marker could not be recorded.', {
@@ -1014,7 +1015,7 @@ export const announceContentCipher = async (): Promise<void> => {
     holdsCiphertext = await contentEncryptionEnabled();
   } catch (error) {
     console.error(
-      `[micaOS] content encryption: could not read ${LEDGER} (${String(error)}); ` +
+      `[micaOS] content encryption: could not read ${LEDGER} (${reasonOf(error, NO_REASON)}); ` +
         'the first write will ask again.'
     );
   }

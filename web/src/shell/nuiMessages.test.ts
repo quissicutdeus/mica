@@ -10,7 +10,7 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../host/registerFacets';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 
 vi.mock('../nui/fetchNui', () => ({ fetchNui: vi.fn(async () => ({})) }));
@@ -44,6 +44,15 @@ import { invoices, invoicesLoaded } from '../services/bank';
 import { jobs, jobsLoaded } from '../services/jobs';
 import { notificationsLoaded, shadeNotifications, unreadCounts } from '../services/notifications';
 import { registerNuiTransport } from '../../../sdk/nui/transport';
+import {
+  DEFAULT_WALLPAPER,
+  resetWallpaper,
+  setWallpaperImage,
+  trustWallpaperOwner,
+  wallpaperStore
+} from './state/wallpaper';
+import { flushPendingWrites } from '../host/settingsSync';
+import { storage } from '../host/facets/storage';
 
 /**
  * These twelve branches previously lived inside `App.svelte` and had no unit tests at
@@ -654,5 +663,84 @@ describe('rehydrateShell forgets the previous character', () => {
       vi.mocked(fetchNui).mockImplementation(async () => ({}));
       registerNuiTransport((...args) => fetchNui(...args));
     }
+  });
+});
+
+/**
+ * MICA-433: a character load sends both routes, and each runs its own sweep. The photo is held
+ * back from the start of the load until a sweep applies — and *any* sweep that applies for the
+ * load in progress vouches for it, or a failure of the one in `rehydrateShell` alone would hide
+ * the photo all session while the settings it guards had in fact arrived.
+ */
+describe('the wallpaper photo across both character-load routes', () => {
+  const photo = "url('data:image/png;base64,QUJD')";
+
+  /** What the server answers for the character who set the photo. */
+  const ownersRows = () => {
+    const owner = storage('settings').getItem<string>('wallpaperOwner');
+    expect(owner, 'setting a photo stored its owner').not.toBeNull();
+    return [
+      { app: 'settings', setting_key: 'wallpaperOwner', setting_value: JSON.stringify(owner) }
+    ];
+  };
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    settingsServiceMock.fetchSettings.mockClear();
+    trustWallpaperOwner();
+    setWallpaperImage(photo);
+    // Out of the debounce, so each sweep below is free to apply or clear the key.
+    flushPendingWrites();
+  });
+
+  afterEach(async () => {
+    await settle();
+    trustWallpaperOwner();
+    resetWallpaper();
+    flushPendingWrites();
+  });
+
+  it("shows it when rehydrateShell's sweep fails but rehydrateSettings' applies", async () => {
+    const rows = ownersRows();
+    // `rehydrateShell` arrives first (`lib/shell.ts`'s subscriber is registered first) and asks
+    // first; its sweep fails. `rehydrateSettings`' own sweep then lands the owner's row.
+    settingsServiceMock.fetchSettings
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce(rows);
+
+    expect(route(message('rehydrateShell'))).toBe(true);
+    expect(get(wallpaperStore), 'held back while the load is in progress').toEqual(
+      DEFAULT_WALLPAPER
+    );
+    expect(route(message('rehydrateSettings'))).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(settingsServiceMock.fetchSettings).toHaveBeenCalledTimes(2);
+      expect(get(wallpaperStore)).toEqual({ type: 'image', image: photo });
+    });
+  });
+
+  it('does not let a bare sweep that an identity change overtook vouch for it', async () => {
+    const rowsOfA = ownersRows();
+    let finishSweepA: (answer: unknown) => void = () => {};
+    settingsServiceMock.fetchSettings
+      .mockImplementationOnce(() => new Promise((resolve) => (finishSweepA = resolve)))
+      .mockRejectedValueOnce(new Error('timeout'));
+
+    // A's settings sweep is out when B loads, and B's own sweep fails.
+    route(message('rehydrateSettings'));
+    route(message('rehydrateShell'));
+    await vi.waitFor(() => {
+      expect(settingsServiceMock.fetchSettings).toHaveBeenCalledTimes(2);
+    });
+    await settle();
+
+    // A's lands last and applies — A's owner row, for A.
+    finishSweepA(rowsOfA);
+    await settle();
+    await settle();
+
+    expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
   });
 });

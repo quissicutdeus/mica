@@ -105,3 +105,6 @@ its one-line summary.
   drive bound props through a `__fixtures__/` wrapper that binds the flag
 - [The real Shell renders in jsdom](the-real-shell-renders-in-jsdom.md) — stub
   `Element.animate`, reset `openDevice`, assert on the real Shell
+- [An unsynced key needs a synced owner](unsynced-key-needs-a-synced-owner.md) —
+  the sweep skips `sync: false`; gate it on a synced fingerprint. Mock strip
+  must cover named routes, not just the generic branch

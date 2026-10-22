@@ -363,6 +363,18 @@ export const s = {
     );
   },
 
+  /**
+   * Exactly one value. For the tag of a reply union — `{ ok: true }` beside `{ ok: false, reason }`
+   * — where a plain boolean would let either branch's fields through the other (MICA-433).
+   */
+  literal<const V extends string | number | boolean>(expected: V): MicaSchema<V> {
+    return make<V>((value, path) =>
+      value === expected
+        ? { ok: true, value: expected }
+        : fail(path, `must be ${String(expected)}.`)
+    );
+  },
+
   enum<const V extends readonly [string, ...string[]]>(values: V): MicaSchema<V[number]> {
     return make<V[number]>((value, path) => {
       if (typeof value !== 'string' || !values.includes(value)) {

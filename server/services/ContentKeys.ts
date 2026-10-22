@@ -20,6 +20,7 @@ import {
 } from '../lib/contentCipher';
 import { formatLedgerKeys, walkLedgerKeys } from '../lib/import/ledgerKeys';
 import { notifyPlayer } from '../lib/shell';
+import { reasonOf, traceOf } from '../lib/sqlErrors';
 
 /**
  * `micacrypt` (MICA-165): the console's view of content encryption, the backfill that seals
@@ -218,13 +219,13 @@ export const runContentKeysCommand = async (source: number, args: string[]): Pro
     }
   } catch (error) {
     if (error instanceof NoActiveKeyError) {
-      console.error(`[micacrypt] backfill --apply refused: ${error.message}`);
+      console.error(`[micacrypt] backfill --apply refused: ${reasonOf(error)}`);
       return;
     }
     console.error(
       `[micacrypt] ${sub} failed part-way; every value already written is sealed and a re-run ` +
         'continues from what is left:',
-      error
+      traceOf(error)
     );
   } finally {
     running = false;

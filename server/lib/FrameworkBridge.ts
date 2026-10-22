@@ -23,6 +23,8 @@ import {
 import { readItemSlots, writeItemMetadata, type ItemSlot } from './framework/itemMetadata';
 import { citizenIdForNumber } from './phoneNumbers';
 import { setOwnerTableResolver } from './ownerWidth';
+import { traceOf } from './sqlErrors';
+import { who } from './who';
 
 /**
  * The one door every framework question goes through.
@@ -538,7 +540,7 @@ export class FrameworkBridge {
       if (synthetic && src <= SYNTHETIC_SOURCE_MAX) return syntheticPlayer(src);
       return servingGetPlayer()?.getPlayer(src) ?? null;
     } catch (error) {
-      console.error('[FrameworkBridge] Error getting player:', error);
+      console.error('[FrameworkBridge] Error getting player:', traceOf(error));
     }
     return null;
   }
@@ -555,7 +557,7 @@ export class FrameworkBridge {
     try {
       return syntheticAdmin(src);
     } catch (error) {
-      console.error('[FrameworkBridge] Error resolving a synthetic admin:', error);
+      console.error('[FrameworkBridge] Error resolving a synthetic admin:', traceOf(error));
     }
     return false;
   }
@@ -581,7 +583,7 @@ export class FrameworkBridge {
     try {
       return servingListPlayers()?.getAllPlayers() ?? {};
     } catch (error) {
-      console.error('[FrameworkBridge] Error fetching all players:', error);
+      console.error('[FrameworkBridge] Error fetching all players:', traceOf(error));
     }
     return {};
   }
@@ -715,7 +717,7 @@ export class FrameworkBridge {
     try {
       if (reseedDirty) FrameworkBridge.reseedSources();
     } catch (error) {
-      console.error('[FrameworkBridge] Error resolving sources:', error);
+      console.error('[FrameworkBridge] Error resolving sources:', traceOf(error));
     }
     return [...citizenBySource.keys()];
   }
@@ -766,7 +768,7 @@ export class FrameworkBridge {
         collect();
       }
     } catch (error) {
-      console.error('[FrameworkBridge] Error resolving sources:', error);
+      console.error('[FrameworkBridge] Error resolving sources:', traceOf(error));
     }
 
     // The door's players, only for citizenids the registry and its walk did not find.
@@ -778,7 +780,7 @@ export class FrameworkBridge {
           if (src !== null) found.set(citizenid, src);
         }
       } catch (error) {
-        console.error('[FrameworkBridge] Error resolving synthetic sources:', error);
+        console.error('[FrameworkBridge] Error resolving synthetic sources:', traceOf(error));
       }
     }
     return found;
@@ -817,7 +819,10 @@ export class FrameworkBridge {
         }
       }
     } catch (error) {
-      console.error(`[FrameworkBridge] Error finding player by phone ${phone}:`, error);
+      console.error(
+        `[FrameworkBridge] Error finding player by phone ${who(phone)}:`,
+        traceOf(error)
+      );
     }
     return null;
   }
@@ -895,7 +900,10 @@ export class FrameworkBridge {
       // first that says it handled it, which is the chain the old else-if ladder was.
       serving((adapter) => adapter.registerUsableItem(item, cb));
     } catch (error) {
-      console.error(`[FrameworkBridge] Framework item registration skipped for '${item}':`, error);
+      console.error(
+        `[FrameworkBridge] Framework item registration skipped for '${item}':`,
+        traceOf(error)
+      );
     }
   }
 }

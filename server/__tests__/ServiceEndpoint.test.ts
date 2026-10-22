@@ -232,9 +232,44 @@ describe('ServiceEndpoint — responses and side effects', () => {
     await call('create', { title: 'mine' });
 
     const reply = lastReply();
-    expect(reply).toMatchObject({ id: 101, title: 'mine', citizenid: OWNER, status: 'active' });
+    expect(reply).toMatchObject({ id: 101, title: 'mine', status: 'active' });
+    // Stamped onto the row, never answered (MICA-433): the client knows who it is.
+    expect(reply).not.toHaveProperty('citizenid');
     expect(typeof reply.created_at).toBe('string');
     expect(typeof reply.updated_at).toBe('string');
+  });
+
+  /**
+   * MICA-433: the owner read is a `SELECT *`, so every row carried the caller's citizenid and
+   * phone id to the client and, through `useService`, to any add-on. The reply leaves both out.
+   */
+  it("answers an owner read without the caller's citizenid or phone id", async () => {
+    mount();
+    dbMock.query.mockResolvedValueOnce([
+      { id: 1, citizenid: OWNER, device_id: 'PHONE_1', title: 'mine' },
+      { id: 2, citizenid: OWNER, device_id: 'PHONE_1', title: 'also mine' }
+    ]);
+
+    await call('get', {});
+
+    // Still the owner's rows: the predicate names them, the reply does not.
+    expect(sqlOf(dbMock.query.mock.calls[0])).toContain('`citizenid` = ?');
+    expect(lastReply()).toEqual([
+      { id: 1, title: 'mine' },
+      { id: 2, title: 'also mine' }
+    ]);
+  });
+
+  it('answers a paged owner read without them too, rows inside the envelope', async () => {
+    mount({ paging: { pageSize: 1, maxPageSize: 5 } });
+    dbMock.query.mockResolvedValueOnce([
+      { id: 9, citizenid: OWNER, device_id: 'PHONE_1', title: 'newest' },
+      { id: 8, citizenid: OWNER, device_id: 'PHONE_1', title: 'next' }
+    ]);
+
+    await call('get', {});
+
+    expect(lastReply()).toEqual({ rows: [{ id: 9, title: 'newest' }], nextCursor: 9 });
   });
 
   it('does not let a client-sent timestamp reach the insert', async () => {

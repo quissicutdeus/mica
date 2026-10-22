@@ -24,7 +24,6 @@ const messageNotification = (
   const created_at = new Date(Date.now() - ageMs).toISOString();
   return {
     id,
-    citizenid: 'mock_citizenid',
     app: 'messages',
     kind: 'info',
     title: conv?.name ?? 'Messages',
@@ -43,7 +42,6 @@ const mailNotification = (id: number, mailId: number, ageMs: number): Notificati
   const created_at = new Date(Date.now() - ageMs).toISOString();
   return {
     id,
-    citizenid: 'mock_citizenid',
     app: 'mail',
     kind: 'email',
     title: `Email from ${mail?.sender ?? 'Mail'}`,
@@ -63,7 +61,6 @@ const mentionNotification = (id: number, blabId: number, ageMs: number): Notific
   const created_at = new Date(Date.now() - ageMs).toISOString();
   return {
     id,
-    citizenid: 'mock_citizenid',
     app: 'blabber',
     kind: 'mention',
     title: `@${blab?.handle ?? 'someone'} mentioned you`,
@@ -97,7 +94,6 @@ const mentionNotification = (id: number, blabId: number, ageMs: number): Notific
 const mockNotifications: NotificationItem[] = [
   {
     id: 1,
-    citizenid: 'mock_citizenid',
     app: 'settings',
     kind: 'info',
     title: 'Developer Tools',

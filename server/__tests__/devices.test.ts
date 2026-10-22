@@ -63,6 +63,7 @@ import {
   evaluateDeviceItems
 } from '../lib/deviceItem';
 import { __resetLockState, isDeviceLocked, setDeviceLocked } from '../lib/LockState';
+import { who } from '../lib/who';
 
 /**
  * `deviceItem.ts` registers its usable-item callback at import time, and `clearAllMocks`
@@ -506,7 +507,12 @@ describe('the tablet as an identity of its own (MICA-264)', () => {
     // The phone's rows stay with its holder: no handover walk, no claim, nothing.
     expect(transfersOf(PHONE_A)).toEqual([]);
     expect(activeDeviceIdOf(SRC, 'tablet')).toBe(tablet);
-    expect(warn.mock.calls.some(([line]) => String(line).includes('which is a phone'))).toBe(true);
+    // Said, by token: the operator's one sign of a tampered item (MICA-433 review).
+    const line = String(warn.mock.calls[0]?.[0]);
+    expect(line).toContain(`item carried ${who(PHONE_A)}, which is a phone`);
+    expect(line).not.toContain(PHONE_A);
+    expect(line).not.toContain(CID);
+    expect(line).not.toMatch(/slot/);
     warn.mockRestore();
   });
 

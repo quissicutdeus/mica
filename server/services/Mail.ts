@@ -13,6 +13,8 @@ import { MAIL_CONTENT_MAX, mailContract } from '@mica/shared/contracts/mail';
 import { openRows, storablePlaintext } from '../lib/contentCipher';
 import { buildDeepLink } from '@mica/shared/deepLink';
 import { notificationFailureReason } from './Notifications';
+import { who } from '../lib/who';
+import { withoutOwnerKeys } from '../lib/replyShape';
 
 /**
  * Mail: `read: 'owner'`, `write: 'server'`.
@@ -205,7 +207,8 @@ export const SendSystemEmail = async (
     const players = FrameworkBridge.getAllPlayers();
     for (const src in players) {
       if (players[src]?.PlayerData?.citizenid === targetCitizenId) {
-        emitNet('mica:client:mail:receive', parseInt(src, 10), newMail);
+        // The row as the inbox shows it: without the recipient's own citizenid (MICA-433).
+        emitNet('mica:client:mail:receive', parseInt(src, 10), withoutOwnerKeys(newMail));
         break;
       }
     }
@@ -238,7 +241,7 @@ const notifyStep = (mailId: number, citizenid: string, step: string, run: () => 
     run();
   } catch (error) {
     console.error(
-      `[mail] stored system mail ${mailId} for ${citizenid}, but its ${step} failed ` +
+      `[mail] stored system mail ${mailId} for ${who(citizenid)}, but its ${step} failed ` +
         `(${notificationFailureReason(error)}); the mail is in their inbox.`
     );
   }

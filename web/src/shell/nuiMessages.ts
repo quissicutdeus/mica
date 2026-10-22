@@ -12,6 +12,7 @@ import { isCatalogEntry, type CatalogEntry } from '../../../sdk/catalog';
 import { setSignal } from './state/signal';
 import { time } from './state/time';
 import { hydrateSettingsOnCharacterLoad } from '../host/facets/storage';
+import { trustWallpaperOwner, wallpaperOwnerGeneration } from './state/wallpaper';
 import { bootstrapStores, forgetCharacterData, resetBootstrapState } from './state/bootstrap';
 import { reloadCharacterLock } from './state/deviceIdentity';
 import { toast } from './state/toast';
@@ -307,7 +308,18 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
      * correct here in a way it is not at page load.
      */
     rehydrateSettings: () => {
-      void hydrateSettingsOnCharacterLoad();
+      // Any sweep that applies vouches for the wallpaper photo's owner, not only
+      // `sweepAndTrust`'s (MICA-433): a character load sends this route *and*
+      // `rehydrateShell`, and if only the other one's sweep failed the photo would stay hidden
+      // all session. Held to the generation on hand when this one was asked, so a sweep an
+      // identity change has overtaken still cannot vouch. `rehydrateShell` arrives first —
+      // `lib/shell.ts`'s player-loaded subscriber is registered before `Settings.ts`'s — so the
+      // generation here is already this load's; were the order ever reversed, this one would be
+      // refused and the photo stay hidden, which fails closed rather than open.
+      const generation = wallpaperOwnerGeneration();
+      void hydrateSettingsOnCharacterLoad().then((applied) => {
+        if (applied) trustWallpaperOwner(generation);
+      });
     },
     rehydrateShell: () => {
       // The previous character's cached rows go first, so a re-read refused for the new

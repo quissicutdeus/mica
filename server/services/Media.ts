@@ -21,6 +21,8 @@ import { MediaRepository } from '../lib/media/repository';
 import { formatBytes, mediaStorageStats } from '../lib/media/stats';
 import { logMediaLimits, retentionDays } from '../lib/media/limits';
 import { acceptsClientData, acceptsClientKind } from '../lib/media/clientWrite';
+import { traceOf } from '../lib/sqlErrors';
+import { who } from '../lib/who';
 
 export {
   NOMINAL_HOSTED_BYTES,
@@ -382,7 +384,7 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid, _player, device
   const accounted = new Set([...delivered, ...offline]);
   for (const recipient of recipients) {
     if (!accounted.has(recipient)) {
-      console.error(`[media] mediaReceived push to ${recipient} was refused.`);
+      console.error(`[media] mediaReceived push to ${who(recipient)} was refused.`);
     }
   }
 
@@ -614,10 +616,10 @@ on('mica:server:media:characterDeleted', (rawCitizenid: unknown) => {
   void purgeMediaForCitizen(citizenid)
     .then((removed) => {
       // Unconditionally, including zero: the reason `lib/shell.ts` gives for its own hook.
-      console.log(`[micamedia] purged ${removed} row(s) for deleted character ${citizenid}.`);
+      console.log(`[micamedia] purged ${removed} row(s) for deleted character ${who(citizenid)}.`);
     })
     .catch((error) => {
-      console.error('[micamedia] purge for a deleted character failed:', error);
+      console.error('[micamedia] purge for a deleted character failed:', traceOf(error));
     });
 });
 
@@ -642,7 +644,7 @@ export const runMediaMaintenance = async (): Promise<{ expired: number; orphaned
       console.log(`[micamedia] removed ${orphaned} row(s) whose character no longer exists.`);
     }
   } catch (error) {
-    console.error('[micamedia] orphan sweep failed:', error);
+    console.error('[micamedia] orphan sweep failed:', traceOf(error));
   }
 
   let expired = 0;
@@ -652,7 +654,7 @@ export const runMediaMaintenance = async (): Promise<{ expired: number; orphaned
       console.log(`[micamedia] removed ${expired} row(s) older than ${retentionDays()} day(s).`);
     }
   } catch (error) {
-    console.error('[micamedia] retention sweep failed:', error);
+    console.error('[micamedia] retention sweep failed:', traceOf(error));
   }
 
   return { expired, orphaned };
@@ -750,7 +752,7 @@ export const runMediaStatsCommand = async (source: number): Promise<void> => {
     console.log(`[micamedia] top ${stats.topHolders.length} by size:`);
     for (const holder of stats.topHolders) {
       console.log(
-        `[micamedia]   ${holder.citizenid}: ${holder.rowCount} row(s), ` +
+        `[micamedia]   ${who(holder.citizenid)}: ${holder.rowCount} row(s), ` +
           `${formatBytes(holder.bytes)} (${holder.bytes} bytes)`
       );
     }
@@ -771,13 +773,13 @@ RegisterCommand(
   (source: number, args: string[]) => {
     if ((args?.[0] ?? '').toLowerCase() === 'prune') {
       void runMediaPruneCommand(source).catch((error) => {
-        console.error('[micamedia] prune failed:', error);
+        console.error('[micamedia] prune failed:', traceOf(error));
       });
       return;
     }
 
     void runMediaStatsCommand(source).catch((error) => {
-      console.error('[micamedia] failed:', error);
+      console.error('[micamedia] failed:', traceOf(error));
     });
   },
   false
@@ -829,7 +831,7 @@ on('onResourceStart', (resourceName: string) => {
         );
       })
       .catch((error) => {
-        console.error('[micamedia] orphan sweep failed:', error);
+        console.error('[micamedia] orphan sweep failed:', traceOf(error));
       });
   });
 });

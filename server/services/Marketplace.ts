@@ -16,6 +16,8 @@ import type { FrameworkPlayer } from '../lib/framework/runtime';
 import { deviceForRequest } from '../lib/deviceIdentity';
 import { numberOfPhone } from '../lib/phoneNumbers';
 import { syncNumber } from './PhoneNumbers';
+import { traceOf } from '../lib/sqlErrors';
+import { who } from '../lib/who';
 
 /**
  * Marketplace: a gray-market listings feed.
@@ -160,8 +162,8 @@ const numberToRecord = async (player: FrameworkPlayer): Promise<string | null> =
   } catch (error) {
     if (!(error instanceof PlayerFacingError)) {
       console.error(
-        `[marketplace] could not read the number of ${player.citizenid}'s phone.`,
-        error
+        `[marketplace] could not read the number of ${who(player.citizenid)}'s phone.`,
+        traceOf(error)
       );
     }
     return null;

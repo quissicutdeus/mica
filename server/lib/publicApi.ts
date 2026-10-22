@@ -62,6 +62,7 @@ import {
 } from '../services/Signal';
 import type { Contact, MediaItem, MediaKind } from '@mica/shared/types';
 import { pushToAddonApp, registerAddonService, unregisterAddonService } from './addonServices';
+import { withoutOwnerKeys } from './replyShape';
 
 /**
  * How an external resource names itself in the notification shade.
@@ -976,7 +977,8 @@ export function registerPublicApi(): void {
       }
       emitNet('mica:client:shell:openApp', source, {
         appId: id,
-        props: props && typeof props === 'object' ? props : {},
+        // Another resource's props, to the phone: never a citizenid or phone id (MICA-433).
+        props: props && typeof props === 'object' ? withoutOwnerKeys(props) : {},
         ...(device === undefined ? {} : { device })
       });
       return ok();

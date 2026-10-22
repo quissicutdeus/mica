@@ -6,7 +6,6 @@ import type { MockHandler } from '../registry';
 
 export const mocks: Record<string, MockHandler> = {
   // Account
-  getCitizenId: () => 'my-id',
   getPhoneNumber: () => '867-5309',
   /**
    * `mica_addon_hosts` and `mica_addon_catalog` (MICA-126).

@@ -7,6 +7,7 @@ import type { AxeResults, Result } from 'axe-core';
 import { addOnFrame } from './support/addon';
 import { openAppDrawer, seedHomeGrid } from './support/homeGrid';
 import { settlePhoneOpen } from './support/phoneOpen';
+import { wallpaperImage } from '@mica/shared/imageSource';
 import { blurred, seedStreamerMode } from './support/streamerMode';
 
 /**
@@ -911,6 +912,20 @@ test('the focus ring is visible on whatever the keyboard reaches first', async (
 });
 
 /**
+ * `shell/state/wallpaper.ts`'s fingerprint of a stored photo, which must stay in step with it:
+ * a photo shows only while the synced `wallpaperOwner` row holds this value for it (MICA-433).
+ * If the two drift, the test below fails on a default wallpaper rather than passing quietly.
+ */
+const wallpaperFingerprint = (image: string): string => {
+  let hash = 2166136261;
+  for (let i = 0; i < image.length; i++) {
+    hash ^= image.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+
+/**
  * The one contrast question axe refuses to answer (MICA-109 item 1).
  *
  * A wallpaper is a picture the player supplied, so text drawn on it has no measurable
@@ -927,17 +942,24 @@ test('the focus ring is visible on whatever the keyboard reaches first', async (
  */
 test('the wallpaper treatment reaches every run of text drawn on a photo', async ({ page }) => {
   await seedHomeGrid(page, ['settings', 'contacts']);
-  await page.addInitScript(() => {
-    // A 1x1 PNG is enough: `wallpaperNeedsContrast` keys on `type`, not on the pixels.
-    window.localStorage.setItem(
-      'mica:settings:wallpaper',
-      JSON.stringify({
-        type: 'image',
-        image:
-          'url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")'
-      })
-    );
-  });
+  // A 1x1 PNG is enough: `wallpaperNeedsContrast` keys on `type`, not on the pixels. Stored as
+  // the shell stores it, so the fingerprint is taken over the same string the shell reads.
+  const image = wallpaperImage(
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  );
+  expect(image, 'the fixture is a photo the shell accepts').not.toBeNull();
+  await page.addInitScript(
+    ({ photo, owner }) => {
+      window.localStorage.setItem(
+        'mica:settings:wallpaper',
+        JSON.stringify({ type: 'image', image: photo })
+      );
+      // The photo is this character's: the mock answers a seeded key as the server's row, so
+      // the owner survives the character-load sweep exactly as a real one would (MICA-433).
+      window.localStorage.setItem('mica:settings:wallpaperOwner', JSON.stringify(owner));
+    },
+    { photo: image!, owner: wallpaperFingerprint(image!) }
+  );
   await page.goto('/');
   await settlePhoneOpen(page);
 

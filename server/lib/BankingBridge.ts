@@ -4,6 +4,7 @@
 
 import type { BankHistory, Transaction } from '@mica/shared/types';
 import { exposes, resource, shapeOf } from './framework/runtime';
+import { traceOf } from './sqlErrors';
 
 /**
  * Adapter over whichever banking resource the server runs, mirroring what
@@ -264,7 +265,7 @@ export class BankingBridge {
     try {
       raw = adapter.read(citizenid);
     } catch (error) {
-      console.error(`[BankingBridge] ${adapter.name} threw reading transactions:`, error);
+      console.error(`[BankingBridge] ${adapter.name} threw reading transactions:`, traceOf(error));
       return { provider: adapter.name, available: true, transactions: [] };
     }
     return {
@@ -306,7 +307,7 @@ export class BankingBridge {
       }
       return null;
     } catch (error) {
-      console.error('[BankingBridge] Error reading a society balance:', error);
+      console.error('[BankingBridge] Error reading a society balance:', traceOf(error));
       return null;
     }
   }
@@ -342,7 +343,7 @@ export class BankingBridge {
       );
       return false;
     } catch (error) {
-      console.error(`[BankingBridge] Error moving society money (${direction}):`, error);
+      console.error(`[BankingBridge] Error moving society money (${direction}):`, traceOf(error));
       return false;
     }
   }

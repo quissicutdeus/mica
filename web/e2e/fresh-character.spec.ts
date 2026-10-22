@@ -103,11 +103,11 @@ test.describe('fresh character boot', () => {
    * so "hidden while unauthenticated, visible after rehydrate" is a plain DOM assertion
    * rather than a reach into store internals no test here has a seam for.
    *
-   * `getCitizenId`/`getBankBalance` are deliberately not asserted here even though
-   * `services/account.ts` reads them at boot: `client/client.ts` answers both with a
-   * `RegisterNuiCallbackType` handler reading `FrameworkBridge` locally, never routed
-   * through `ServiceEndpoint`, so they never see this refusal in game and proving they
-   * "recover" from it would be proving nothing real.
+   * `getBankBalance` is deliberately not asserted here even though `services/account.ts`
+   * reads it at boot: `client/client.ts` answers it with a `RegisterNuiCallbackType` handler
+   * reading `FrameworkBridge` locally, never routed through `ServiceEndpoint`, so it never
+   * sees this refusal in game and proving it "recovers" from it would be proving nothing real.
+   * (The page no longer asks for the citizenid at all, MICA-433.)
    */
   test('capabilities recovers from the unauthenticated fallback once rehydrated', async ({
     page

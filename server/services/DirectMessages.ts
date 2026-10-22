@@ -20,6 +20,7 @@ import type { Account, DirectMessage } from '@mica/shared/types';
 import { dmsContract } from '@mica/shared/contracts/dms';
 import { OPEN_REPORT, parseRetentionDays, registerRetention } from '../lib/contentRetention';
 import { recordOwnerDeletion } from '../lib/moderation';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * Direct messages between two accounts on the shared identity layer, for **any** social app
@@ -551,7 +552,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
       console.error(`[dms] Notification for ${id} was refused: ${outcome.reason}.`);
     }
   } catch (error) {
-    console.error(`[dms] Notification for ${id} failed:`, error);
+    console.error(`[dms] Notification for ${id} failed:`, traceOf(error));
   }
 
   return {

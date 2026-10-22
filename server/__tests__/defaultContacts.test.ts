@@ -305,7 +305,7 @@ describe('seeding never fails the phone', () => {
     await settle();
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining("new-phone hook 'defaultContacts' failed"),
-      expect.any(Error)
+      expect.any(String)
     );
   });
 
@@ -324,7 +324,7 @@ describe('seeding never fails the phone', () => {
     expect(resolution).toMatchObject({ status: 'active', device: { deviceId: CARRIED } });
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining("new-phone hook 'defaultContacts' failed"),
-      expect.any(Error)
+      expect.any(String)
     );
   });
 

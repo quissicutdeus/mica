@@ -23,6 +23,7 @@ import {
   type FrameworkPlayer,
   type OwnerTable
 } from './runtime';
+import { traceOf } from '../sqlErrors';
 
 /**
  * qb-core, and the schema the whole qb family shares (MICA-197).
@@ -200,7 +201,7 @@ export const qbSetDuty = (player: any, src: number, name: string, onDuty: boolea
   try {
     player.Functions.SetJobDuty(onDuty);
   } catch (error) {
-    console.error(`[FrameworkBridge] SetJobDuty for source ${src} threw:`, error);
+    console.error(`[FrameworkBridge] SetJobDuty for source ${src} threw:`, traceOf(error));
     return false;
   }
   return booleanOf(player.PlayerData?.job?.onduty, 'PlayerData.job.onduty', src) === onDuty;

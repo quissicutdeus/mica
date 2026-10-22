@@ -6,6 +6,7 @@ import { defineService } from '../lib/defineService';
 import { IMPORT_SOURCES, formatReport, runImport, type ImportSource } from '../lib/import';
 import { LEDGER_TABLE } from '../lib/import/context';
 import { notifyPlayer } from '../lib/shell';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * `micaimport` (MICA-233): bring a qb-phone, lb-phone or NPWD install's data into micaOS.
@@ -93,7 +94,7 @@ export const runImportCommand = async (source: number, args: string[]): Promise<
   } catch (error) {
     console.error(
       `[micaimport] ${which} failed part-way; rows already written are in the ledger and a re-run skips them:`,
-      error
+      traceOf(error)
     );
   } finally {
     running = false;

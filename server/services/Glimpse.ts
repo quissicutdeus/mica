@@ -26,6 +26,7 @@ import { MAX_ATTACHMENTS } from '@mica/shared/attachments';
 import { mentionedHandles } from '@mica/shared/richText';
 import { buildDeepLink } from '@mica/shared/deepLink';
 import type { Account, GlimpseCreated, GlimpseEngagement, GlimpsePost } from '@mica/shared/types';
+import { traceOf } from '../lib/sqlErrors';
 
 /** The app id, which is also the handle namespace its accounts are claimed in. */
 export const GLIMPSE_APP = 'glimpse';
@@ -352,7 +353,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // After the write, and never allowed to fail it: the post is committed either way.
   if (caption) {
     void notifyGlimpseMentions(caption, account, id).catch((error) =>
-      console.error('[glimpse] Mention notification failed for', id, error)
+      console.error('[glimpse] Mention notification failed for', id, traceOf(error))
     );
   }
 

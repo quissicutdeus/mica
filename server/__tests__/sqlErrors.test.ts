@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import { isDuplicateKey } from '../lib/sqlErrors';
+import { isDuplicateKey, reasonOf, traceOf } from '../lib/sqlErrors';
 
 /**
  * The two shapes a failed statement arrives in (MICA-335). oxmysql's is the one every real
@@ -44,5 +44,52 @@ describe('isDuplicateKey', () => {
     ['nothing at all', undefined]
   ])('is not a duplicate: %s', (_label, error) => {
     expect(isDuplicateKey(error)).toBe(false);
+  });
+});
+
+/**
+ * MICA-433: a duplicate-key reason keeps the key and drops the value. The value is whatever
+ * collided — a citizenid, a phone number, a phone id — and a reason goes into log lines.
+ */
+describe('a duplicate entry, as a reason', () => {
+  const viaOxmysql = (driver: string) =>
+    new Error(
+      `mica was unable to execute a query!\nINSERT INTO \`mica_phone_numbers\` …\n` +
+        `["CID_A","5550101"]\n${driver}`
+    );
+
+  it('drops the value and keeps the key, in both driver shapes', () => {
+    const line = "Duplicate entry 'char1:3f9a2c7e5b1d' for key 'mica_phone_numbers.citizenid'";
+    expect(reasonOf(viaOxmysql(line))).toBe(
+      "Duplicate entry '…' for key 'mica_phone_numbers.citizenid'"
+    );
+    expect(
+      reasonOf(
+        Object.assign(new Error("Duplicate entry '5550101' for key 'number'"), {
+          errno: 1062
+        })
+      )
+    ).toBe("Duplicate entry '…' for key 'number'");
+  });
+
+  it('drops a value that holds a quote, and a composite one', () => {
+    expect(reasonOf(new Error("Duplicate entry 'O'Brien-7' for key 'handle'"))).toBe(
+      "Duplicate entry '…' for key 'handle'"
+    );
+    expect(reasonOf(new Error("Duplicate entry 'CIT_A|CIT_B' for key 'pair_key_unique'"))).toBe(
+      "Duplicate entry '…' for key 'pair_key_unique'"
+    );
+  });
+
+  it('still reads as a duplicate, and traceOf carries the redaction', () => {
+    const error = viaOxmysql("Duplicate entry 'CID_A' for key 'citizenid'");
+    expect(isDuplicateKey(error)).toBe(true);
+    expect(traceOf(error)).not.toContain('CID_A');
+  });
+
+  it('leaves every other reason as it was — the positive twin', () => {
+    expect(reasonOf(new Error('Lost connection to MySQL server'))).toBe(
+      'Lost connection to MySQL server'
+    );
   });
 });

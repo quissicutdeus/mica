@@ -4,6 +4,7 @@
 
 import { FrameworkBridge } from './FrameworkBridge';
 import { appEventChannel } from './appEvents';
+import { traceOf } from './sqlErrors';
 
 /**
  * A job changed under a player; tell their Jobs app to look again (MICA-227).
@@ -61,7 +62,7 @@ export const notifyJobChanged = (rawSource: unknown): void => {
     if (!citizenid) return;
     appEventChannel('jobs').push(citizenid, 'changed', {});
   } catch (error) {
-    console.error('[jobEvents] Failed to push a job change:', error);
+    console.error('[jobEvents] Failed to push a job change:', traceOf(error));
   }
 };
 

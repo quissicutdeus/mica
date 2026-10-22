@@ -1377,6 +1377,32 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A citizenid, a phone's device id or another player's number no longer leaks to
+other players, add-ons, the console or Discord (MICA-433).** On ESX a citizenid
+is the player's Rockstar licence, so this mattered most there.
+
+Before, sending $1 to any phone number answered with the citizenid of whoever
+held it, and an open invoice carried the biller's. Every reply about a player's
+own data also carried their citizenid and device id, which reached any add-on.
+
+Now the server strips both from every reply and every push to a phone. The phone
+itself never asks for the player's citizenid any more. A nearby stereo no longer
+shows the broadcaster's character name, and the Bank card shows a masked number
+instead of one derived from the citizenid.
+
+The console no longer logs a payment that went through, or which character holds
+which number or phone. Every failure line that has to name a player prints a
+short, stable token instead, the same token everywhere, so staff can still match
+lines up. A database error no longer prints its query or a colliding value.
+Discord embeds name players by that token too, unless
+`mica_discord_webhook_content` is on.
+
+The salt behind the tokens is minted once per install into
+`mica_schema_migrations`. It needs no migration and no new convar.
+
+A wallpaper photo now shows only for the character who set it. Every photo set
+before this update falls back to the default once, until it is picked again.
+
 **Content a moderator takes down and later reinstates comes back where it was
 and as it was (MICA-426).** Reopening a report puts the content back in its old
 place, unchanged. Before, a takedown or a restore marked a text, a Blab or a
@@ -1709,6 +1735,26 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**`useSearchProvider` now needs the `search` permission (MICA-433).** The shell
+hands every search provider the player's query one keystroke at a time while the
+app runs, which no consent screen used to mention. Add `'search'` to
+`permissions`; the Store asks for it as "Read What You Type in Search". An
+add-on that calls `useSearchProvider` without declaring it throws
+`AppPermissionError`, and the add-on build's permission scan refuses it.
+
+**An add-on no longer sees a player's citizenid, device id or the moderation
+queue (MICA-433).** `useAccount` no longer has `citizenid` or `fetchCitizenId`
+at all, while the phone number, balance and transactions stay behind `account`.
+`admin` is refused on a `core: false` manifest, at `defineApp` and again by the
+shell before any facet answers, so `useAdmin` and `useReports` give an add-on
+nothing. The shell also removes every `citizenid` and `device_id` field, at any
+depth, from everything it posts to an add-on's frame, its own service's rows
+included. The server no longer sends them on a player's own rows either, and
+`Invoice` loses `payee`. An add-on that read any of these stops compiling or
+sees the field gone, and there is nothing to replace it with on purpose: on ESX
+a citizenid is the player's licence. The contract version stays `1`, since
+nothing outside this repo builds against it yet.
 
 **A manifest's `color` is gone: write `tile`, and read `tile` (MICA-419).**
 `defineApp` used to accept the old `color` string beside `tile`, and every

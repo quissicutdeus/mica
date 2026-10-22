@@ -5,6 +5,7 @@
 import { FrameworkBridge } from './FrameworkBridge';
 import { playerCoords } from './playerCoords';
 import { resource } from './framework/runtime';
+import { traceOf } from './sqlErrors';
 
 /**
  * Speakerphone: the players standing near a phone on speaker hear the call, and the far
@@ -226,7 +227,7 @@ function release(src: number, notify = true): void {
     } catch (error) {
       console.error(
         `[mica] speakerphone could not take ${src} out of call ${entry.callId}.`,
-        error
+        traceOf(error)
       );
       // pma-voice has stopped: clear the state bag it would rejoin from on restart.
       try {
@@ -244,7 +245,7 @@ function admit(src: number, owner: number, callId: number): void {
     backend.setCall(src, callId);
   } catch (error) {
     // Not in the channel, so not a listener: nothing to undo, and nothing to tell them.
-    console.error(`[mica] speakerphone could not add ${src} to call ${callId}.`, error);
+    console.error(`[mica] speakerphone could not add ${src} to call ${callId}.`, traceOf(error));
     return;
   }
   listeners.set(src, { owner, callId });

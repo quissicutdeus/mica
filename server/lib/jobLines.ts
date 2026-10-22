@@ -15,6 +15,7 @@ import {
   type CallVerdict,
   type IncomingLineMessage
 } from './numberRegistry';
+import { traceOf } from './sqlErrors';
 
 /**
  * Job lines from `mica_job_lines` (MICA-307): numbers micaOS answers itself by ringing every
@@ -111,7 +112,10 @@ const staffMembers = (line: JobLine, caller: number): StaffMember[] => {
     try {
       jobs = player.getJobs();
     } catch (error) {
-      console.error(`[micaOS] mica_job_lines: could not read jobs for player ${src}:`, error);
+      console.error(
+        `[micaOS] mica_job_lines: could not read jobs for player ${src}:`,
+        traceOf(error)
+      );
       continue;
     }
     if (isLineStaff(line, jobs)) staff.push({ src, citizenid: player.citizenid });
@@ -172,7 +176,11 @@ export function pushLineMessage(
           }
     );
   } catch (error) {
-    console.error(`[micaOS] mica_job_lines: could not tell ${line.number}'s staff:`, error);
+    // log-identity-ok: a job line's public number, not a player's
+    console.error(
+      `[micaOS] mica_job_lines: could not tell ${line.number}'s staff:`,
+      traceOf(error)
+    );
   }
 }
 
@@ -207,9 +215,10 @@ export async function notifyIncoming(line: JobLine, message: IncomingLineMessage
   try {
     quiet = await wasAwaiting(message.conversationId, message.messageId);
   } catch (error) {
+    // log-identity-ok: a job line's public number, not a player's
     console.error(
       `[micaOS] mica_job_lines: could not read thread ${message.conversationId} on ${line.number}:`,
-      error
+      traceOf(error)
     );
   }
   pushLineMessage(

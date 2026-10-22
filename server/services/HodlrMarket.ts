@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { Database } from '../lib/Database';
 import { startupJobsMayRunNow, whenSchemaReady } from '../lib/schemaReady';
 import type { PricePoint } from '@mica/shared/types';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * The single global coin price, ticked by the server and persisted for the chart.
@@ -181,7 +182,7 @@ const recordSnapshot = async (price: number): Promise<void> => {
   try {
     await Database.insert(`INSERT INTO \`${PRICE_HISTORY_TABLE}\` (\`price\`) VALUES (?)`, [price]);
   } catch (e) {
-    console.error('[mica] failed to record hodlr price snapshot', e);
+    console.error('[mica] failed to record hodlr price snapshot', traceOf(e));
   }
 };
 
@@ -251,7 +252,10 @@ const restorePrice = async (): Promise<void> => {
     restored = true;
     console.log(`[mica] hodlr market open at ${currentPrice}`);
   } catch (e) {
-    console.error('[mica] failed to restore the hodlr price; market closed until retried', e);
+    console.error(
+      '[mica] failed to restore the hodlr price; market closed until retried',
+      traceOf(e)
+    );
   } finally {
     if (attempt === restoreGeneration) restoreInFlight = false;
   }
@@ -309,7 +313,7 @@ const pruneHistory = async (): Promise<void> => {
       [HISTORY_RETENTION_DAYS, Number(newest) || 0]
     );
   } catch (e) {
-    console.error('[mica] failed to prune hodlr price history', e);
+    console.error('[mica] failed to prune hodlr price history', traceOf(e));
   }
 };
 
@@ -370,7 +374,7 @@ export const getPriceHistory = async (): Promise<PricePoint[]> => {
       [CHART_WINDOW_HOURS]
     );
   } catch (e) {
-    console.error('[mica] failed to read hodlr price history', e);
+    console.error('[mica] failed to read hodlr price history', traceOf(e));
     return [];
   }
 };

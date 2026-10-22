@@ -34,6 +34,7 @@ import {
 } from '@mica/shared/ownerConfig';
 import { PlayerFacingError } from './errors';
 import { appOfService } from './services';
+import { NO_REASON, reasonOf } from './sqlErrors';
 
 /**
  * The server's read of what an owner configures without editing TypeScript (MICA-234).
@@ -161,7 +162,7 @@ const listWallpapers = (folder: string): string[] => {
     }
     entries = readdirSync(dir);
   } catch (error) {
-    sayOnce(`mica_wallpapers: '${folder}' could not be listed (${String(error)}).`);
+    sayOnce(`mica_wallpapers: '${folder}' could not be listed (${reasonOf(error, NO_REASON)}).`);
     return [];
   }
 
@@ -275,7 +276,7 @@ const listSounds = (): OwnerSound[] => {
     }
     entries = readdirSync(dir);
   } catch (error) {
-    sayOnce(`sounds: '${SOUNDS_FOLDER}' could not be listed (${String(error)}).`);
+    sayOnce(`sounds: '${SOUNDS_FOLDER}' could not be listed (${reasonOf(error, NO_REASON)}).`);
     return [];
   }
 
@@ -294,7 +295,7 @@ const listSounds = (): OwnerSound[] => {
     if (!stats?.isFile()) {
       skip(name, 'not a file');
     } else if (!hasExtension(name, SOUND_EXTENSIONS)) {
-      skip(name, `a sound is ${SOUND_EXTENSIONS.map((e) => `.${e}`).join(', ')}`);
+      skip(name, `a sound is ${SOUND_EXTENSIONS.map((ext) => `.${ext}`).join(', ')}`);
     } else if (!isSafeFileName(name)) {
       skip(name, 'a sound file name is letters, digits, dot, underscore and hyphen');
     } else if (soundStem(name).length > MAX_SOUND_STEM) {
@@ -602,6 +603,7 @@ export const defaultContacts = (limits: { name: number; number: number }): Defau
       `[micaOS] mica_default_contacts: ${resolved.problem}. New phones start with no contacts.`
     );
   }
+  // log-identity-ok: the owner's configured default contacts and their limits
   warnRejected(
     'mica_default_contacts',
     raw,

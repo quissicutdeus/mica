@@ -143,7 +143,7 @@ describe('a job change pushes a refetch', () => {
     expect(() => fire(JOB_CHANGE_EVENTS.qbSetDuty, 5, true)).not.toThrow();
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('[jobEvents]'),
-      expect.any(Error)
+      expect.any(String)
     );
   });
 });

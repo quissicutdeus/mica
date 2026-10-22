@@ -7,7 +7,8 @@ import { NotificationItem } from '@mica/shared/types';
 import { Database } from '../lib/Database';
 import { notificationsContract } from '@mica/shared/contracts/notifications';
 import { phoneForCitizen } from '../lib/deviceIdentity';
-import { reasonOf } from '../lib/sqlErrors';
+import { reasonOf, traceOf } from '../lib/sqlErrors';
+import { who } from '../lib/who';
 
 /** What a failure is logged as when no line of it is safe to print. */
 export const UNKNOWN_DB_ERROR = 'unknown database error';
@@ -47,7 +48,10 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
       try {
         deviceId = await phoneForCitizen(String(item.citizenid ?? ''));
       } catch (error) {
-        console.error(`[mica] no phone to notify ${item.citizenid} on; dropping the row.`, error);
+        console.error(
+          `[mica] no phone to notify ${who(item.citizenid)} on; dropping the row.`,
+          traceOf(error)
+        );
         continue;
       }
       try {

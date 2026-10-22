@@ -393,7 +393,7 @@ describe('onAccountBlocked', () => {
     blockHandler.mockRejectedValueOnce(new Error('spark is down'));
 
     expect(await block()).toBe(true);
-    expect(logged).toHaveBeenCalledWith(expect.stringContaining(UNLISTED), expect.any(Error));
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining(UNLISTED), expect.any(String));
     logged.mockRestore();
   });
 

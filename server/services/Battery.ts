@@ -29,6 +29,7 @@ import { isDeviceOpen } from '../lib/PhoneOpenState';
 import { phoneForCitizen, deviceForRequest } from '../lib/deviceIdentity';
 import { activeDeviceIdOf } from './Devices';
 import { PlayerFacingError } from '../lib/errors';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * micaOS owns the saved charge, in its own table.
@@ -288,7 +289,10 @@ const tickBattery = (): void => {
       }
       loadFailed[device].delete(src);
       void sendLoadedBatteryToClient(src, device).catch((error: unknown) => {
-        console.error(`[mica] ${device} battery load retry for source ${src} threw`, error);
+        console.error(
+          `[mica] ${device} battery load retry for source ${src} threw`,
+          traceOf(error)
+        );
       });
     }
   }
@@ -304,7 +308,7 @@ const tickBattery = (): void => {
       }
       if (deviceInUse(src, device) === null) continue;
       void sendLoadedBatteryToClient(src, device).catch((error: unknown) => {
-        console.error(`[mica] ${device} battery load for source ${src} threw`, error);
+        console.error(`[mica] ${device} battery load for source ${src} threw`, traceOf(error));
       });
     }
   }
@@ -544,7 +548,7 @@ export const savePlayerBattery = async (
     // A failed write must not take the event handler down; the next report retries, and reads.
     lastWritten.delete(phone);
     rowOf.delete(phone);
-    console.error('[mica] failed to save battery', e);
+    console.error('[mica] failed to save battery', traceOf(e));
   }
 };
 
@@ -615,7 +619,7 @@ onNet('mica:server:admin:setBattery', (...args: unknown[]) => {
   // refuses a tablet the admin has none of, rather than seeding a charge that would tick for a
   // device that is not there. The phone's path runs synchronously, as it always did.
   void setBatteryLevel(src, level, device).catch((error: unknown) => {
-    console.error(`[mica] battery slider for source ${src} threw`, error);
+    console.error(`[mica] battery slider for source ${src} threw`, traceOf(error));
   });
 });
 
@@ -695,7 +699,7 @@ export const sendLoadedBatteryToClient = async (
     console.error(
       `[mica] failed to ${what} for source ${src}; nothing was written. Retrying in about a ` +
         `minute, or sooner on a device-state change.`,
-      error
+      traceOf(error)
     );
     const known = charge[device].get(src);
     if (known !== undefined) pushCharge(src, device, Math.round(known));
@@ -805,7 +809,7 @@ onNet('mica:server:battery:load', (...args: unknown[]) => {
 
   const src = source;
   void loadEnabledDevices(src).catch((error: unknown) => {
-    console.error(`[mica] battery load for source ${src} threw`, error);
+    console.error(`[mica] battery load for source ${src} threw`, traceOf(error));
   });
 });
 
@@ -1002,6 +1006,7 @@ export const runChargeCommand = (source: number, args: string[]): void => {
   // drain loop ticks from. The phone showed 100 and the very next tick pushed the old
   // level straight back over it, having never heard about this command.
   const applied = applyCharge(target, level);
+  // log-identity-ok: a server id the admin typed, echoed to the admin
   respond(source, `battery for ${target} set to ${applied}%`);
 };
 

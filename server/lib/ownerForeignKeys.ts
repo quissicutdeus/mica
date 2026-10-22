@@ -5,6 +5,7 @@
 import { Database } from './Database';
 import { imageHost } from './mediaHost';
 import { OWNER_TABLE } from './schemaSql';
+import { traceOf } from './sqlErrors';
 
 /**
  * The foreign keys from micaOS tables onto qb's `players`, found live rather than trusted to the
@@ -89,7 +90,7 @@ export const reportOwnerForeignKeys = async (): Promise<number | null> => {
       `[mica] could not check for foreign keys onto ${OWNER_TABLE}. If any micaOS table still ` +
         'has one, a character your framework deletes takes their micaOS rows with it. ' +
         'micaschema apply drops them.',
-      error
+      traceOf(error)
     );
     return null;
   }

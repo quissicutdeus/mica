@@ -18,7 +18,7 @@ import {
   rekeyEntry
 } from './ledgerKeys';
 import { SKIP, type ImportSource } from './report';
-import { NO_REASON, reasonOf } from '../sqlErrors';
+import { NO_REASON, reasonOf, traceOf } from '../sqlErrors';
 
 /**
  * What every source importer shares (MICA-233): the ledger, identity, and the writers.
@@ -375,7 +375,10 @@ export class Ledger {
       if (existing) return this.mark(sourceTable, key, Number(existing));
       // A body-keyed table's raw key is the body: name the entry by its stored form instead.
       const named = isBodyKeyed(this.source, sourceTable) ? key : rawKey;
-      console.error(`[micaimport] could not record ${sourceTable} ${named} in the ledger:`, error);
+      console.error(
+        `[micaimport] could not record ${sourceTable} ${named} in the ledger:`,
+        traceOf(error)
+      );
       return null;
     }
   }

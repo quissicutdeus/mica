@@ -115,6 +115,7 @@ import { __setSchemaReadyForTests } from '../lib/schemaReady';
 import { exportFilterFor } from '../services/Privacy';
 import { NOT_HELD_REPLY, installTestPhone, refusePhone } from './phoneStub';
 import type { CasinoBet } from '@mica/shared/types';
+import { who } from '../lib/who';
 
 // ---------------------------------------------------------------------------------------------
 // The world: answers exactly the statements Casino.ts sends, and fails loudly on any other.
@@ -594,7 +595,10 @@ describe('roulette: spin', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const reply = await call('spin', { bets: [{ kind: 'red', amount: 10 }] });
     expect(reply).toMatchObject({ payout: 20 });
-    expect(error).toHaveBeenCalledWith(expect.stringMatching(/could not credit 20 to CID_A/));
+    // By `who()`'s token, never the citizenid (MICA-433).
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining(`could not credit 20 to ${who('CID_A')}`)
+    );
     error.mockRestore();
   });
 
@@ -835,7 +839,7 @@ describe('crash: a round', () => {
     try {
       await vi.advanceTimersByTimeAsync(crashDelayMs(150));
       expect(world.rows[0]).toMatchObject({ status: 'settled', payout: 0 });
-      expect(error).toHaveBeenCalledWith(expect.stringMatching(/push/), expect.any(Error));
+      expect(error).toHaveBeenCalledWith(expect.stringMatching(/push/), expect.any(String));
     } finally {
       delete (pushes as { push?: unknown }).push;
       error.mockRestore();
@@ -969,7 +973,9 @@ describe('crash: a round', () => {
     money.addMoney.mockReturnValue(false);
     expect(await start(250)).toEqual({ ok: false, reason: 'round_failed' });
     expect(credits()).toEqual([100]);
-    expect(error).toHaveBeenCalledWith(expect.stringMatching(/could not credit 100 to CID_A/));
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining(`could not credit 100 to ${who('CID_A')}`)
+    );
     expect(__isLiveForTests(1)).toBe(false);
     error.mockRestore();
   });

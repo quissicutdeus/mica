@@ -34,12 +34,13 @@ import { resolveOwnedAttachments } from '../lib/attachments';
 import { detectFramework, FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
-import { isDuplicateKey } from '../lib/sqlErrors';
+import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
 import { numberOfPhone } from '../lib/phoneNumbers';
 import { blockedBy } from './Blocklist';
 import { phoneForCitizen } from './Devices';
 import { syncNumber } from './PhoneNumbers';
 import { OPEN_REPORT, parseRetentionDays, registerRetention } from '../lib/contentRetention';
+import { withoutOwnerKeys } from '../lib/replyShape';
 
 /**
  * Messages: membership on both axes.
@@ -691,13 +692,18 @@ export const deliverToParticipants = async (
 
     // The shape the shell's `receiveMessage` route already expects: it appends to the
     // thread and raises a toast with an inline reply.
-    emitNet('mica:client:messages:received', target, {
-      conversation_id: conversationId,
-      message: message.message,
-      senderName: message.external_sender ? (sender.name ?? undefined) : undefined,
-      phone: sender.phone ?? undefined,
-      row: messageForReader(message, citizenid, senderId)
-    });
+    emitNet(
+      'mica:client:messages:received',
+      target,
+      // No push carries a citizenid or a phone id (MICA-433); the row is already the reader's.
+      withoutOwnerKeys({
+        conversation_id: conversationId,
+        message: message.message,
+        senderName: message.external_sender ? (sender.name ?? undefined) : undefined,
+        phone: sender.phone ?? undefined,
+        row: messageForReader(message, citizenid, senderId)
+      })
+    );
     pushed = true;
   }
   return pushed;
@@ -776,7 +782,11 @@ export const sendFromLine = async (
       stored
     );
   } catch (error) {
-    console.error('[Messages] Delivery from a line failed for conversation', conversationId, error);
+    console.error(
+      '[Messages] Delivery from a line failed for conversation',
+      conversationId,
+      traceOf(error)
+    );
   }
 
   return { conversationId, messageId, delivered };
@@ -907,7 +917,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved
       console.error(
         '[Messages] Reading the members failed for conversation',
         conversationId,
-        error
+        traceOf(error)
       );
     }
   }
@@ -924,7 +934,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved
       recipients
     );
   } catch (error) {
-    console.error('[Messages] Delivery failed for conversation', conversationId, error);
+    console.error('[Messages] Delivery failed for conversation', conversationId, traceOf(error));
   }
 
   // A thread with a line: tell its handler (MICA-275). After the write and the push, and
@@ -932,7 +942,11 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved
   try {
     tellLineAbout(thread, conversationId, stored, source, citizenid, senderPhone);
   } catch (error) {
-    console.error('[Messages] Telling a line failed for conversation', conversationId, error);
+    console.error(
+      '[Messages] Telling a line failed for conversation',
+      conversationId,
+      traceOf(error)
+    );
   }
 
   // The sender's own membership id, which they were confirmed in before the write.

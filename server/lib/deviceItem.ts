@@ -7,6 +7,7 @@ import { detectFramework, FrameworkBridge } from './FrameworkBridge';
 import type { FrameworkPlayer } from './framework/runtime';
 import { guardNetEvent, noInput } from './netGuard';
 import { forgetOnPlayerLoaded, onPlayerLoaded, pushRehydrate } from './shell';
+import { traceOf } from './sqlErrors';
 
 /**
  * Each device as something a player has to be holding, and the tablet as something a server
@@ -284,7 +285,7 @@ const runSubscriber = (what: string, name: string, src: number, run: () => unkno
         console.error(
           `[mica] ${what} subscriber '${name}' rejected for source ${src}. ` +
             `The other subscribers still ran.`,
-          error
+          traceOf(error)
         );
       });
     }
@@ -292,7 +293,7 @@ const runSubscriber = (what: string, name: string, src: number, run: () => unkno
     console.error(
       `[mica] ${what} subscriber '${name}' threw for source ${src}. ` +
         `The other subscribers still ran.`,
-      error
+      traceOf(error)
     );
   }
 };
@@ -463,6 +464,7 @@ const tabletItemUsed = (source: number, used?: UsedItem): void => {
 
 const configuredPhone = phoneItemName();
 if (configuredPhone) {
+  // log-identity-ok: the phone item's configured name, not a phone or a player
   FrameworkBridge.registerUsableItem(configuredPhone, phoneItemUsed);
 }
 

@@ -11,6 +11,9 @@ import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
 import { AUDIT_LOG_TABLE } from './AuditLogger';
 import { whenSchemaReady } from './schemaReady';
 import { CASCADE_DEPENDENTS, SELF_SERVICE_EXCEPT } from '../services/Privacy';
+import { traceOf } from './sqlErrors';
+import { who } from './who';
+import { withoutOwnerKeys } from './replyShape';
 
 /**
  * The shell service — the phone itself, rather than any app on it.
@@ -51,7 +54,8 @@ export interface ShellNotification {
  */
 export const notifyPlayer = (source: number, notification: ShellNotification): void => {
   if (!notification?.message) return;
-  emitNet(`mica:client:${SHELL_SERVICE}:notify`, source, notification);
+  // No push carries a citizenid or a phone id (MICA-433).
+  emitNet(`mica:client:${SHELL_SERVICE}:notify`, source, withoutOwnerKeys(notification));
 };
 
 /**
@@ -578,7 +582,7 @@ const forgetCharacter = (
       console.error(
         `[mica] player-loaded forgetter '${name}' threw for source ${src}. The previous ` +
           `character's state it holds may still be visible; the rest still ran.`,
-        error
+        traceOf(error)
       );
     }
   }
@@ -637,7 +641,7 @@ const dispatchPlayerLoaded = (src: number): void => {
           console.error(
             `[mica] player-loaded subscriber '${subscriber.name}' rejected for source ${src}. ` +
               `The other subscribers still ran.`,
-            error
+            traceOf(error)
           );
         });
       }
@@ -645,7 +649,7 @@ const dispatchPlayerLoaded = (src: number): void => {
       console.error(
         `[mica] player-loaded subscriber '${subscriber.name}' threw for source ${src}. ` +
           `The other subscribers still ran.`,
-        error
+        traceOf(error)
       );
     }
   }
@@ -763,19 +767,19 @@ on(`mica:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
       // outcome logged only when there was something to say cannot be told apart from one
       // that never returned. An operator triggering this deliberately needs the difference.
       console.log(
-        `[mica] purged ${removed} row(s) for deleted character ${citizenid}` +
+        `[mica] purged ${removed} row(s) for deleted character ${who(citizenid)}` +
           (kept > 0 ? `, kept ${kept} held or still referenced.` : '.')
       );
       // Each failure is logged where it happened, in `purgeOwnedRows`; this is the count.
       if (failures.length > 0) {
         console.error(
-          `[mica] purge for ${citizenid} failed on ${failures.length} table(s): ` +
+          `[mica] purge for ${who(citizenid)} failed on ${failures.length} table(s): ` +
             failures.map(({ table }) => table).join(', ')
         );
       }
     })
     .catch((error) => {
-      console.error('[mica] purge for a deleted character failed:', error);
+      console.error('[mica] purge for a deleted character failed:', traceOf(error));
     });
 });
 
@@ -845,7 +849,7 @@ on('onResourceStart', (resourceName: string) => {
         }
       })
       .catch((error) => {
-        console.error('[mica] orphan sweep failed:', error);
+        console.error('[mica] orphan sweep failed:', traceOf(error));
       });
   });
 });

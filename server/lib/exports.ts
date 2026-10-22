@@ -57,6 +57,7 @@ export const MICA_API_VERSION = 1;
 export { ok, fail } from '@mica/shared/exports';
 export type { ExportOutcome } from '@mica/shared/exports';
 import { fail, type ExportOutcome } from '@mica/shared/exports';
+import { traceOf } from './sqlErrors';
 
 const guarded =
   <A extends unknown[], T>(name: string, handler: (...args: A) => ExportOutcome<T>) =>
@@ -64,7 +65,7 @@ const guarded =
     try {
       return handler(...args);
     } catch (error) {
-      console.error(`[mica] export '${name}' threw:`, error);
+      console.error(`[mica] export '${name}' threw:`, traceOf(error));
       return fail<T>('internal_error', 'micaOS failed to handle that request.');
     }
   };
@@ -81,7 +82,7 @@ const guardedAsync =
     try {
       return await handler(...args);
     } catch (error) {
-      console.error(`[mica] export '${name}' threw:`, error);
+      console.error(`[mica] export '${name}' threw:`, traceOf(error));
       return fail<T>('internal_error', 'micaOS failed to handle that request.');
     }
   };

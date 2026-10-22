@@ -4,7 +4,6 @@
 
 import { get } from 'svelte/store';
 import {
-  fetchCitizenId,
   fetchBalance,
   bankBalance,
   transactions,
@@ -175,9 +174,6 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         // MICA-243: where hosted photos live, before an add-on frame is built with a CSP
         // that has to let them in.
         refreshImageHost(),
-        // The framework's citizen id, read by the client itself (`client/client.ts`): no
-        // service behind it, and the citizen is the same on either device.
-        fetchCitizenId(),
         // The Bank's balance, and the Bank is a phone app with no tablet layout.
         ...(onPhone ? [fetchBalance()] : []),
         // The launcher badges' unread counts, from the `notifications` service, which is the

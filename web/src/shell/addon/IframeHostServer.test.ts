@@ -478,7 +478,7 @@ describe('IframeHostServer', () => {
      * one proves `searchProvider` is in it, so deleting that entry turns something red.
      */
     it('pins a search provider, so an add-on cannot publish hits under another app', async () => {
-      const { from } = server([] as AppPermission[]);
+      const { from } = server(['search'] as AppPermission[]);
       from({
         kind: 'call',
         id: 5,
@@ -492,6 +492,39 @@ describe('IframeHostServer', () => {
 
       // Not 'notes' — the frame said so, and saying so is not being so.
       expect(built).toEqual([{ facet: 'searchProvider', appId: 'probe' }]);
+    });
+
+    /**
+     * MICA-433: a provider is handed every keystroke of the player's query, so it is a
+     * declared, consented permission now, not an implicit one. Neither the query nor the
+     * publish is answered without it, and the facet is never built.
+     */
+    it('refuses a search provider the add-on did not declare, or the player did not grant', async () => {
+      for (const [declared, granted] of [
+        [[], []],
+        [['search'], []]
+      ] as AppPermission[][][]) {
+        const { posted, from } = server(declared, granted);
+        from({
+          kind: 'call',
+          id: 5,
+          facet: 'searchProvider',
+          factoryArgs: ['probe'],
+          member: 'publish',
+          args: ['ren', []]
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(posted).toContainEqual(
+          expect.objectContaining({
+            kind: 'reply',
+            id: 5,
+            ok: false,
+            error: expect.objectContaining({ permission: 'search', hookName: 'useSearchProvider' })
+          })
+        );
+      }
+      expect(built).toEqual([]);
     });
 
     /**
@@ -2539,6 +2572,184 @@ describe('IframeHostServer', () => {
  * answers it must be the app frame's in everything but the one word that picks the root.
  * Each case below runs the same script against both and compares what comes back.
  */
+/**
+ * MICA-433: `citizenid` and `device_id` never reach a frame, whatever carries them. The
+ * server strips them from owner reads; this is the second fence, so every test here hands
+ * the shell a value that still has them, the way a server slip would.
+ */
+describe('IframeHostServer withholds citizenid and device_id from the frame', () => {
+  const leaky = () => ({
+    id: 1,
+    citizenid: 'ABC12345',
+    device_id: 'phone-7',
+    owner: { name: 'Ana', citizenid: 'DEF67890', tags: [{ device_id: 'tablet-2', n: 3 }] },
+    byId: new Map<unknown, unknown>([
+      ['citizenid', 'GHI'],
+      ['k', { citizenid: 'JKL', v: 1 }]
+    ]),
+    seen: new Set<unknown>([{ device_id: 'x', ok: true }])
+  });
+  const clean = {
+    id: 1,
+    owner: { name: 'Ana', tags: [{ n: 3 }] },
+    byId: new Map<unknown, unknown>([['k', { v: 1 }]]),
+    seen: new Set<unknown>([{ ok: true }])
+  };
+
+  it('in a reply to a call', async () => {
+    registerFacet(
+      'contacts' as any,
+      (() => ({ contactsStore: store, addContact: () => Promise.resolve([leaky()]) })) as any
+    );
+    const { posted, from } = server();
+    from({
+      kind: 'call',
+      id: 9,
+      facet: 'contacts',
+      factoryArgs: [],
+      member: 'addContact',
+      args: []
+    });
+    await vi.waitFor(() => expect(posted.some((m) => m.kind === 'reply')).toBe(true));
+    expect(posted.find((m) => m.kind === 'reply')).toEqual({
+      kind: 'reply',
+      id: 9,
+      ok: true,
+      value: [clean]
+    });
+  });
+
+  it('in a store push, without touching the shell’s own value', () => {
+    const value = [leaky()];
+    store = writable<any>(value);
+    registerFacet('contacts' as any, (() => ({ contactsStore: store })) as any);
+    const { posted, from } = server();
+    from({ kind: 'subscribe', id: 4, facet: 'contacts', factoryArgs: [], member: 'contactsStore' });
+    expect(posted[posted.length - 1]).toEqual({ kind: 'push', id: 4, value: [clean] });
+    expect(value[0].citizenid).toBe('ABC12345');
+    expect(value[0].owner.citizenid).toBe('DEF67890');
+  });
+
+  it('in the arguments of a callback', async () => {
+    registerFacet(
+      'contacts' as any,
+      (() => ({
+        contactsStore: store,
+        restoreContact: (cb: (row: unknown) => void) => {
+          cb(leaky());
+          return () => {};
+        }
+      })) as any
+    );
+    const { posted, from } = server();
+    from({
+      kind: 'call',
+      id: 3,
+      facet: 'contacts',
+      factoryArgs: [],
+      member: 'restoreContact',
+      args: [{ __cb: 1 }]
+    });
+    await vi.waitFor(() => expect(posted.some((m) => m.kind === 'callback')).toBe(true));
+    expect(posted.find((m) => m.kind === 'callback')).toEqual({
+      kind: 'callback',
+      cb: 1,
+      args: [clean]
+    });
+  });
+
+  it('in the hydrate payload’s props', () => {
+    recordConsent('probe', ['contacts']);
+    const posted: ToFrame[] = [];
+    const current = { postMessage: (m: ToFrame) => posted.push(structuredClone(m)) };
+    const s = createIframeHostServer({
+      host: createInProcessHost('probe', ['contacts'] as AppPermission[]),
+      manifest,
+      props: { row: leaky() },
+      guest: () => current,
+      onError: vi.fn(),
+      onKey: vi.fn(),
+      onTyping: vi.fn()
+    });
+    s.handle({
+      data: { kind: 'hello', appId: 'probe' },
+      source: current,
+      origin: 'null'
+    } as unknown as MessageEvent);
+    const hydrate = posted.find((m) => m.kind === 'hydrate') as Extract<
+      ToFrame,
+      { kind: 'hydrate' }
+    >;
+    expect(hydrate.payload.props).toEqual({ row: clean });
+    s.dispose();
+  });
+});
+
+/**
+ * MICA-433: a manifest declaring `admin` is shut down at its first message, before any
+ * facet is built. `defineApp` refuses one already; this is the fence for a manifest that
+ * reached the shell some other way.
+ */
+describe('IframeHostServer refuses a frame whose manifest declares admin', () => {
+  const frameWith = (permissions: AppPermission[]) => {
+    recordConsent('probe', permissions);
+    const onEscape = vi.fn();
+    const posted: ToFrame[] = [];
+    const current = { postMessage: (msg: ToFrame) => posted.push(msg) };
+    const s = createIframeHostServer({
+      host: createInProcessHost('probe', permissions),
+      manifest: {
+        id: 'probe',
+        name: 'Probe',
+        icon: 'x',
+        core: false,
+        permissions
+      } as unknown as ReturnType<typeof defineApp>,
+      props: {},
+      guest: () => current,
+      onError: vi.fn(),
+      onEscape,
+      onKey: vi.fn(),
+      onTyping: vi.fn()
+    });
+    const from = (data: unknown) =>
+      s.handle({ data, source: current, origin: 'null' } as unknown as MessageEvent);
+    return { posted, from, onEscape, s };
+  };
+
+  it('answers neither hello nor a call to the moderation queue', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const isAdmin = vi.fn(() => true);
+    registerFacet('admin' as any, (() => ({ isAdmin, refreshAdmin: isAdmin })) as any);
+    const { posted, from, onEscape } = frameWith(['admin', 'contacts'] as AppPermission[]);
+
+    from({
+      kind: 'call',
+      id: 1,
+      facet: 'admin',
+      factoryArgs: [],
+      member: 'refreshAdmin',
+      args: []
+    });
+    from({ kind: 'hello', appId: 'probe' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(posted).toEqual([]);
+    expect(isAdmin).not.toHaveBeenCalled();
+    expect(onEscape).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("declares 'admin'"));
+    error.mockRestore();
+  });
+
+  it('still answers the same frame without it', () => {
+    const { posted, from, onEscape } = frameWith(['contacts'] as AppPermission[]);
+    from({ kind: 'hello', appId: 'probe' });
+    expect(posted.map((m) => m.kind)).toContain('hydrate');
+    expect(onEscape).not.toHaveBeenCalled();
+  });
+});
+
 describe('IframeHostServer in widget mode', () => {
   function pair(permissions: AppPermission[], granted: AppPermission[]) {
     recordConsent('probe', granted);

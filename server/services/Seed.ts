@@ -10,6 +10,7 @@ import { deliverToParticipants } from './Messages';
 import type { MessageRow } from '../repositories/MessageRepository';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * `micaseed` — populate a dev server with someone to talk to.
@@ -135,7 +136,7 @@ RegisterCommand(
   'micaseed',
   (source: number, args: string[]) => {
     void runSeedCommand(source, args ?? []).catch((error) => {
-      console.error('[micaseed] failed:', error);
+      console.error('[micaseed] failed:', traceOf(error));
       respond(source, 'Seeding failed — see the server console.', 'error');
     });
   },

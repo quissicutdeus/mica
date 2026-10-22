@@ -16,6 +16,7 @@ import {
 } from '../lib/orphanSweep';
 import { PRIVACY_DELETE_CONFIRMATION, privacyContract } from '@mica/shared/contracts/privacy';
 import type { PrivacyDeleteResult, PrivacyExport, PrivacyExportCategory } from '@mica/shared/types';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * A player's own data: export all of it, or delete all of it (MICA-168).
@@ -556,7 +557,7 @@ app.registerEvent('export', async (_source, _cbId, _data, citizenid) => {
   } catch (error) {
     // A table that could not be read is not a table with nothing in it; the whole export is
     // refused rather than handed back with a hole that looks like an empty category.
-    console.error('[privacy] export failed:', error);
+    console.error('[privacy] export failed:', traceOf(error));
     throw new PlayerFacingError('Your data could not be exported. Try again later.', {
       key: 'server.privacy.exportFailed'
     });
@@ -608,7 +609,7 @@ app.registerEvent('delete', async (_source, _cbId, data, citizenid) => {
   try {
     purged = await selfServicePurge(citizenid);
   } catch (error) {
-    console.error('[privacy] delete failed:', error);
+    console.error('[privacy] delete failed:', traceOf(error));
     await AuditLogger.log({
       citizenid,
       action: 'deleted',

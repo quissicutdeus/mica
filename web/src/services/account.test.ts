@@ -8,10 +8,8 @@ import {
   transactions,
   transactionsLoaded,
   historySource,
-  citizenid,
   fetchBalance,
-  fetchTransactions,
-  fetchCitizenId
+  fetchTransactions
 } from './account';
 import { get } from 'svelte/store';
 import * as fetchNuiModule from '../nui/fetchNui';
@@ -32,12 +30,14 @@ describe('account store', () => {
     vi.restoreAllMocks();
   });
 
-  it('fetches citizen ID and updates citizenid store', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue('CITIZEN_123');
-
-    const result = await fetchCitizenId();
-    expect(result).toBe('CITIZEN_123');
-    expect(get(citizenid)).toBe('CITIZEN_123');
+  /**
+   * MICA-433: the page holds no citizenid at all. Nothing in it needs one — the server knows
+   * who is asking — and whatever CEF holds, an XSS can read. On ESX it is the Rockstar licence.
+   */
+  it('keeps no citizenid, and has no way to ask for one', async () => {
+    const account = await import('./account');
+    expect(Object.keys(account)).not.toContain('citizenid');
+    expect(Object.keys(account)).not.toContain('fetchCitizenId');
   });
 
   it('fetches bank balance and updates bankBalance store', async () => {

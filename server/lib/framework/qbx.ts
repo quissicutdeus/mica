@@ -26,6 +26,7 @@ import {
   qbSetDuty,
   qbSetPhone
 } from './qb';
+import { traceOf } from '../sqlErrors';
 
 /**
  * Every job a qbx player holds, active one first (MICA-227).
@@ -86,7 +87,10 @@ const qbxSetActiveJob = (player: any, citizenid: string, src: number, name: stri
   try {
     resource('qbx_core').SetPlayerPrimaryJob(citizenid, name);
   } catch (error) {
-    console.error(`[FrameworkBridge] qbx_core.SetPlayerPrimaryJob for source ${src} threw:`, error);
+    console.error(
+      `[FrameworkBridge] qbx_core.SetPlayerPrimaryJob for source ${src} threw:`,
+      traceOf(error)
+    );
     return false;
   }
   return player.PlayerData?.job?.name === name;
@@ -105,7 +109,7 @@ const qbxSetDuty = (player: any, src: number, name: string, onDuty: boolean): bo
   try {
     resource('qbx_core').SetJobDuty(src, onDuty);
   } catch (error) {
-    console.error(`[FrameworkBridge] qbx_core.SetJobDuty for source ${src} threw:`, error);
+    console.error(`[FrameworkBridge] qbx_core.SetJobDuty for source ${src} threw:`, traceOf(error));
     return false;
   }
   return booleanOf(player.PlayerData?.job?.onduty, 'PlayerData.job.onduty', src) === onDuty;

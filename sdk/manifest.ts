@@ -19,7 +19,7 @@ import { ALL_DEVICES, type DeviceId } from '@mica/shared/devices';
  */
 export const ALL_PERMISSIONS = [
   // Player data — a service behind each
-  'account', // own phone number, bank balance, citizenid
+  'account', // own phone number, bank balance and transactions
   'admin', // moderation queue and admin actions
   // Separate from `account` on purpose: reading a balance and moving money are not the
   // same ask, and `account` is common enough (any app showing a balance) that bundling a
@@ -87,6 +87,11 @@ export const ALL_PERMISSIONS = [
   // regardless of permission (MICA-63's `MEMBER_ALLOWLIST` row). Splitting it anyway is
   // a disclosure fix for a `core: true` app.
   'notification-settings-write',
+  // MICA-433: be one of the phone's search providers. It hands the app every query the
+  // player types into the search sheet, one keystroke at a time, while the app is running,
+  // whether or not the player ever opened it. That was implicit, on the reasoning that it is
+  // only a way into the app; the query is what the player typed, and it is theirs to give.
+  'search',
   // No 'sound': `useSound` is implicit (`PERMISSION_OF.useSound === null`). Its facet is one
   // `play(effect)` over a fixed built-in set, used by kit widgets — `AppIcon`, `ToggleSwitch`,
   // `SegmentedControl` — that every app renders with, so a name to declare would be a name

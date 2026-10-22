@@ -202,7 +202,8 @@ describe('claiming a handle', () => {
   it('creates an account for the caller', async () => {
     const reply = await call('create', { app: 'blabber', handle: 'ada', display_name: 'Ada' });
 
-    expect(reply).toMatchObject({ id: 7, app: 'blabber', handle: 'ada', citizenid: 'CIT_A' });
+    expect(reply).toMatchObject({ id: 7, app: 'blabber', handle: 'ada' });
+    expect(reply).not.toHaveProperty('citizenid');
   });
 
   it('lowercases the handle so @Ada and @ada cannot both exist', async () => {

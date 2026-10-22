@@ -114,7 +114,7 @@ describe('runApply', () => {
 
     expect(errorSpy).toHaveBeenCalledWith(
       '[mica] could not drop the foreign keys onto players; nothing else was applied:',
-      expect.any(Error)
+      expect.any(String)
     );
     expect(runPendingMigrationsMock).not.toHaveBeenCalled();
     expect(applySpy).not.toHaveBeenCalled();
@@ -291,7 +291,11 @@ describe('the micaschema command dispatch', () => {
     handler!(0, ['apply']);
 
     await vi.waitFor(() => {
-      expect(errorSpy).toHaveBeenCalledWith('[micaschema] apply failed:', boom);
+      // The reason and its frames, never the error object itself (MICA-433).
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[micaschema] apply failed:',
+        expect.stringContaining(boom.message)
+      );
     });
   });
 

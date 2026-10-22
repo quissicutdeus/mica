@@ -18,6 +18,8 @@ line here.
   — write `key: 'server.…'` literally
 - [oxmysql errors carry no errno](oxmysql-errors-carry-no-errno.md) — text only,
   query and parameters embedded, foreign-realm `Error`; use `isDuplicateKey`
+- [A row from oxmysql fails a prototype check](oxmysql-rows-are-foreign-realm.md)
+  — walk by shape; prove it on a `node:vm` row (MICA-433)
 - [A start-up gate must not import schemaSql](start-gate-import-cycle.md) —
   Repository reaches contentCipher; the cycle breaks collection, not tsc
 - [A soft delete under a unique key refuses a re-create](soft-delete-under-a-unique-key.md)

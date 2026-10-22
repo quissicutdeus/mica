@@ -2,28 +2,26 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// @vitest-environment jsdom
+import '../../host/registerFacets';
 import { describe, it, expect } from 'vitest';
-import { hashStringToCardNumber } from './cardUtils';
+import { render } from '@testing-library/svelte';
+import { formatCurrency } from '@mica/sdk';
+import { MASKED_CARD_NUMBER } from './cardUtils';
+import CreditCard from './components/CreditCard.svelte';
 
-describe('cardUtils', () => {
-  it('returns default fallback card number for empty or falsy input', () => {
-    expect(hashStringToCardNumber('')).toBe('4242 4242 4242 4242');
+describe('the Bank card number', () => {
+  it('carries no digit at all, so there is nothing to reverse (MICA-433)', () => {
+    expect(MASKED_CARD_NUMBER).not.toMatch(/\d/);
+    // Still reads as a card: four groups of four.
+    expect(MASKED_CARD_NUMBER).toMatch(/^(\S{4} ){3}\S{4}$/);
   });
 
-  it('generates a deterministic 16-digit card number formatted in 4-digit groups starting with 4', () => {
-    const card = hashStringToCardNumber('citizen123');
-    expect(card).toMatch(/^4\d{3} \d{4} \d{4} \d{4}$/);
-  });
-
-  it('produces identical card numbers for identical inputs', () => {
-    const card1 = hashStringToCardNumber('player_john_doe');
-    const card2 = hashStringToCardNumber('player_john_doe');
-    expect(card1).toBe(card2);
-  });
-
-  it('produces different card numbers for different inputs', () => {
-    const card1 = hashStringToCardNumber('player_john');
-    const card2 = hashStringToCardNumber('player_jane');
-    expect(card1).not.toBe(card2);
+  it('is what the card renders, and the card is handed no identifier to derive one from', () => {
+    const { container } = render(CreditCard, { props: { balance: 1234 } });
+    expect(container.textContent).toContain(MASKED_CARD_NUMBER);
+    // The balance is the only number on the card.
+    const rest = (container.textContent ?? '').replace(formatCurrency(1234), '');
+    expect(rest).not.toMatch(/\d/);
   });
 });

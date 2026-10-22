@@ -67,6 +67,7 @@ import { APP_EVENT_NET_EVENT, type AppEventEnvelope } from '@mica/shared/appEven
 import { dispatcherFor } from './ServiceEndpoint';
 import { FrameworkBridge, installSyntheticPlayers, type FrameworkPlayer } from './FrameworkBridge';
 import { setPushCapture } from './appEvents';
+import { traceOf } from './sqlErrors';
 
 /** Envelopes kept per synthetic citizen between two `pushes` asks; the oldest go first. */
 const PUSH_BUFFER = 200;
@@ -140,7 +141,7 @@ const answer = (reply: unknown, ...args: unknown[]): void => {
   try {
     (reply as (...a: unknown[]) => unknown)(...args);
   } catch (error) {
-    console.error('[mica] integration door: the reply threw:', error);
+    console.error('[mica] integration door: the reply threw:', traceOf(error));
   }
 };
 
@@ -242,7 +243,10 @@ const invoke = async (
     });
   } catch (error) {
     // `dispatch` answers its own errors; reaching here is a bug in the door, not the action.
-    console.error(`[mica] integration door: ${service}:${action} threw past its dispatch:`, error);
+    console.error(
+      `[mica] integration door: ${service}:${action} threw past its dispatch:`,
+      traceOf(error)
+    );
     result = { error: 'door_failed' };
   }
   answer(reply, result, bankAfter());

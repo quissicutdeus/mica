@@ -71,8 +71,10 @@ decision, recorded in [`docs/decisions.md`](docs/decisions.md).
   jobs, businesses and dispatches through the `SendSystemEmail` export, and
   players hold conversations in Messages instead. There is no compose or reply,
   and the server registers no action that would author one.
-- **Banking**: Dynamic bank card generation based on player citizen ID, live
-  balance tracking, and transfer handling.
+- **Banking**: A bank card, live balance tracking, and transfer handling. The
+  card's number is masked (`•••• •••• •••• ••••`), not derived from anything: it
+  used to be computed from the player's citizen ID, which on ESX is their
+  licence. A transfer answers the sender only whether it went through.
 - **Jobs**: Every job the character holds, on the framework's own multi-job
   model where it has one, with a tap to switch the active job, a duty toggle
   where the framework has duty, the society balance for a boss grade, and any
@@ -908,7 +910,7 @@ set mica_location_interval 5
 | `mica_addon_catalog`               | https URL, or `off`                                     | the public catalog                  | The add-on catalog the Store lists; the server fetches it, never a phone                                                              |
 | `mica_discord_webhook`             | https URL                                               | empty (off)                         | Discord webhook that receives moderation events                                                                                       |
 | `mica_discord_webhook_payment_min` | integer                                                 | `10000`                             | Smallest payment the webhook is told about                                                                                            |
-| `mica_discord_webhook_content`     | boolean                                                 | empty (off)                         | Let moderation reasons and report notes reach Discord                                                                                 |
+| `mica_discord_webhook_content`     | boolean                                                 | empty (off)                         | Let moderation reasons, report notes and raw citizenids reach Discord                                                                 |
 | `mica_disabled_apps`               | comma-separated app ids                                 | empty (off)                         | Hide apps everywhere in the UI; blocks a handful server-side too                                                                      |
 | `mica_default_dock`                | comma-separated app ids, positional                     | empty (built-in dock)               | Dock a phone starts with, until its player rearranges it                                                                              |
 | `mica_default_contacts`            | JSON array, or a path to one                            | empty (off)                         | Contacts seeded once into every new phone                                                                                             |
@@ -1387,10 +1389,19 @@ ships with micaOS, as it did before.
   only once the credit has landed; a refunded or stranded transfer is never
   announced. `0` announces everything.
 - **`mica_discord_webhook_content`** — off by default, and worth leaving off.
-  Unset, an embed carries ids, the actor, the target, the action and a
-  timestamp, and nothing a player wrote. On (`1`, `true`, `on`, `yes`), the
-  moderation reason, a reporter's note and a payment's reason line are added. No
-  message body, photo or attachment reaches Discord under either setting.
+  Unset, an embed carries ids, the action and a timestamp, and nothing a player
+  wrote; the Actor, From, To and Reporter fields are a short token for the
+  character (`who()`, see [`docs/security.md`](docs/security.md)), the same one
+  the server console prints, so a post and a log line can be matched without
+  Discord ever holding a licence. A society (`society:police`) is not a person
+  and passes as it is. On (`1`, `true`, `on`, `yes`), those fields carry the raw
+  citizenid, and the moderation reason, a reporter's note and a payment's reason
+  line are added. No message body, photo or attachment reaches Discord under
+  either setting.
+- **The server console no longer logs a payment that went through** (MICA-433).
+  It named both characters, the amount and the player's own note. A transfer
+  that fails, is refunded or is stranded is still logged, naming the characters
+  by the same `who()` token, never by citizenid.
 
 - **`mica_disabled_apps`** — a comma-separated list of app ids to hide: from the
   launcher, the app drawer, search, the dock and the Store, all at once. Hiding

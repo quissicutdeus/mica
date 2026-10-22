@@ -8,6 +8,7 @@ import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
 import { dropOwnerForeignKeys, reportOwnerForeignKeys } from '../lib/ownerForeignKeys';
 import { whenSchemaReady } from '../lib/schemaBootstrap';
+import { traceOf } from '../lib/sqlErrors';
 
 /**
  * Schema reconciliation at resource start, plus a dry run and an explicit apply on demand.
@@ -67,7 +68,7 @@ export const runApply = async (source: number): Promise<void> => {
   } catch (error) {
     console.error(
       '[mica] could not drop the foreign keys onto players; nothing else was applied:',
-      error
+      traceOf(error)
     );
     return;
   }
@@ -125,7 +126,7 @@ RegisterCommand(
     // gate does not stand between an operator and `apply`.
     if ((args?.[0] ?? '').toLowerCase() === 'apply') {
       void runApply(source).catch((error) => {
-        console.error('[micaschema] apply failed:', error);
+        console.error('[micaschema] apply failed:', traceOf(error));
       });
       return;
     }
@@ -171,7 +172,7 @@ on('onResourceStart', (resourceName: string) => {
     // MICA-300: keys onto players are asked of the database, never inferred from the ledger.
     void reportOwnerForeignKeys();
     void reportPendingMigrations().catch((error) => {
-      console.error('[mica] could not report pending schema migrations:', error);
+      console.error('[mica] could not report pending schema migrations:', traceOf(error));
     });
   });
 });

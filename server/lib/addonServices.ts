@@ -19,6 +19,7 @@ import { appDisabledError, isAppDisabled } from './ownerConfig';
 import { onResourceReleased } from './resourceStop';
 import { ServiceEndpoint } from './ServiceEndpoint';
 import { knownServices, serviceApps } from './services';
+import { traceOf } from './sqlErrors';
 
 /**
  * Add-on services served from another resource (MICA-308).
@@ -226,7 +227,7 @@ const genericFailure = (): PlayerFacingError =>
 const logFailure = (reg: Registration, action: string, what: string, error?: unknown): void => {
   const where = `[mica] add-on service ${reg.id}:${action} (${reg.owner})`;
   if (error === undefined) console.error(`${where} ${what}`);
-  else console.error(`${where} ${what}:`, error);
+  else console.error(`${where} ${what}:`, traceOf(error));
 };
 
 /**

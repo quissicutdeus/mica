@@ -34,6 +34,7 @@ import { __resetDeviceState, identityPhone, resolvePhone } from '../services/Dev
 // Registers the seeding hook, which is the thing under test.
 import '../services/Contacts';
 import { __resetOwnerConfig } from '../lib/ownerConfig';
+import { who } from '../lib/who';
 
 /**
  * A default-contacts seed that fails part-way finishes on a later resolve (MICA-327).
@@ -504,7 +505,7 @@ describe('a set-up a restart interrupted (MICA-335)', () => {
     expect(numbersOn(deviceId)).toEqual(seeded);
     expect(pendingOf(deviceId)).toBe(0);
     expect(log.mock.calls.map(([line]) => String(line))).toContainEqual(
-      expect.stringContaining(`phone ${deviceId}'s set-up did not finish`)
+      expect.stringContaining(`phone ${who(deviceId)}'s set-up did not finish`)
     );
   });
 
@@ -644,7 +645,7 @@ describe('a set-up a restart interrupted (MICA-335)', () => {
     expect(numbersOn(deviceId)).toEqual(seeded);
     expect(pendingOf(deviceId)).toBe(1);
     expect(vi.mocked(console.error).mock.calls.map(([line]) => String(line))).toEqual([
-      expect.stringContaining(`phone ${deviceId}'s set-up finished, but could not be recorded`)
+      expect.stringContaining(`phone ${who(deviceId)}'s set-up finished, but could not be recorded`)
     ]);
     const reads = seedReads();
 

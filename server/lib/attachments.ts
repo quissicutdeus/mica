@@ -5,6 +5,7 @@
 import { requirePositiveInt } from './payload';
 import { MAX_ATTACHMENTS } from '@mica/shared/attachments';
 import { PlayerFacingError } from './errors';
+import { who } from './who';
 
 /**
  * Keep only the attachments whose photo the sender actually owns.
@@ -78,7 +79,7 @@ export const resolveOwnedAttachments = async (
       owned.push({ photo_id: photoId });
     } else {
       console.warn(
-        `[attachments] Dropped attachment ${photoId}: not an active photo owned by ${citizenid}.`
+        `[attachments] Dropped attachment ${photoId}: not an active photo owned by ${who(citizenid)}.`
       );
     }
   }

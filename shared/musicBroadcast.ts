@@ -103,7 +103,11 @@ export interface NearbyBroadcast {
    * play.
    */
   token: string;
-  /** `Firstname Lastname` if the framework will say, for the "muted <who>" affordance. */
+  /**
+   * A display name for the broadcaster. Always `null` from this server since MICA-433, which
+   * stopped sending a character's real name to everyone in range; the app shows "someone
+   * nearby". Kept on the wire so a client reading it keeps working.
+   */
   label: string | null;
   /** The video being played, or `null` when the source is a playlist the embed advances. */
   videoId: string | null;

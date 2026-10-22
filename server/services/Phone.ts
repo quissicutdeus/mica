@@ -38,6 +38,9 @@ import {
   __resetSpeakerphone,
   type SpeakerCalls
 } from '../lib/speakerphone';
+import { traceOf } from '../lib/sqlErrors';
+import { who } from '../lib/who';
+import { withoutOwnerKeys } from '../lib/replyShape';
 
 const EMERGENCY_NUMBER_CONVAR = 'mica_emergency_number';
 const DEFAULT_EMERGENCY_NUMBER = '911';
@@ -219,7 +222,7 @@ function joinVoice(src: number, channel: number): void {
   try {
     voiceBackend().setCall(src, channel);
   } catch (error) {
-    console.error(`[mica] could not put ${src} in call ${channel}.`, error);
+    console.error(`[mica] could not put ${src} in call ${channel}.`, traceOf(error));
   }
 }
 
@@ -236,7 +239,7 @@ function leaveVoice(src: number): void {
       return;
     }
   } catch (error) {
-    console.error(`[mica] could not take ${src} out of their call channel.`, error);
+    console.error(`[mica] could not take ${src} out of their call channel.`, traceOf(error));
   }
   try {
     if (voiceBackend().channelOf(src) !== 0) voiceBackend().clearChannel(src);
@@ -312,7 +315,7 @@ function refuseUnplacedJoin(src: number): void {
     // Back where micaOS put them: their own call, the speaker they were hearing, or nowhere.
     voiceBackend().setCall(src, placedChannelOf(src) || (listenerChannel(src) ?? 0));
   } catch (error) {
-    console.error(`[mica] could not take ${src} back out of call ${channel}.`, error);
+    console.error(`[mica] could not take ${src} back out of call ${channel}.`, traceOf(error));
   }
 }
 
@@ -376,6 +379,7 @@ on('onResourceStop', (stopped: string) => {
   for (const call of Object.values(activeCalls)) {
     if (call.answeredAt === null) continue;
     leaveVoice(call.caller);
+    // log-identity-ok: a server id, not a player identity
     if (call.target !== null) leaveVoice(call.target);
   }
 });
@@ -442,7 +446,7 @@ async function logCall(
     const device_id = (await readPhoneIdByNumber(ownNumber)) ?? (await phoneForCitizen(citizenid));
     await phoneCallLog.repo.create({ citizenid, device_id, kind, number, duration });
   } catch (error) {
-    console.error(`[mica] could not log a ${kind} call for ${citizenid}.`, error);
+    console.error(`[mica] could not log a ${kind} call for ${who(citizenid)}.`, traceOf(error));
   }
 }
 
@@ -465,7 +469,8 @@ async function logCall(
 const notifyParty = (event: string, src: number, payload?: unknown): void => {
   if (!Number.isInteger(src) || src <= 0) return;
   if (payload === undefined) emitNet(event, src);
-  else emitNet(event, src, payload);
+  // No push carries a citizenid or a phone id (MICA-433).
+  else emitNet(event, src, withoutOwnerKeys(payload));
 };
 
 /**
@@ -490,6 +495,7 @@ function endActiveCall(callId: number, gone?: number, switched?: SwitchedSide): 
   // Out of the channel as well as told (MICA-341): the server put them in, the server takes
   // them out, whichever end path brought us here.
   endFor(call.caller, gone);
+  // log-identity-ok: a server id, not a player identity
   if (call.target !== null) endFor(call.target, gone);
 
   // Before the maps are cleared, so nobody is left in a channel the call has already left.
@@ -712,7 +718,7 @@ const holdsPhone = (src: number): boolean => {
     return true;
   } catch (error) {
     if (!(error instanceof PlayerFacingError)) {
-      console.error(`[mica] could not check whether source ${src} holds a phone.`, error);
+      console.error(`[mica] could not check whether source ${src} holds a phone.`, traceOf(error));
     }
     return false;
   }
@@ -764,8 +770,8 @@ async function numberInHandOf(src: number): Promise<NumberInHand> {
     // The phone's resolver refuses only one way: `notHeld`, for a player holding no phone.
     if (error instanceof PlayerFacingError) return { kind: 'notHeld', message: error.message };
     console.error(
-      `[mica] could not read the number of the phone ${player.citizenid} holds.`,
-      error
+      `[mica] could not read the number of the phone ${who(player.citizenid)} holds.`,
+      traceOf(error)
     );
     return { kind: 'failed' };
   }
@@ -1331,6 +1337,7 @@ RegisterCommand(
       respondCall(source, "You're already on a call.", 'error');
       return;
     }
+    // log-identity-ok: a dev command's seeded test number, echoed to its admin
     respondCall(source, `Ringing from ${seeded ? seeded.firstname : callerPhone}.`);
   },
   false

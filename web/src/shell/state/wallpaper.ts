@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { derived } from 'svelte/store';
+import { derived, get, writable, type Writable } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { backgroundForScheme, buildSchemes, sanitizeSeed } from '../../../../sdk/host/seam/theme';
 import { schemeStore, setThemeSeed, themeStore } from './theme';
@@ -78,13 +78,103 @@ const sanitizeWallpaper = (stored: unknown): WallpaperState => {
  * The part players actually notice does still follow them — the seed and light/dark mode
  * live in `themeStore`, which syncs, and they are what generate the whole scheme. What
  * stays behind is a photo you set from this machine's own gallery.
+ *
+ * Read only through `wallpaperStore` below, never directly: on its own it would show one
+ * character's photo to the next character on the same PC (MICA-433).
  */
-export const wallpaperStore = usePersisted<WallpaperState>(
-  'settings',
-  'wallpaper',
-  DEFAULT_WALLPAPER,
-  { sanitize: sanitizeWallpaper, sync: false }
+const savedWallpaper = usePersisted<WallpaperState>('settings', 'wallpaper', DEFAULT_WALLPAPER, {
+  sanitize: sanitizeWallpaper,
+  sync: false
+});
+
+/** FNV-1a over the stored source: a fingerprint of the picture, never of who set it. */
+const fingerprintOf = (image: string): string => {
+  let hash = 2166136261;
+  for (let i = 0; i < image.length; i++) {
+    hash ^= image.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+
+/**
+ * Whose photo the local one is, as a synced setting: the fingerprint of the picture the
+ * loaded identity last set (MICA-433).
+ *
+ * The photo cannot be swept on a character load the way synced keys are, since it has no
+ * server row to come back from — sweeping it would cost the same character their photo on
+ * every login. This small key *is* swept: `hydrateSettingsOnCharacterLoad` clears it for a
+ * character with no row and restores it for the one who set it. So a photo shows only while
+ * the loaded character (and device, since settings rows are per device) is the one that
+ * fingerprint came back for, and every other identity on this PC starts on the default.
+ */
+const wallpaperOwner = usePersisted<string | null>('settings', 'wallpaperOwner', null, {
+  sanitize: (value) => (typeof value === 'string' && /^[0-9a-f]{8}$/.test(value) ? value : null)
+});
+
+/**
+ * Whether the owner fingerprint on hand may still be the previous identity's (MICA-433).
+ *
+ * A character load or device switch sweeps `wallpaperOwner` to the new identity's row — but a
+ * sweep that fails, or lands after the player has moved on, returns early and leaves the old
+ * one, which would show the previous character their photo. So from the start of every
+ * identity change until its sweep succeeds, no photo shows (`deviceIdentity.ts`'s
+ * `sweepAndTrust`), the way `lockScreen.ts` holds the strict lock policy over the same gap.
+ *
+ * A flag, not a write of `null` into `wallpaperOwner`: that store's `set` queues a server save,
+ * and the sweep skips a key with a write pending — so the clear would have been saved over the
+ * character's real row instead of the row being applied.
+ */
+const ownerConfirmed = writable(true);
+
+/** Bumped by every distrust, so a sweep that lands after a later identity change cannot vouch. */
+let ownerGeneration = 0;
+
+/** An identity change has begun: show no photo until its settings land. */
+export const distrustWallpaperOwner = (): number => {
+  ownerConfirmed.set(false);
+  return ++ownerGeneration;
+};
+
+/**
+ * The identity change in progress, for a sweep that does not begin one itself to vouch with —
+ * the bare `rehydrateSettings` route (`shell/nuiMessages.ts`).
+ */
+export const wallpaperOwnerGeneration = (): number => ownerGeneration;
+
+/** That identity's settings have been applied, so the owner fingerprint is theirs. */
+export const trustWallpaperOwner = (generation?: number): void => {
+  if (generation !== undefined && generation !== ownerGeneration) return;
+  ownerConfirmed.set(true);
+};
+
+const shownWallpaper = derived(
+  [savedWallpaper, wallpaperOwner, ownerConfirmed],
+  ([$saved, $owner, $confirmed]): WallpaperState =>
+    $saved.type === 'image' && (!$confirmed || $owner !== fingerprintOf($saved.image))
+      ? DEFAULT_WALLPAPER
+      : $saved
 );
+
+const writeWallpaper = (value: WallpaperState) => {
+  const safe = sanitizeWallpaper(value);
+  if (safe.type === 'image') {
+    wallpaperOwner.set(fingerprintOf(safe.image));
+    // Picked by whoever is loaded now, so it is theirs whatever an earlier sweep left behind.
+    trustWallpaperOwner();
+  }
+  savedWallpaper.set(safe);
+};
+
+/**
+ * The wallpaper this identity sees — the shell, Settings and an add-on's `useWallpaper` all
+ * read this one. A write claims a photo for the loaded identity as it stores it.
+ */
+export const wallpaperStore: Writable<WallpaperState> = {
+  subscribe: shownWallpaper.subscribe,
+  set: writeWallpaper,
+  update: (fn) => writeWallpaper(fn(get(shownWallpaper)))
+};
 
 /**
  * The CSS `background` for whatever is currently set.

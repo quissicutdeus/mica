@@ -31,19 +31,10 @@ export const transactionsLoaded = writable(false);
  * "this script keeps its statements to itself".
  */
 export const historySource = writable<BankHistorySource>({ provider: null, available: false });
-export const citizenid = writable<string>('');
+// No citizenid here, on purpose (MICA-433). The page never needs it — the server knows who
+// is asking — and anything held in CEF is readable by an XSS. On ESX it is the player's
+// Rockstar licence.
 export const myPhoneNumber = writable<string>('555-0199');
-
-export const fetchCitizenId = async () => {
-  try {
-    const id = await fetchNui<string>('getCitizenId', null, { defaultValue: '' });
-    citizenid.set(id);
-    return id;
-  } catch (error) {
-    console.error('Failed to fetch citizenid:', error);
-    return '';
-  }
-};
 
 export const fetchPhoneNumber = async () => {
   try {

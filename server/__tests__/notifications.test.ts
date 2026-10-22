@@ -71,7 +71,10 @@ describe('Notifications Service & Repository', () => {
     dbMock.query.mockResolvedValueOnce(mockRows);
 
     const reply = await call('getShadeNotifications', {});
-    expect(reply).toEqual(mockRows);
+    // Every field but the owner's citizenid, which no reply carries (MICA-433).
+    const { citizenid: owner, ...wire } = mockRows[0];
+    expect(owner).toBe(CITIZEN);
+    expect(reply).toEqual([wire]);
   });
 
   it('fetches unread notification counts per app', async () => {

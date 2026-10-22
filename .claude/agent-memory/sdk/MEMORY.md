@@ -53,3 +53,5 @@ in its own file and gets a line here.
   narrow differs from Node's; `ui` locale edits dirty root `locales/` (MICA-412)
 - [Twin `fn`'s `any` is load-bearing](twin-fn-any-is-load-bearing.md) —
   `never[]` breaks void members; the disable stays with its reason (MICA-420)
+- [Gating an implicit hook](gating-an-implicit-hook.md) — in-tree add-on
+  callers, three Store entries, changelog gate passes by accident (MICA-433)

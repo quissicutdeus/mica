@@ -8,7 +8,7 @@ import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import type { FrameworkPlayer } from '../lib/FrameworkBridge';
 import { pageBounds } from '../lib/payload';
-import { isDuplicateKey, reasonOf } from '../lib/sqlErrors';
+import { isDuplicateKey, reasonOf, traceOf } from '../lib/sqlErrors';
 import { whenSchemaReady } from '../lib/schemaReady';
 import { registerExportFilter } from './Privacy';
 import { defineContract, responseType } from '@mica/shared/contract';
@@ -19,6 +19,7 @@ import type {
   CasinoRound,
   CasinoSpinResult
 } from '@mica/shared/types';
+import { who } from '../lib/who';
 
 /**
  * Casino (MICA-82): European roulette and Crash, staked in bank cash through the framework.
@@ -276,7 +277,7 @@ const debit = (player: FrameworkPlayer, amount: number): StakeRefusal | null => 
 const credit = (player: FrameworkPlayer, amount: number, what: string): boolean => {
   if (player.addMoney('bank', amount)) return true;
   console.error(
-    `[casino] ${what}: could not credit ${amount} to ${player.citizenid}'s bank. ` +
+    `[casino] ${what}: could not credit ${amount} to ${who(player.citizenid)}'s bank. ` +
       'Pay it by hand.'
   );
   return false;
@@ -426,7 +427,7 @@ app.registerEvent('spin', async (_source, _cbId, data, citizenid, player) => {
       JSON.stringify({ number, bets })
     ]);
   } catch (error) {
-    console.error(`[casino] spin for ${citizenid} could not be recorded: ${reasonOf(error)}`);
+    console.error(`[casino] spin for ${who(citizenid)} could not be recorded: ${reasonOf(error)}`);
   }
   if (!(roundId > 0)) {
     // No record of the round, so it did not happen: the whole stake goes back and nothing is
@@ -549,7 +550,7 @@ const pushCrash = (citizenid: string, roundId: number, crashAt: number): void =>
   try {
     crashChannel.push(citizenid, 'crash', { round_id: roundId, crash_at: crashAt });
   } catch (error) {
-    console.error(`[casino] crash push for round ${roundId} failed:`, error);
+    console.error(`[casino] crash push for round ${roundId} failed:`, traceOf(error));
   }
 };
 
@@ -569,7 +570,7 @@ const onCrash = async (roundId: number, attempt = 1): Promise<void> => {
     if (live.get(roundId) !== round) return;
     const delay = Math.min(SETTLE_RETRY_MAX_MS, SETTLE_RETRY_MS * 2 ** (attempt - 1));
     console.error(
-      `[casino] crash round ${roundId} for ${round.citizenid} could not be settled ` +
+      `[casino] crash round ${roundId} for ${who(round.citizenid)} could not be settled ` +
         `(attempt ${attempt}): ${reasonOf(error)}. Trying again in ${delay / 1000}s.`
     );
     round.timer = setTimeout(() => void onCrash(roundId, attempt + 1), delay);
@@ -625,7 +626,7 @@ app.registerEvent('crashStart', async (_source, _cbId, { stake }, citizenid, pla
     try {
       await sweepStaleCrashRounds(citizenid);
     } catch (error) {
-      console.error(`[casino] stale-round sweep for ${citizenid} failed: ${reasonOf(error)}`);
+      console.error(`[casino] stale-round sweep for ${who(citizenid)} failed: ${reasonOf(error)}`);
     }
     busy = await readBusy(citizenid);
   }
@@ -660,7 +661,7 @@ app.registerEvent('crashStart', async (_source, _cbId, { stake }, citizenid, pla
       duplicate = isDuplicateKey(error);
       if (!duplicate) {
         console.error(
-          `[casino] crash round for ${citizenid} could not be recorded: ${reasonOf(error)}`
+          `[casino] crash round for ${who(citizenid)} could not be recorded: ${reasonOf(error)}`
         );
       }
     }

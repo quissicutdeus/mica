@@ -531,7 +531,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
           );
         }
       }
-      console.log(`[Conversation] No player holds phone ${phone}; refusing to start a thread.`);
+      // Not logged (MICA-433): the line named a number a player tried to text.
       return null;
     }
     targetCitizenId = target.citizenid;

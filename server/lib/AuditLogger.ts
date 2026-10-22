@@ -4,6 +4,7 @@
 
 import { Database } from './Database';
 import { forwardAudit } from './DiscordWebhook';
+import { traceOf } from './sqlErrors';
 
 /**
  * The moderation ledger's table.
@@ -71,7 +72,7 @@ export class AuditLogger {
       ]);
       return true;
     } catch (error) {
-      console.error('[AuditLogger] Failed to write audit log:', error);
+      console.error('[AuditLogger] Failed to write audit log:', traceOf(error));
       return false;
     }
   }

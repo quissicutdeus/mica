@@ -8,6 +8,8 @@ import { defineContract } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
 import { getCurrentPrice, getPriceHistory, isMarketReady } from './HodlrMarket';
 import { Database } from '../lib/Database';
+import { traceOf } from '../lib/sqlErrors';
+import { who } from '../lib/who';
 
 /**
  * Hodlr: one simulated coin, one holding row per player.
@@ -291,7 +293,7 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
       [quantity, holding.id, citizenid]
     );
   } catch (error) {
-    console.error(`[hodlr] buy could not credit ${citizenid}:`, error);
+    console.error(`[hodlr] buy could not credit ${who(citizenid)}:`, traceOf(error));
   }
 
   if (!credited) {
@@ -300,7 +302,7 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
     // the only remaining path to making the player whole.
     if (!player.addMoney('bank', cost)) {
       console.error(
-        `[hodlr] buy debited ${cost} from ${citizenid} and could neither credit coins nor refund.`
+        `[hodlr] buy debited ${cost} from ${who(citizenid)} and could neither credit coins nor refund.`
       );
     }
     return { ok: false, reason: 'credit_failed' };
@@ -361,11 +363,14 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
         [quantity, holding.id, citizenid]
       );
     } catch (error) {
-      console.error(`[hodlr] sell could not refund ${quantity} coins to ${citizenid}:`, error);
+      console.error(
+        `[hodlr] sell could not refund ${quantity} coins to ${who(citizenid)}:`,
+        traceOf(error)
+      );
     }
     if (!refunded) {
       console.error(
-        `[hodlr] sell took ${quantity} coins from ${citizenid} and could neither credit ` +
+        `[hodlr] sell took ${quantity} coins from ${who(citizenid)} and could neither credit ` +
           `${proceeds} nor refund the coins.`
       );
     }

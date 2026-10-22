@@ -35,10 +35,12 @@ export interface ActionContract {
    */
   input: Schema & { readonly '~responseOnly'?: undefined };
   /**
-   * What the action answers with. Declaration-only — the server does not validate its own
-   * replies, because a wrong reply is a bug here rather than an attack from there. Either a
-   * real schema, or `responseType<T>()` when the answer is a domain type from
-   * `shared/types.ts` that would be worse for being restated as a schema.
+   * What the action answers with. Either a real schema, which the server holds its own reply
+   * to on the way out (`server/lib/replyShape.ts`, MICA-433) — under test a reply outside it
+   * throws, on a live server its undeclared fields are stripped — or `responseType<T>()` when
+   * the answer is a domain type from `shared/types.ts` that would be worse for being restated,
+   * which is declaration-only and checks nothing. A reply that could carry another player's
+   * data wants the real schema, with `unknownKeys: 'strip'` on its objects.
    */
   output?: Schema;
   /**
@@ -166,11 +168,11 @@ export function isClientPrepared(contract: ServiceContract, action: string): boo
 /**
  * Declare a response shape without writing a validator for it.
  *
- * The server does not check its own replies, so an `output` exists to tell the web and an
- * add-on what comes back. Where that is already a type — `Conversation[]`, `MailRow` — a
- * schema restating it would be a second declaration that can disagree with the first. This is
- * a phantom: it carries the type and validates nothing, which is why the brand keeps it out
- * of an `input` position.
+ * The server checks a reply only against a real schema (MICA-433), so this `output` exists to
+ * tell the web and an add-on what comes back. Where that is already a type — `Conversation[]`,
+ * `MailRow` — a schema restating it would be a second declaration that can disagree with the
+ * first. This is a phantom: it carries the type and validates nothing, which is why the brand
+ * keeps it out of an `input` position, and why the reply check passes it untouched.
  */
 export function responseType<T>(): Schema<T> & { readonly '~responseOnly': true } {
   return {

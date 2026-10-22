@@ -13,17 +13,16 @@ import type { MockHandler } from '../registry';
 let mockBankBalance = 12450;
 /**
  * Two open invoices and one already paid (MICA-240): the paid one proves the list is the
- * open ones only, the way `findOpen` reads it on the server.
+ * open ones only, the way `findOpen` reads it on the server. As the wire carries them: no
+ * `citizenid`, and no `payee`, which names another player (MICA-433).
  */
 const mockInvoices: Invoice[] = [
   {
     id: 1,
-    citizenid: 'my-id',
     from_label: 'Los Santos Customs',
     amount: 450,
     memo: 'Engine rebuild',
     society: 'mechanic',
-    payee: null,
     resource: 'lsc-garage',
     expires_at: Math.floor(Date.now() / 1000) + 6 * 86_400,
     paid_at: null,
@@ -33,12 +32,10 @@ const mockInvoices: Invoice[] = [
   },
   {
     id: 2,
-    citizenid: 'my-id',
     from_label: 'Pillbox Medical',
     amount: 120,
     memo: null,
     society: 'ambulance',
-    payee: null,
     resource: 'pillbox',
     expires_at: Math.floor(Date.now() / 1000) + 2 * 86_400,
     paid_at: null,
@@ -48,12 +45,10 @@ const mockInvoices: Invoice[] = [
   },
   {
     id: 3,
-    citizenid: 'my-id',
     from_label: 'Downtown Cab Co.',
     amount: 35,
     memo: 'Fare',
     society: 'taxi',
-    payee: null,
     resource: 'taxi',
     expires_at: Math.floor(Date.now() / 1000) + 86_400,
     paid_at: 1_757_100_000,

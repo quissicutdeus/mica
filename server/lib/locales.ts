@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { reasonOf } from './sqlErrors';
+import { NO_REASON, reasonOf } from './sqlErrors';
 
 /**
  * Languages an owner adds by dropping files in (MICA-235), no rebuild.
@@ -77,7 +77,7 @@ const readNamespace = (path: string, label: string): Messages | null => {
   try {
     size = statSync(path).size;
   } catch (error) {
-    warn(`${label} could not be read (${String(error)}); skipped.`);
+    warn(`${label} could not be read (${reasonOf(error, NO_REASON)}); skipped.`);
     return null;
   }
   if (size > MAX_FILE_BYTES) {
@@ -124,7 +124,7 @@ export const loadLocales = (root: string): LocaleStore => {
   try {
     if (existsSync(root) && statSync(root).isDirectory()) entries = readdirSync(root);
   } catch (error) {
-    warn(`${root} could not be listed (${String(error)}); only English is available.`);
+    warn(`${root} could not be listed (${reasonOf(error, NO_REASON)}); only English is available.`);
   }
 
   for (const entry of entries.slice().sort()) {
@@ -152,7 +152,7 @@ export const loadLocales = (root: string): LocaleStore => {
     try {
       files = readdirSync(dir);
     } catch (error) {
-      warn(`${tag}/ could not be listed (${String(error)}); skipped.`);
+      warn(`${tag}/ could not be listed (${reasonOf(error, NO_REASON)}); skipped.`);
       continue;
     }
     for (const file of files.slice().sort()) {

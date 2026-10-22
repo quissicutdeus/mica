@@ -17,6 +17,8 @@ import { isRingtoneValue, MAX_OWNER_SOUND_ID } from '@mica/shared/ownerConfig';
 import { onDeviceCreated } from './Devices';
 import { PlayerFacingError } from '../lib/errors';
 import { isDuplicateKey } from '../lib/sqlErrors';
+import { who } from '../lib/who';
+import { withoutOwnerKeys } from '../lib/replyShape';
 
 /**
  * What a player is told when a write would give their phone a second live contact with one
@@ -396,7 +398,7 @@ onNet('mica:server:contacts:share', (...args: unknown[]) => {
 
     if (typeof emitNet === 'function') {
       for (const target of nearby) {
-        emitNet('mica:client:contacts:incoming', target.source, share);
+        emitNet('mica:client:contacts:incoming', target.source, withoutOwnerKeys(share));
       }
     }
 
@@ -417,7 +419,7 @@ onNet('mica:server:contacts:share', (...args: unknown[]) => {
     );
     if (!outcome.delivered && outcome.reason !== 'offline') {
       console.error(
-        `[contacts] Share result push for ${player.citizenid} was refused: ${outcome.reason}.`
+        `[contacts] Share result push for ${who(player.citizenid)} was refused: ${outcome.reason}.`
       );
     }
   })();

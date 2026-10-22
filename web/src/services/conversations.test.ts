@@ -151,7 +151,6 @@ const unwrap = vi.hoisted(() => {
 vi.mock('../nui/fetchNui', () => ({
   fetchNui: vi.fn((rawMethod: string, rawData?: any, options?: { defaultValue?: unknown }) => {
     const { method, data } = unwrap(rawMethod, rawData);
-    if (method === 'getCitizenId') return Promise.resolve('my-id');
     // `conversations:create` as the server answers a new 1:1 since MICA-339: no name, because
     // the directory's name for the number is never sent, and no participants yet.
     if (method === 'startConversation') {

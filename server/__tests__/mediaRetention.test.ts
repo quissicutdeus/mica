@@ -80,6 +80,7 @@ import {
   runMediaMaintenance,
   runMediaPruneCommand
 } from '../services/Media';
+import { who } from '../lib/who';
 
 const CREATE_EVENT = 'mica:server:media:create';
 const DROP_EVENT = 'mica:server:media:drop';
@@ -616,7 +617,7 @@ describe('purging one character', () => {
     localHandlers.get(CHARACTER_DELETED_EVENT)!('CID_Z');
     await vi.waitFor(() =>
       expect(vi.mocked(console.log)).toHaveBeenCalledWith(
-        '[micamedia] purged 4 row(s) for deleted character CID_Z.'
+        `[micamedia] purged 4 row(s) for deleted character ${who('CID_Z')}.`
       )
     );
     expectMediaPurge();
