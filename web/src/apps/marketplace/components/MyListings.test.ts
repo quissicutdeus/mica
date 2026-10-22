@@ -64,22 +64,30 @@ describe('MyListings', () => {
   });
 
   it('shows Mark Sold / Remove only for active rows', async () => {
-    render(MyListings, { props: { onback: () => {} } });
+    render(MyListings);
     const activeRow = (await screen.findByText('Active One')).closest('li')!;
     const soldRow = screen.getByText('Sold One').closest('li')!;
     expect(activeRow.querySelector('button[aria-label="Mark Sold"]')).toBeTruthy();
     expect(soldRow.querySelector('button[aria-label="Mark Sold"]')).toBeNull();
   });
 
+  // MICA-415: through `formatCurrency` with Bank's `$`, not the bare number it was.
+  it('prices each row as currency', async () => {
+    render(MyListings);
+    await screen.findByText('Active One');
+    expect(screen.getByText(/^\$10\.00 ·/)).toBeTruthy();
+    expect(screen.getByText(/^\$20\.00 ·/)).toBeTruthy();
+  });
+
   it('tapping Mark Sold calls markSold with the row id', async () => {
-    render(MyListings, { props: { onback: () => {} } });
+    render(MyListings);
     await screen.findByText('Active One');
     await fireEvent.click(screen.getByLabelText('Mark Sold'));
     expect(marketplaceMock.markSold).toHaveBeenCalledWith(1);
   });
 
   it('tapping Remove calls removeListing with the row id', async () => {
-    render(MyListings, { props: { onback: () => {} } });
+    render(MyListings);
     await screen.findByText('Active One');
     await fireEvent.click(screen.getByLabelText('Remove'));
     expect(marketplaceMock.removeListing).toHaveBeenCalledWith(1);
@@ -91,7 +99,7 @@ describe('MyListings', () => {
    * and one more each time it comes back, never two for one visit.
    */
   it('loads my listings once per visit to the foreground', async () => {
-    render(MyListings, { props: { onback: () => {} } });
+    render(MyListings);
     await screen.findByText('Active One');
     expect(marketplaceMock.loadMine).toHaveBeenCalledTimes(1);
 

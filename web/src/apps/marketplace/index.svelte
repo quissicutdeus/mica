@@ -70,7 +70,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          and `ListingDetail` reads its row on mount and on foreground, so without a remount
          it went on showing the first listing (MICA-413). -->
     {#key screen.id}
-      <ListingDetail id={screen.id} onback={() => (screen = { name: 'feed' })} />
+      <ListingDetail id={screen.id} />
     {/key}
   {:else if screen.name === 'create'}
     <CreateListing
@@ -78,6 +78,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       oncancel={() => (screen = { name: 'feed' })}
     />
   {:else if screen.name === 'mine'}
-    <MyListings onback={() => (screen = { name: 'feed' })} />
+    <MyListings />
   {/if}
 </Screen>

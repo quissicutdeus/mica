@@ -12,6 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     flattenTile,
     formatDate,
     formatRelativeTime,
+    SegmentedControl,
     useLocale
   } from '@mica/sdk';
   import { getAppStorageSize } from '../appInfo';
@@ -44,46 +45,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onupdate: (app: AppManifest) => void;
   } = $props();
 
+  const FILTERS = ['all', 'system', 'addon'] as const;
+
   const updateFor = (appId: string): AppUpdate | undefined =>
     updates.find((u) => u.appId === appId);
 </script>
 
 <!-- Installed Apps Filter & Sort Bar -->
 <div class="space-y-2">
-  <div class="flex items-center justify-between gap-2">
-    <span class="text-on-surface-variant text-body-small tracking-wider uppercase"
-      >{$t('store.applications')}</span
-    >
-    <div class="text-label-small flex gap-1">
-      <button
-        onclick={() => (filter = 'all')}
-        aria-pressed={filter === 'all'}
-        class="duration-short ease-standard rounded-chip px-2 py-0.5 transition {filter === 'all'
-          ? 'bg-primary-container text-on-primary-container'
-          : 'bg-surface-container text-on-surface-variant'}"
-      >
-        {$t('store.filterAll')}
-      </button>
-      <button
-        onclick={() => (filter = 'system')}
-        aria-pressed={filter === 'system'}
-        class="duration-short ease-standard rounded-chip px-2 py-0.5 transition {filter === 'system'
-          ? 'bg-primary-container text-on-primary-container'
-          : 'bg-surface-container text-on-surface-variant'}"
-      >
-        {$t('store.filterSystem')}
-      </button>
-      <button
-        onclick={() => (filter = 'addon')}
-        aria-pressed={filter === 'addon'}
-        class="duration-short ease-standard rounded-chip px-2 py-0.5 transition {filter === 'addon'
-          ? 'bg-primary-container text-on-primary-container'
-          : 'bg-surface-container text-on-surface-variant'}"
-      >
-        {$t('store.filterAddons')}
-      </button>
-    </div>
-  </div>
+  <span class="text-on-surface-variant text-body-small block tracking-wider uppercase"
+    >{$t('store.applications')}</span
+  >
+  <!-- The SDK's toggle row rather than three hand-rolled chips, which had no `type="button"`
+       and so were each a submit inside any form (MICA-418). -->
+  <SegmentedControl
+    aria-label={$t('store.applications')}
+    selected={filter}
+    onchange={(id) => (filter = FILTERS.find((f) => f === id) ?? 'all')}
+    options={[
+      { id: 'all', label: $t('store.filterAll') },
+      { id: 'system', label: $t('store.filterSystem') },
+      { id: 'addon', label: $t('store.filterAddons') }
+    ]}
+  />
 
   <div
     class="bg-surface-container border-outline-variant text-body-small flex items-center justify-between gap-2 rounded-box border px-2.5 py-1.5"
@@ -111,6 +95,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="bg-surface-container border-outline-variant hover:bg-surface duration-short ease-standard flex w-full min-w-0 items-center justify-between gap-3 rounded-box border p-3 transition"
     >
       <button
+        type="button"
         onclick={() => onselect(app)}
         class="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
@@ -123,7 +108,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <span>{getAppStorageSize(app)}</span>
             {#if app.installedAt}
               <span>•</span>
-              <span title={formatDate(app.installedAt)}>{formatRelativeTime(app.installedAt)}</span>
+              <span title={formatDate(app.installedAt)}
+                >{formatRelativeTime(app.installedAt, $t)}</span
+              >
             {/if}
           </div>
           <!--
@@ -152,6 +139,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="flex shrink-0 flex-col gap-1.5">
         {#if update}
           <button
+            type="button"
             onclick={() => onupdate(app)}
             class="bg-secondary text-on-secondary text-body-small duration-short ease-standard rounded-box px-3 py-1.5 transition active:scale-95"
           >
@@ -159,6 +147,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </button>
         {/if}
         <button
+          type="button"
           onclick={() => onopen(app.id)}
           class="text-body-small duration-short ease-standard rounded-box bg-emerald-600 px-3 py-1.5 text-white transition hover:bg-emerald-500 active:scale-95"
         >

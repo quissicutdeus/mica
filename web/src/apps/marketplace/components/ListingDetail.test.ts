@@ -55,16 +55,17 @@ describe('ListingDetail', () => {
 
   it('renders title, price, description, and never renders the raw phone number', async () => {
     marketplaceMock.viewListing.mockResolvedValue(listing);
-    render(ListingDetail, { props: { id: 1, onback: () => {} } });
+    render(ListingDetail, { props: { id: 1 } });
     await waitFor(() => screen.getByText('Dirt Bike'));
-    expect(screen.getByText('4500')).toBeTruthy();
+    // MICA-415: through `formatCurrency` with Bank's `$`, not the bare number it was.
+    expect(screen.getByText('$4,500.00')).toBeTruthy();
     expect(screen.getByText('Runs great')).toBeTruthy();
     expect(screen.queryByText('555-0100')).toBeNull();
   });
 
   it('Call button starts a call to the resolved contactPhone', async () => {
     marketplaceMock.viewListing.mockResolvedValue(listing);
-    render(ListingDetail, { props: { id: 1, onback: () => {} } });
+    render(ListingDetail, { props: { id: 1 } });
     await waitFor(() => screen.getByText('Call'));
     await fireEvent.click(screen.getByText('Call'));
     expect(callMock.startCall).toHaveBeenCalledWith('555-0100');
@@ -72,7 +73,7 @@ describe('ListingDetail', () => {
 
   it('Text button starts a text to the resolved contactPhone', async () => {
     marketplaceMock.viewListing.mockResolvedValue(listing);
-    render(ListingDetail, { props: { id: 1, onback: () => {} } });
+    render(ListingDetail, { props: { id: 1 } });
     await waitFor(() => screen.getByText('Text'));
     await fireEvent.click(screen.getByText('Text'));
     expect(messagesMock.startText).toHaveBeenCalledWith('555-0100');
@@ -80,14 +81,14 @@ describe('ListingDetail', () => {
 
   it("hides Report when the listing is the viewer's own", async () => {
     marketplaceMock.viewListing.mockResolvedValue({ ...listing, isOwn: true });
-    render(ListingDetail, { props: { id: 1, onback: () => {} } });
+    render(ListingDetail, { props: { id: 1 } });
     await waitFor(() => screen.getByText('Dirt Bike'));
     expect(screen.queryByLabelText(/Report/)).toBeNull();
   });
 
   it('shows Report when the listing is not the viewer’s own', async () => {
     marketplaceMock.viewListing.mockResolvedValue(listing);
-    render(ListingDetail, { props: { id: 1, onback: () => {} } });
+    render(ListingDetail, { props: { id: 1 } });
     await waitFor(() => screen.getByLabelText(/Report/));
     expect(screen.getByLabelText(/Report/)).toBeTruthy();
   });
@@ -99,7 +100,7 @@ describe('ListingDetail', () => {
    */
   it('reads the listing once per visit to the foreground', async () => {
     marketplaceMock.viewListing.mockResolvedValue(listing);
-    render(ListingDetail, { props: { id: 1, onback: () => {} } });
+    render(ListingDetail, { props: { id: 1 } });
     await waitFor(() => screen.getByText('Dirt Bike'));
     expect(marketplaceMock.viewListing).toHaveBeenCalledTimes(1);
 

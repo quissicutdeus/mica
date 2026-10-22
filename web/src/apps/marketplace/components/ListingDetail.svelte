@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import {
     Button,
+    formatCurrency,
     MediaThumb,
     onAppForeground,
     ReportButton,
@@ -19,7 +20,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from '@mica/sdk';
   import type { Listing } from '@mica/shared/types';
 
-  let { id, onback }: { id: number; onback: () => void } = $props();
+  // No `onback`: `Screen`'s header back leaves this level (`useAppLevels`), and a second
+  // arrow in the body was the same control twice (MICA-418).
+  let { id }: { id: number } = $props();
 
   const { viewListing } = useMarketplace();
   const { startCall } = useCall();
@@ -35,17 +38,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 </script>
 
-<div class="flex items-center gap-2 p-4">
-  <button
-    type="button"
-    onclick={onback}
-    aria-label={$t('marketplace.back')}
-    class="text-on-surface-variant"
-  >
-    ←
-  </button>
-</div>
-
 {#if !listing}
   <div class="p-4"><Skeleton count={3} height="h-20" /></div>
 {:else}
@@ -58,7 +50,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     {/if}
     <p class="text-on-surface text-title-large">{listing.title}</p>
-    <p class="text-on-surface-variant text-body-large">{listing.price}</p>
+    <p class="text-on-surface-variant text-body-large">${formatCurrency(listing.price)}</p>
     <p class="text-on-surface text-body-medium">{listing.description}</p>
 
     <div class="mt-2 flex items-center gap-2">

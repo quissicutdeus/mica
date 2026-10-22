@@ -86,26 +86,24 @@ test.describe('Snatchr', () => {
     await expect(page.getByText('Sandy Shores Trailer')).toBeVisible();
     await expect(page.getByText('Off grid, no neighbours.')).toBeVisible();
 
-    // Exact: the app's own in-screen back arrow, not the `Screen` header's "Go back",
-    // which a substring match also hits.
-    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('button', { name: 'Go back' }).click();
     await expect(listingCard(page, 'Sandy Shores Trailer')).toBeVisible();
 
     await page.getByRole('button', { name: 'My Listings' }).click();
     const mine = page.locator('li', { hasText: 'Sandy Shores Trailer' });
-    await expect(mine).toContainText('7500 · active');
+    await expect(mine).toContainText('$7,500.00 · active');
 
     await mine.getByRole('button', { name: 'Mark Sold' }).click();
 
     // The status the row reports, and the disappearance of the actions with it — a sold
     // listing has nothing left to do to it, and both halves come from the same write.
-    await expect(mine).toContainText('7500 · sold');
+    await expect(mine).toContainText('$7,500.00 · sold');
     await expect(mine.getByRole('button', { name: 'Mark Sold' })).toHaveCount(0);
     await expect(mine.getByRole('button', { name: 'Remove' })).toHaveCount(0);
 
     // Remove is the other terminal status, and it is a different action on the service.
     const dirtBike = page.locator('li', { hasText: 'Dirt Bike' });
     await dirtBike.getByRole('button', { name: 'Remove' }).click();
-    await expect(dirtBike).toContainText('4500 · removed');
+    await expect(dirtBike).toContainText('$4,500.00 · removed');
   });
 });
