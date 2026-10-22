@@ -80,5 +80,19 @@
   "dmNothingYetHint": "Send the first message.",
   "dmUnread": "{count} unread",
   "dmMessageNoun": "message",
-  "dmSendFailed": "That message wasn't sent. Try again."
+  "dmSendFailed": "That message wasn't sent. Try again.",
+  "justNow": "Just now",
+  "minutesAgo": "{minutes}m ago",
+  "hoursAgo": "{hours}h ago",
+  "yesterday": "Yesterday",
+  "editProfile": "Edit profile",
+  "handleFixed": "@{handle} — a handle is claimed once and cannot be changed.",
+  "displayName": "Display name",
+  "bio": "Bio",
+  "bioPlaceholder": "Something about you",
+  "save": "Save",
+  "pickHandle": "Pick a handle",
+  "pickHandleHint": "This is how people find you. Lowercase letters, numbers and underscores, 3–32 characters.",
+  "handlePlaceholder": "handle",
+  "claim": "Claim"
 }

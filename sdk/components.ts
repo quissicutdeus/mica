@@ -23,6 +23,9 @@
  * Nothing speculative, either. `ActionSheet` was written, exported, and used by no app;
  * it is deleted rather than kept warm for an app that might want it.
  */
+/** MICA-410: the header menu Blabber, Glimpse and Spark each drew their own copy of. */
+export { default as AccountMenu } from './ui/AccountMenu.svelte';
+export type { AccountMenuAccount, AccountMenuAction } from './ui/accountMenu';
 export { default as AppIconTile } from './ui/AppIconTile.svelte';
 export { default as Avatar } from './ui/Avatar.svelte';
 export { default as Button } from './ui/Button.svelte';
@@ -32,9 +35,12 @@ export { default as ConfirmDialog } from './ui/ConfirmDialog.svelte';
  * with a DM policy gets messaging without writing either screen. Both reach `social` (the
  * hook) and `app-events` (the `dm` push), and their rows in `permissions.ts` say so.
  */
+/** MICA-416: the claim-a-handle gate and the profile editor every social app drew alike. */
+export { default as ClaimHandle } from './ui/ClaimHandle.svelte';
 export { default as DmInbox } from './ui/DmInbox.svelte';
 export { default as DmThread } from './ui/DmThread.svelte';
 export { default as EmojiPicker } from './ui/EmojiPicker.svelte';
+export { default as EditProfile } from './ui/EditProfile.svelte';
 export { default as EmptyState } from './ui/EmptyState.svelte';
 export { default as FloatingActionButton } from './ui/FloatingActionButton.svelte';
 export { default as ListItem } from './ui/ListItem.svelte';

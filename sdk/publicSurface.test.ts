@@ -820,6 +820,8 @@ const vocabularies = (module: Record<string, unknown>): Record<string, string[]>
  */
 const BASELINE_EXPORTS: Record<string, string[]> = {
   '@mica/sdk': [
+    // MICA-410
+    'AccountMenu',
     'ALL_PERMISSIONS',
     'AddIcon',
     // MICA-308: an add-on's server half, declared once for its resource and its UI.
@@ -843,6 +845,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'ChevronDownIcon',
     'ChevronLeftIcon',
     'ChevronRightIcon',
+    // MICA-416
+    'ClaimHandle',
     'ClockIcon',
     'CloseIcon',
     'ConfirmDialog',
@@ -851,6 +855,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'DmThread',
     'DocumentIcon',
     'EditIcon',
+    // MICA-416
+    'EditProfile',
     'EmojiPicker',
     'EmptyMailIcon',
     'EmptyPhotoIcon',
@@ -937,6 +943,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'fade',
     'fetchCatalog',
     'filterByQuery',
+    // MICA-419: the one way to turn a tile into a class string, now that `color` is gone.
+    'flattenTile',
     'focusTrap',
     'fly',
     'formatCurrency',
@@ -948,6 +956,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'getRemoteCatalogUrl',
     'getTrustedRemoteAppHosts',
     'hostRuntime',
+    // MICA-417
+    'initialsOf',
     'isBrowser',
     // MICA-310
     'isRefusal',
@@ -1064,6 +1074,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useAppVisible'
   ],
   '@mica/sdk (add-on bundle)': [
+    // MICA-410
+    'AccountMenu',
     'ALL_PERMISSIONS',
     'AddIcon',
     // MICA-308: an add-on's server half, declared once for its resource and its UI.
@@ -1087,6 +1099,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'ChevronDownIcon',
     'ChevronLeftIcon',
     'ChevronRightIcon',
+    // MICA-416
+    'ClaimHandle',
     'ClockIcon',
     'CloseIcon',
     'ConfirmDialog',
@@ -1095,6 +1109,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'DmThread',
     'DocumentIcon',
     'EditIcon',
+    // MICA-416
+    'EditProfile',
     'EmojiPicker',
     'EmptyMailIcon',
     'EmptyPhotoIcon',
@@ -1181,6 +1197,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'encodeCanvas',
     'fade',
     'filterByQuery',
+    // MICA-419, as above.
+    'flattenTile',
     'focusTrap',
     'fly',
     'formatCurrency',
@@ -1190,6 +1208,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'formatTime',
     'formatTimestamp',
     'hostRuntime',
+    // MICA-417
+    'initialsOf',
     'isBrowser',
     // MICA-310
     'isRefusal',
@@ -1340,6 +1360,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
  */
 const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
   '@mica/sdk': [
+    // MICA-410
+    'AccountMenuAccount',
+    'AccountMenuAction',
     'AccountSearchQuery',
     // MICA-308
     'AddonActionInput',
@@ -1436,6 +1459,9 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'PointerDragOptions'
   ],
   '@mica/sdk (add-on bundle)': [
+    // MICA-410
+    'AccountMenuAccount',
+    'AccountMenuAction',
     'AccountSearchQuery',
     // MICA-308
     'AddonActionInput',
@@ -1540,6 +1566,17 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
  * `encodeProp` produces. Frozen on the same terms as the export list above.
  */
 const BASELINE_PROPS: Record<string, string[]> = {
+  AccountMenu: [
+    'accounts?',
+    'actions?',
+    'activeId?',
+    'closeLabel',
+    'heading?',
+    'label',
+    'onclose',
+    'onswitch?',
+    'testid?'
+  ],
   AddIcon: ['class?'],
   AirplaneIcon: ['class?'],
   ArchiveIcon: ['class?'],
@@ -1547,7 +1584,7 @@ const BASELINE_PROPS: Record<string, string[]> = {
   ArrowUpRightIcon: ['class?'],
   // MICA-395: exported and never frozen; recorded as they stand, not added to the surface.
   AppIconTile: ['class?', 'color', 'icon', 'name', 'size?'],
-  Avatar: ['bgClass?', 'initials?', 'showSilhouette?', 'size?', 'src?', 'textClass?'],
+  Avatar: ['bgClass?', 'initials?', 'name?', 'showSilhouette?', 'size?', 'src?', 'textClass?'],
   BackspaceIcon: ['class?'],
   BatteryIcon: ['charge', 'class?'],
   BellIcon: ['class?'],
@@ -1558,6 +1595,7 @@ const BASELINE_PROPS: Record<string, string[]> = {
   ChevronDownIcon: ['class?'],
   ChevronLeftIcon: ['class?'],
   ChevronRightIcon: ['class?'],
+  ClaimHandle: ['busy?', 'hint?', 'oncancel?', 'onclaim', 'title?'],
   ClockIcon: ['class?'],
   CloseIcon: ['class?'],
   ConfirmDialog: [
@@ -1588,6 +1626,7 @@ const BASELINE_PROPS: Record<string, string[]> = {
   ],
   DocumentIcon: ['class?'],
   EditIcon: ['class?'],
+  EditProfile: ['account', 'busy?', 'oncancel', 'onsave', 'title?'],
   EmojiPicker: ['class?', 'onselect'],
   EmptyMailIcon: ['class?'],
   EmptyPhotoIcon: ['class?'],
@@ -2156,6 +2195,9 @@ const ADD_ON_HOOK_OMISSIONS: Record<string, string[]> = {
  * needs both halves gone before it is silent.
  */
 const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
+  // MICA-410
+  AccountMenuAccount: ['avatar?', 'display_name?', 'handle', 'id'],
+  AccountMenuAction: ['label', 'onselect', 'testid?', 'tone?'],
   AccountSearchQuery: ['app', 'cursor?', 'limit?', 'q'],
   // MICA-308. `AddonActionName` is left out on purpose: it is `keyof D['actions'] & string`,
   // which this reader resolves to `string`'s own methods — a shape nobody declared.
@@ -2167,11 +2209,13 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
   AppEvent: ['app', 'at', 'event', 'payload', 'replayed'],
   AppKeybindInput: ['defaultKey', 'id', 'label'],
   AppLevelsConfig: ['appId', 'levels', 'onback?', 'title'],
+  // MICA-419 (2026-10-22): `color`, the derived class string, left both manifest shapes and
+  // `tile` stopped being optional on the input. Re-frozen under `'1'`, not a bump: SDK 1 is
+  // unreleased and nothing outside this repo built against it (see `523c1bbc`).
   AppManifest: [
     'author?',
     'badgeStore?',
     'bundleUrl?',
-    'color',
     'core',
     'defaultProps?',
     'description?',
@@ -2199,7 +2243,6 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'author?',
     'badgeStore?',
     'bundleUrl?',
-    'color?',
     'core',
     'defaultProps?',
     'description?',
@@ -2218,7 +2261,7 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'requiresNetwork?',
     'sdkContract?',
     'services?',
-    'tile?',
+    'tile',
     'updatedAt?',
     'version?',
     'widget?'
@@ -4100,7 +4143,7 @@ describe('the SDK public surface (MICA-125)', () => {
       expect(shapesNow.AppTile).toEqual(['bg', 'fg?']);
       expect(shapesNow.AppKeybindInput).toEqual(['defaultKey', 'id', 'label']);
       expect(shapesNow.CrudEvents).toContain('remove?');
-      expect(shapesNow.AppManifestInput).toContain('tile?'); // through `Omit<...> & {...}`
+      expect(shapesNow.AppManifestInput).toContain('name?'); // through `Omit<...> & {...}`
       expect(shapesNow.PagedListOptions).toContain('items'); // generic, read unresolved
       expect(shapesNow.AppUpdateKind).toEqual(['|newer', '|unordered']);
       // `PageReader` is a function type: nothing to freeze, so absent rather than empty —

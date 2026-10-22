@@ -80,5 +80,19 @@
   "dmNothingYetHint": "Schick die erste Nachricht.",
   "dmUnread": "{count} ungelesen",
   "dmMessageNoun": "Nachricht",
-  "dmSendFailed": "Die Nachricht wurde nicht gesendet. Versuch es noch einmal."
+  "dmSendFailed": "Die Nachricht wurde nicht gesendet. Versuch es noch einmal.",
+  "justNow": "Gerade eben",
+  "minutesAgo": "vor {minutes} Min.",
+  "hoursAgo": "vor {hours} Std.",
+  "yesterday": "Gestern",
+  "editProfile": "Profil bearbeiten",
+  "handleFixed": "@{handle} — ein Handle wird einmal vergeben und kann nicht geändert werden.",
+  "displayName": "Anzeigename",
+  "bio": "Bio",
+  "bioPlaceholder": "Etwas über dich",
+  "save": "Speichern",
+  "pickHandle": "Wähle einen Handle",
+  "pickHandleHint": "So finden dich andere. Kleinbuchstaben, Ziffern und Unterstriche, 3–32 Zeichen.",
+  "handlePlaceholder": "handle",
+  "claim": "Sichern"
 }
