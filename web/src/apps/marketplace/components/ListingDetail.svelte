@@ -5,10 +5,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
   import {
     Button,
     MediaThumb,
+    onAppForeground,
     ReportButton,
     ReportDialog,
     Skeleton,
@@ -29,8 +29,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let listing = $state<(Listing & { contactPhone: string | null; isOwn: boolean }) | null>(null);
   let reporting = $state(false);
 
-  onMount(async () => {
-    listing = await viewListing(id);
+  // Every visit, not once per session — apps stay resident (AGENTS.md §11, MICA-413).
+  onAppForeground('marketplace', () => {
+    void viewListing(id).then((row) => (listing = row));
   });
 </script>
 

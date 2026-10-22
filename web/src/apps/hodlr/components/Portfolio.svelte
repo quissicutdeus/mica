@@ -5,7 +5,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { EmptyState, Skeleton, onAppForeground, useLocale } from '@mica/sdk';
   import { useHodlr, buyPriceOf, sellPriceOf } from '../store';
   import Chart from './Chart.svelte';
@@ -35,11 +34,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     loaded = true;
   };
 
-  onMount(() => {
-    void refresh();
-  });
-
-  // Every visit, not once per session — apps stay resident (AGENTS.md §11).
+  // Every visit, not once per session — apps stay resident (AGENTS.md §11). Not `onMount`
+  // as well: this fires on mount when the app is already in front, so both meant the first
+  // open fetched twice (MICA-413).
   onAppForeground('hodlr', () => {
     void refresh();
   });

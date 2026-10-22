@@ -42,6 +42,7 @@ vi.mock('@mica/sdk', async (importOriginal) => ({
 }));
 
 import Feed from './Feed.svelte';
+import { currentApp } from '../../../shell/state/navigation';
 
 import { registerMessages } from '@mica/sdk';
 import en from '../locales/en.json';
@@ -55,6 +56,7 @@ registerMessages('marketplace', { en, de });
 describe('Marketplace Feed', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    currentApp.set({ id: 'marketplace', props: {} });
     marketplaceMock.feedStore.set({
       rows: [
         { id: 1, title: 'Dirt Bike', price: 4500, description: 'runs great', attachments: [] }
@@ -100,5 +102,20 @@ describe('Marketplace Feed', () => {
     render(Feed, { props: { onselect: () => {}, onCreate: () => {}, onMyListings } });
     await fireEvent.click(screen.getByText('My Listings'));
     expect(onMyListings).toHaveBeenCalled();
+  });
+
+  /**
+   * MICA-413: an app is resident, so `onMount` runs once per session and a screen left open
+   * shows what was true the first time. One load on mount — the app is already in front —
+   * and one more each time it comes back, never two for one visit.
+   */
+  it('loads the feed once per visit to the foreground', async () => {
+    render(Feed, { props: { onselect: () => {}, onCreate: () => {}, onMyListings: () => {} } });
+    await screen.findByText('Dirt Bike');
+    expect(marketplaceMock.loadFeed).toHaveBeenCalledTimes(1);
+
+    currentApp.set({ id: 'home', props: {} });
+    currentApp.set({ id: 'marketplace', props: {} });
+    expect(marketplaceMock.loadFeed).toHaveBeenCalledTimes(2);
   });
 });

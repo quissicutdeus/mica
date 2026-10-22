@@ -66,7 +66,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       onMyListings={() => (screen = { name: 'mine' })}
     />
   {:else if screen.name === 'detail'}
-    <ListingDetail id={screen.id} onback={() => (screen = { name: 'feed' })} />
+    <!-- Keyed by id: a deep link to another listing while one is open changes only the id,
+         and `ListingDetail` reads its row on mount and on foreground, so without a remount
+         it went on showing the first listing (MICA-413). -->
+    {#key screen.id}
+      <ListingDetail id={screen.id} onback={() => (screen = { name: 'feed' })} />
+    {/key}
   {:else if screen.name === 'create'}
     <CreateListing
       onposted={(id: number) => (screen = { name: 'detail', id })}

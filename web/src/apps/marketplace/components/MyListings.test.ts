@@ -46,6 +46,7 @@ vi.mock('@mica/sdk', async (importOriginal) => ({
 }));
 
 import MyListings from './MyListings.svelte';
+import { currentApp } from '../../../shell/state/navigation';
 
 import { registerMessages } from '@mica/sdk';
 import en from '../locales/en.json';
@@ -57,7 +58,10 @@ import de from '../locales/de.json';
 registerMessages('marketplace', { en, de });
 
 describe('MyListings', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    currentApp.set({ id: 'marketplace', props: {} });
+  });
 
   it('shows Mark Sold / Remove only for active rows', async () => {
     render(MyListings, { props: { onback: () => {} } });
@@ -79,5 +83,20 @@ describe('MyListings', () => {
     await screen.findByText('Active One');
     await fireEvent.click(screen.getByLabelText('Remove'));
     expect(marketplaceMock.removeListing).toHaveBeenCalledWith(1);
+  });
+
+  /**
+   * MICA-413: an app is resident, so `onMount` runs once per session and a screen left open
+   * shows what was true the first time. One load on mount — the app is already in front —
+   * and one more each time it comes back, never two for one visit.
+   */
+  it('loads my listings once per visit to the foreground', async () => {
+    render(MyListings, { props: { onback: () => {} } });
+    await screen.findByText('Active One');
+    expect(marketplaceMock.loadMine).toHaveBeenCalledTimes(1);
+
+    currentApp.set({ id: 'home', props: {} });
+    currentApp.set({ id: 'marketplace', props: {} });
+    expect(marketplaceMock.loadMine).toHaveBeenCalledTimes(2);
   });
 });

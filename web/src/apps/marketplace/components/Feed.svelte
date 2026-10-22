@@ -5,8 +5,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { EmptyState, Skeleton, MediaThumb, useLocale, useMarketplace } from '@mica/sdk';
+  import {
+    EmptyState,
+    Skeleton,
+    MediaThumb,
+    onAppForeground,
+    useLocale,
+    useMarketplace
+  } from '@mica/sdk';
   import type { Listing } from '@mica/shared/types';
 
   let {
@@ -27,7 +33,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let searchResults = $state<Listing[] | null>(null);
   let debounceHandle: ReturnType<typeof setTimeout> | undefined;
 
-  onMount(() => {
+  // Every visit, not once per session — apps stay resident (AGENTS.md §11, MICA-413).
+  onAppForeground('marketplace', () => {
     void loadFeed().then(() => (loaded = true));
   });
 

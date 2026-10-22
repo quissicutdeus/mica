@@ -5,8 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { EmptyState, Skeleton, useLocale, useMarketplace } from '@mica/sdk';
+  import { EmptyState, Skeleton, onAppForeground, useLocale, useMarketplace } from '@mica/sdk';
 
   let { onback }: { onback: () => void } = $props();
 
@@ -15,7 +14,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   let loaded = $state(false);
 
-  onMount(() => {
+  // Every visit, not once per session — apps stay resident (AGENTS.md §11, MICA-413).
+  onAppForeground('marketplace', () => {
     void loadMine().then(() => (loaded = true));
   });
 </script>

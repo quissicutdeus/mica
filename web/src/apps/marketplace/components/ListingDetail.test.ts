@@ -25,6 +25,7 @@ vi.mock('@mica/sdk', async (importOriginal) => ({
 }));
 
 import ListingDetail from './ListingDetail.svelte';
+import { currentApp } from '../../../shell/state/navigation';
 
 import { registerMessages } from '@mica/sdk';
 import en from '../locales/en.json';
@@ -47,7 +48,10 @@ const listing = {
 };
 
 describe('ListingDetail', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    currentApp.set({ id: 'marketplace', props: {} });
+  });
 
   it('renders title, price, description, and never renders the raw phone number', async () => {
     marketplaceMock.viewListing.mockResolvedValue(listing);
@@ -86,5 +90,22 @@ describe('ListingDetail', () => {
     render(ListingDetail, { props: { id: 1, onback: () => {} } });
     await waitFor(() => screen.getByLabelText(/Report/));
     expect(screen.getByLabelText(/Report/)).toBeTruthy();
+  });
+
+  /**
+   * MICA-413: an app is resident, so `onMount` runs once per session and a screen left open
+   * shows what was true the first time. One load on mount — the app is already in front —
+   * and one more each time it comes back, never two for one visit.
+   */
+  it('reads the listing once per visit to the foreground', async () => {
+    marketplaceMock.viewListing.mockResolvedValue(listing);
+    render(ListingDetail, { props: { id: 1, onback: () => {} } });
+    await waitFor(() => screen.getByText('Dirt Bike'));
+    expect(marketplaceMock.viewListing).toHaveBeenCalledTimes(1);
+
+    currentApp.set({ id: 'home', props: {} });
+    currentApp.set({ id: 'marketplace', props: {} });
+    expect(marketplaceMock.viewListing).toHaveBeenCalledTimes(2);
+    expect(marketplaceMock.viewListing).toHaveBeenLastCalledWith(1);
   });
 });
