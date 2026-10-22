@@ -9,7 +9,7 @@ import type { UIConversation } from '@mica/sdk';
 import { searchEverything, SEARCH_RESULTS_PER_GROUP } from './searchResults';
 
 const app = (id: string, name: string, extra: Partial<AppManifest> = {}): AppManifest =>
-  ({ id, name, color: 'bg-indigo-600', icon: null, ...extra }) as AppManifest;
+  ({ id, name, tile: { bg: 'bg-indigo-600' }, icon: null, ...extra }) as AppManifest;
 
 const contact = (id: number, firstname: string, lastname: string, phone: string): Contact =>
   ({ id, citizenid: 'me', firstname, lastname, phone, favorite: false }) as Contact;

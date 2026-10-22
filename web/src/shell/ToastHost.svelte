@@ -9,6 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { toast } from './state/toast';
   import type { ToastAction, ToastMessage } from '../../../sdk/vocabulary/shell';
   import { fly } from '@mica/sdk';
+  import { flattenTile } from '../../../sdk/manifest';
   import CloseIcon from '../../../sdk/ui/icons/CloseIcon.svelte';
   import SendIcon from '../../../sdk/ui/icons/SendIcon.svelte';
   import Avatar from '../../../sdk/ui/Avatar.svelte';
@@ -236,7 +237,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <Avatar
                     src={typeof manifest.icon === 'string' ? manifest.icon : ''}
                     initials={manifest.name.charAt(0)}
-                    bgClass={manifest.color}
+                    bgClass={flattenTile(manifest.tile)}
                     size="size-icon-sm"
                     textClass="text-label-small"
                   />

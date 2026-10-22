@@ -48,8 +48,9 @@ export const catalogApps = (): AppManifest[] =>
  * A remote catalog entry, shaped exactly like `CatalogList.svelte` already expects.
  *
  * No new list component: `CatalogList` only ever reads `id`/`name`/`version`/`description`/
- * `icon`/`color`, every one of which a `CatalogEntry` already carries. `isRemote`/`bundleUrl`
- * ride along so `handleInstall` in `index.svelte` can tell which install path to call.
+ * `icon`/`tile`, and a `CatalogEntry` carries all of them — `tile` as the catalog's one
+ * `color` string, split back into its two roles here. `isRemote`/`bundleUrl` ride along so
+ * `handleInstall` in `index.svelte` can tell which install path to call.
  */
 export const toAppManifest = (entry: CatalogEntry): AppManifest => ({
   id: entry.id,
@@ -57,7 +58,6 @@ export const toAppManifest = (entry: CatalogEntry): AppManifest => ({
   version: entry.version,
   description: entry.description,
   icon: entry.icon ?? null,
-  color: entry.color,
   // `isCatalogEntry` has already refused any row whose `color` names no `bg-` class, so the
   // fallback is unreachable — it is there to keep the type honest rather than to invent a
   // colour, since a catalog entry is remote data and this file does not get to throw.

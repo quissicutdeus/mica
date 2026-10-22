@@ -354,7 +354,7 @@ describe('app-declared keybinds', () => {
   const fakeManifest = {
     id: 'snek_test_app',
     name: 'Snek Test App',
-    color: 'bg-green-600',
+    tile: { bg: 'bg-green-600' },
     icon: null,
     core: false,
     keybinds: [{ id: 'pause', label: 'Pause Game', defaultKey: 'p' }]

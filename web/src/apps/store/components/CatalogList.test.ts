@@ -14,7 +14,13 @@ import CatalogList from './CatalogList.svelte';
 registerMessages('store', { en, de });
 
 const app = (id: string): AppManifest =>
-  ({ id, name: id, version: '1.0.0', description: 'd', color: 'bg-indigo-600' }) as AppManifest;
+  ({
+    id,
+    name: id,
+    version: '1.0.0',
+    description: 'd',
+    tile: { bg: 'bg-indigo-600' }
+  }) as AppManifest;
 
 describe('CatalogList (MICA-169)', () => {
   it('shows an unavailable app with its reason and an Install that does nothing', async () => {

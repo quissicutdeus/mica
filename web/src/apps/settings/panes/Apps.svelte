@@ -12,7 +12,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useAppRegistry,
     useLocale,
     AppIconTile,
-    type AppManifest
+    type AppManifest,
+    flattenTile
   } from '@mica/sdk';
 
   /**
@@ -60,7 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => onselect(app.id)}
             class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors"
           >
-            <AppIconTile name={app.name} icon={app.icon} color={app.color} size="sm" />
+            <AppIconTile name={app.name} icon={app.icon} color={flattenTile(app.tile)} size="sm" />
             <div class="min-w-0 flex-1">
               <span class="text-on-surface block truncate font-medium">{app.name}</span>
               <span class="text-on-surface-variant text-body-small block truncate"

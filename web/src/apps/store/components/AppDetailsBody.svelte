@@ -5,7 +5,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { AppIconTile, type AppManifest, type AppUpdate, formatDate, useLocale } from '@mica/sdk';
+  import {
+    AppIconTile,
+    type AppManifest,
+    type AppUpdate,
+    flattenTile,
+    formatDate,
+    useLocale
+  } from '@mica/sdk';
   import { formatPermission, getAppStorageSize } from '../appInfo';
 
   const { t } = useLocale();
@@ -54,7 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
   <!-- Hero Header Box -->
   <div class="flex flex-col items-center space-y-3 pt-2 text-center">
-    <AppIconTile name={app.name} icon={app.icon} color={app.color} size="xl" />
+    <AppIconTile name={app.name} icon={app.icon} color={flattenTile(app.tile)} size="xl" />
 
     <div>
       <h2 class="text-on-surface text-xl font-semibold">{app.name}</h2>

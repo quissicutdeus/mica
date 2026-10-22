@@ -209,11 +209,8 @@ export type WidgetSize = (typeof WIDGET_SIZES)[number];
  * Separate from `AppManifest` for one reason: `name` is optional here and guaranteed on the
  * way out, so everything downstream can read `manifest.name` without a fallback.
  */
-export type AppManifestInput = Omit<AppManifest, 'name' | 'tile' | 'color'> & {
+export type AppManifestInput = Omit<AppManifest, 'name'> & {
   name?: string;
-  tile?: AppTile;
-  /** @deprecated Author `tile` instead. Accepted so an add-on bundle predating it still loads. */
-  color?: string;
 };
 
 /**
@@ -279,23 +276,15 @@ export interface AppManifest {
    * The authored field (MICA-91). It replaces a free-form `color` string that held both
    * roles at once, positionally and unchecked — which is what let a tile and its glyph
    * disagree, and what MICA-88 had to go and reconcile by hand across sixteen apps.
+   *
+   * Required, and the only spelling. The derived `color` output and the deprecated `color`
+   * input were removed on 2026-10-22 (MICA-419), with the contract left at `'1'` because SDK
+   * 1 is unreleased; a reader that wants one class string calls `flattenTile`.
    */
   tile: AppTile;
-  /**
-   * `tile` flattened to the class string every consumer interpolates. **Derived — do not
-   * author it.**
-   *
-   * Still here because ten-odd call sites read it (`AppIcon`, `Launcher`, `Dock`,
-   * `AppDrawer`, `FolderPopup`, `DragGhost`, `ToastHost`, the Store and Settings listings)
-   * and because an add-on bundle published before `tile` existed still sets it. `defineApp`
-   * derives whichever of the two was not given, so both are always present and always
-   * agree; writing both is refused rather than merged.
-   */
-  color: string;
   /** A Svelte component, a snippet, or an image URL. Null renders no glyph, which
    *  is what a remote app that shipped without one gets. */
-  // A manifest icon can be any component with any props shape; `unknown` would reject every real component here.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any props shape; `unknown` rejects every real component
   icon: Component<any> | Snippet | string | null;
   /** Reactive unread count for the launcher badge — `unreadMailCount` and friends. */
   badgeStore?: Readable<number>;
@@ -546,16 +535,27 @@ const BG_CLASS = oneClass('bg');
 const FG_CLASS = oneClass('text');
 
 /**
- * A legacy `color` string split back into the two roles it was always carrying, or `null`
+ * A tile as the one class string a `class` attribute takes — `{ bg: 'bg-green-400', fg:
+ * 'text-gray-900' }` becomes `'bg-green-400 text-gray-900'`, background first, and a dark
+ * tile with no `fg` is its `bg` alone, with no trailing space.
+ *
+ * The single way to flatten a tile (MICA-419). Every reader that paints one — the launcher,
+ * the dock, the Store and Settings listings, the catalog generator — goes through this
+ * rather than joining `bg` and `fg` by hand, which is how the two roles drifted apart the
+ * first time. Public because an add-on drawing another app's icon (a launcher of its own,
+ * an app picker) needs the same answer.
+ */
+export const flattenTile = (tile: AppTile): string => (tile.fg ? `${tile.bg} ${tile.fg}` : tile.bg);
+
+/**
+ * A catalog `color` string split back into the two roles it was always carrying, or `null`
  * if it names no background at all.
  *
  * Exported because the Store's remote catalog is a wire format that still speaks `color`
- * (`shell/state/catalog.ts`) and has to turn one into a tile without importing `defineApp`,
- * which throws — a malformed row there is dropped and logged, not fatal.
+ * (`isCatalogEntry` in `sdk/catalog.ts`) and has to turn one into a tile without importing
+ * `defineApp`, which throws — a malformed row there is dropped and logged, not fatal. A
+ * manifest no longer accepts `color` at all (MICA-419); this is for the wire format only.
  */
-/** A tile as the one class string every consumer interpolates. */
-const flattenTile = (tile: AppTile) => (tile.fg ? `${tile.bg} ${tile.fg}` : tile.bg);
-
 export function tileFromColorClasses(color: string): AppTile | null {
   const tokens = color.trim().split(/\s+/);
   const bg = tokens.find((t) => BG_CLASS.test(t));
@@ -565,54 +565,25 @@ export function tileFromColorClasses(color: string): AppTile | null {
 }
 
 /**
- * The tile, from whichever of the two fields the author used, validated either way.
+ * The manifest's `tile`, validated.
  *
- * `tile` is the field to write. `color` is accepted because an add-on bundle published
- * before `tile` existed still sets it, and refusing those would break every installed
- * copy — so it is split back into its two roles here rather than carried around as a
- * string nobody can check. Both together is refused: that is the one input where they can
- * disagree, and picking a winner silently is how the original problem started.
+ * `color` is refused by name rather than ignored. It was the legacy spelling of `tile` until
+ * MICA-419 took it out of the type on 2026-10-22, and a JavaScript bundle, or one built
+ * against the SDK before that, can still pass it. Ignoring it would install an app whose author
+ * thought they had painted the tile; saying which field replaced it costs one sentence.
  */
-function resolveTile(id: string, input: { tile?: AppTile; color?: string }): AppTile {
-  const { tile, color } = input;
+function resolveTile(id: string, input: { tile?: AppTile }): AppTile {
+  const { tile } = input;
 
-  /**
-   * Both fields, disagreeing. Refused rather than resolved: picking a winner silently is
-   * how a tile and its glyph came apart in the first place.
-   *
-   * Agreeing is fine and routine — `defineApp` is not run once. `shell/state/registry.ts`
-   * re-runs it over every already-defined manifest to stamp `installedAt`, so a manifest
-   * arrives here carrying the `color` a previous pass derived. A rule that refused both
-   * outright would fail every app in the repo at boot.
-   */
-  if (tile && color !== undefined && color !== flattenTile(tile)) {
+  if ('color' in input) {
     throw new Error(
-      `micaOS App Manifest error: '${id}' declares both 'tile' and 'color', and they ` +
-        `disagree ('${flattenTile(tile)}' vs '${color}'). They are the same thing — ` +
-        `'color' is the legacy spelling, derived from 'tile'. Keep 'tile'.`
+      `micaOS App Manifest error: '${id}' declares 'color', which micaOS no longer ` +
+        `accepts. Declare 'tile: { bg, fg }' instead — 'bg' is the tile's 'bg-' class, ` +
+        `'fg' the glyph's 'text-' class, omitted on a dark tile.`
     );
   }
 
-  if (tile) {
-    if (!BG_CLASS.test(tile.bg)) {
-      throw new Error(
-        `micaOS App Manifest error: '${id}' has tile.bg '${tile.bg}', which is not a single ` +
-          `'bg-' utility class from app-utilities.css. A hex value or a colour name is ` +
-          `interpolated into a 'class' attribute and matches no rule, so the tile renders ` +
-          `with no background at all.`
-      );
-    }
-    if (tile.fg !== undefined && !FG_CLASS.test(tile.fg)) {
-      throw new Error(
-        `micaOS App Manifest error: '${id}' has tile.fg '${tile.fg}', which is not a single ` +
-          `'text-' utility class. Omit it entirely for a dark tile, where the glyph inherits ` +
-          `'--color-on-surface' and is already legible.`
-      );
-    }
-    return tile.fg === undefined ? { bg: tile.bg } : { bg: tile.bg, fg: tile.fg };
-  }
-
-  if (typeof color !== 'string' || !color.trim()) {
+  if (!tile) {
     throw new Error(
       `micaOS App Manifest error: '${id}' must declare 'tile'. It is what the launcher ` +
         `paints the icon with, and there is no sensible default — an app with no tile is ` +
@@ -620,15 +591,22 @@ function resolveTile(id: string, input: { tile?: AppTile; color?: string }): App
     );
   }
 
-  const split = tileFromColorClasses(color);
-  if (!split) {
+  if (!BG_CLASS.test(tile.bg)) {
     throw new Error(
-      `micaOS App Manifest error: '${id}' has color '${color}', which names no 'bg-' ` +
-        `utility class. It is interpolated into a 'class' attribute, so a hex value or a ` +
-        `bare colour name renders no background at all. Prefer 'tile: { bg, fg }'.`
+      `micaOS App Manifest error: '${id}' has tile.bg '${tile.bg}', which is not a single ` +
+        `'bg-' utility class from app-utilities.css. A hex value or a colour name is ` +
+        `interpolated into a 'class' attribute and matches no rule, so the tile renders ` +
+        `with no background at all.`
     );
   }
-  return split;
+  if (tile.fg !== undefined && !FG_CLASS.test(tile.fg)) {
+    throw new Error(
+      `micaOS App Manifest error: '${id}' has tile.fg '${tile.fg}', which is not a single ` +
+        `'text-' utility class. Omit it entirely for a dark tile, where the glyph inherits ` +
+        `'--color-on-surface' and is already legible.`
+    );
+  }
+  return tile.fg === undefined ? { bg: tile.bg } : { bg: tile.bg, fg: tile.fg };
 }
 
 /**
@@ -910,13 +888,7 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
 
   const author = manifest.author || 'micaOS';
 
-  /**
-   * Both spellings, always in step. `color` is the flattened form every consumer already
-   * interpolates; deriving it here is what makes `tile` a pure authoring change rather
-   * than a rewrite of ten call sites and every published add-on.
-   */
   const tile = resolveTile(id, manifest);
-  const color = flattenTile(tile);
 
   validateManifestPermissions(id, manifest.permissions ?? [], ALL_PERMISSIONS);
 
@@ -988,7 +960,6 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
     name: manifest.name ?? titleCase(id),
     core,
     author,
-    tile,
-    color
+    tile
   };
 }

@@ -17,7 +17,6 @@ const app = (extra: Partial<AppManifest> = {}): AppManifest =>
     name: 'Widget',
     core: true,
     tile: { bg: 'bg-sky-500' },
-    color: 'bg-sky-500',
     permissions: [],
     ...extra
   }) as AppManifest;

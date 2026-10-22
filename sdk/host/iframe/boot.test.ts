@@ -19,7 +19,6 @@ import type { HydratePayload, ToShell } from './messages';
 const manifest: AppManifest = {
   id: 'uses_contacts',
   name: 'Uses Contacts',
-  color: 'bg-indigo-600',
   tile: { bg: 'bg-indigo-600' },
   icon: null,
   core: false,

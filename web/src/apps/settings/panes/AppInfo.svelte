@@ -19,7 +19,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useNotificationSettings,
     useNotificationSettingsWrite,
     AppIconTile,
-    type AppManifest
+    type AppManifest,
+    flattenTile
   } from '@mica/sdk';
 
   /**
@@ -124,7 +125,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <div class="space-y-6 p-4">
   <div class="flex items-center gap-3">
-    <AppIconTile name={app.name} icon={app.icon} color={app.color} size="lg" />
+    <AppIconTile name={app.name} icon={app.icon} color={flattenTile(app.tile)} size="lg" />
     <div class="min-w-0">
       <p class="text-on-surface text-body-large truncate">{app.name}</p>
       <p class="text-on-surface-variant text-body-small truncate">

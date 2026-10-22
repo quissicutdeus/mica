@@ -27,7 +27,8 @@ import {
   useMessages,
   useNotifications,
   onAppUnmount,
-  MICA_VERSION
+  MICA_VERSION,
+  type AppManifestInput
 } from './index';
 import { useNuiBridge } from './core';
 import { toast } from '../web/src/shell/state/toast';
@@ -54,8 +55,8 @@ describe('micaOS SDK (@mica/sdk)', () => {
       expect(app.id).toBe('crypto_tracker');
       expect(app.name).toBe('Crypto Tracker');
       expect(app.tile).toEqual({ bg: 'bg-yellow-500' });
-      // Derived, so every consumer that interpolates one class string keeps working.
-      expect(app.color).toBe('bg-yellow-500');
+      // The derived `color` string was removed on 2026-10-22 (MICA-419).
+      expect(app).not.toHaveProperty('color');
       expect(app.version).toBe(MICA_VERSION);
       expect(app.author).toBe('Community');
       expect(app.permissions).toEqual([]);
@@ -69,14 +70,14 @@ describe('micaOS SDK (@mica/sdk)', () => {
     });
 
     it('throws when id is missing, or name is present and empty', () => {
-      expect(() => defineApp({ id: '', name: 'Test', color: 'red', icon: null } as any)).toThrow(
-        "micaOS App Manifest error: 'id' is required"
-      );
+      expect(() =>
+        defineApp({ id: '', name: 'Test', tile: { bg: 'bg-red-500' }, icon: null } as any)
+      ).toThrow("micaOS App Manifest error: 'id' is required");
       // `name` is optional now and derived from the id when absent — but an empty string is
       // a supplied value rather than an omission, and there is nothing to derive from it.
-      expect(() => defineApp({ id: 'app1', name: '', color: 'red', icon: null } as any)).toThrow(
-        "micaOS App Manifest error: 'name' must be a non-empty string"
-      );
+      expect(() =>
+        defineApp({ id: 'app1', name: '', tile: { bg: 'bg-red-500' }, icon: null } as any)
+      ).toThrow("micaOS App Manifest error: 'name' must be a non-empty string");
     });
 
     /**
@@ -103,43 +104,40 @@ describe('micaOS SDK (@mica/sdk)', () => {
       });
 
       it('refuses a manifest with no tile at all', () => {
-        expect(() => defineApp({ ...base })).toThrow("'probe' must declare 'tile'");
+        // Required by the type since MICA-419; a JavaScript bundle can still omit it.
+        expect(() => defineApp({ ...base } as unknown as AppManifestInput)).toThrow(
+          "'probe' must declare 'tile'"
+        );
       });
 
-      it('still accepts the legacy `color` string, and splits it into roles', () => {
-        // An add-on bundle published before `tile` existed has to keep loading.
-        const app = defineApp({ ...base, color: 'bg-green-400 text-gray-900' });
-        expect(app.tile).toEqual({ bg: 'bg-green-400', fg: 'text-gray-900' });
-        expect(app.color).toBe('bg-green-400 text-gray-900');
-      });
-
-      it('reads the roles by name, not by position', () => {
-        const app = defineApp({ ...base, color: 'text-gray-900 bg-green-400' });
-        expect(app.tile).toEqual({ bg: 'bg-green-400', fg: 'text-gray-900' });
-        // Normalised on the way out: background first, however it was written.
-        expect(app.color).toBe('bg-green-400 text-gray-900');
-      });
-
-      it('refuses both spellings when they disagree, rather than picking a winner', () => {
+      /**
+       * MICA-419 (2026-10-22): `color` left the manifest. It is refused by name, not ignored —
+       * a JavaScript bundle, or one built before that, can still pass it, and
+       * ignoring it would install an app whose author thought they had painted the tile.
+       */
+      it('refuses a manifest that declares only the removed `color`', () => {
         expect(() =>
-          defineApp({ ...base, tile: { bg: 'bg-sky-500' }, color: 'bg-rose-600' })
-        ).toThrow("declares both 'tile' and 'color', and they disagree");
+          defineApp({ ...base, color: 'bg-green-400 text-gray-900' } as unknown as AppManifestInput)
+        ).toThrow("'probe' declares 'color', which micaOS no longer accepts");
+      });
+
+      it('refuses `color` beside a `tile`, even when the two agree', () => {
+        expect(() =>
+          defineApp({
+            ...base,
+            tile: { bg: 'bg-sky-500' },
+            color: 'bg-sky-500'
+          } as unknown as AppManifestInput)
+        ).toThrow("declares 'color', which micaOS no longer accepts");
       });
 
       it('is idempotent, because the registry re-runs it over its own output', () => {
         // `shell/state/registry.ts` calls `defineApp` again on every already-defined
-        // manifest to stamp `installedAt`, so the second pass sees the `color` the first
-        // one derived. Refusing both outright failed every app in the repo at boot.
+        // manifest to stamp `installedAt`, so its own output has to pass back through.
         const once = defineApp({ ...base, tile: { bg: 'bg-green-400', fg: 'text-gray-900' } });
         const twice = defineApp(once);
         expect(twice.tile).toEqual(once.tile);
-        expect(twice.color).toBe(once.color);
-      });
-
-      it('refuses a legacy color naming no background', () => {
-        expect(() => defineApp({ ...base, color: '#f59e0b' })).toThrow(
-          "color '#f59e0b', which names no 'bg-' utility class"
-        );
+        expect(twice).not.toHaveProperty('color');
       });
     });
   });

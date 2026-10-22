@@ -62,7 +62,6 @@ const entry = (over: Partial<CatalogEntry> = {}): CatalogEntry => ({
 const installed = (over: Partial<AppManifest> = {}): AppManifest => ({
   id: 'remote_weather',
   name: 'Weather',
-  color: 'bg-blue-500',
   tile: { bg: 'bg-blue-500' },
   icon: null,
   core: false,

@@ -748,6 +748,19 @@ function emitDevCatalogEntry(appId: string): Plugin {
             `cannot check the dev catalog entry it writes. Take the current template.`
         );
       }
+      // The catalog still speaks one `color` string, and the manifest carries only `tile`
+      // since MICA-419 (2026-10-22). Flattened by the SDK's own `flattenTile`, so the dev
+      // entry paints exactly what the installed app's tile does.
+      const { module: tiles } = await runnerImport<{
+        flattenTile?: (tile: { bg: string; fg?: string }) => string;
+      }>(path.join(sdkRoot, 'manifest.ts'), { configFile: false, logLevel: 'error', root: here });
+      if (typeof tiles.flattenTile !== 'function') {
+        this.error(
+          `[mica-addon] @mica/sdk's manifest.ts does not export flattenTile, so this build ` +
+            `cannot write the dev catalog entry's colour. Take the current template.`
+        );
+      }
+      const tile = manifest.tile as { bg: string; fg?: string } | undefined;
 
       const pkg = JSON.parse(fs.readFileSync(path.join(here, 'package.json'), 'utf8')) as {
         version?: string;
@@ -761,7 +774,7 @@ function emitDevCatalogEntry(appId: string): Plugin {
         description: manifest.description,
         bundleUrl: `${bundleFile}?v=${sha256.slice(0, 16)}`,
         sha256,
-        color: manifest.color,
+        color: tile ? tiles.flattenTile(tile) : undefined,
         permissions: manifest.permissions ?? [],
         ...optional('requires'),
         ...optional('devices'),

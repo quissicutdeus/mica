@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   raised on a rising neck off a coiled loop — not just "a snake shape" but this specific
   silhouette. The tongue is the one deliberate color accent; the rest of the mark is solid
   black regardless of theme, same reasoning as before: the yellow comes from the launcher
-  tile (manifest `color: 'bg-yellow-500'`), and the body should read the same in both modes
+  tile (manifest `tile: { bg: 'bg-yellow-500' }`), and the body should read the same in both modes
   rather than fading via `text-on-surface`.
 -->
 <script lang="ts">

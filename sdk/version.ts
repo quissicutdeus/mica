@@ -66,10 +66,17 @@
  * lint and cannot change what an installed add-on does. `publicSurface.test.ts` pins the
  * subpath, not what the config says.
  *
- * Note what it does *not* do: nothing consults it at install or boot time. There is no
- * runtime compatibility gate anywhere in the phone (MICA-173), and adding one is new
- * manifest surface that needs deciding on its own. This is a number an add-on author can
- * read and act on; it is not a number the shell enforces.
+ * **The shell does consult it** (MICA-196): a manifest stamping `sdkContract` with any other
+ * value is refused at install (`assertContractSupported` in `shell/state/registry.ts`) and
+ * at hydrate (`IframeHostServer`) — by equality, since this is unordered. An add-on with no
+ * stamp is never refused. The public catalog's URL is keyed on it too
+ * (`publicAddonCatalogUrl`), so a bump moves where the Store looks for add-ons.
+ *
+ * Still `'1'` after MICA-419 removed `AppManifest.color` and the deprecated
+ * `AppManifestInput.color` on 2026-10-22, on the ground `523c1bbc` set out: SDK 1 has
+ * never been released and nothing outside this repo builds against it, so a bump would buy
+ * only its costs — the catalog path moving to `addons/sdk-2/` and every add-on stamped `'1'`
+ * refused. The frozen shapes in `publicSurface.test.ts` record the removal under `'1'`.
  */
 export const SDK_CONTRACT_VERSION: string = '1';
 

@@ -12,6 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { attachDragGesture } from '../lib/phone/pointerDrag';
   import { createSheetOpen, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
   import AppIcon from '../../../sdk/ui/AppIcon.svelte';
+  import { flattenTile } from '../../../sdk/manifest';
   import { appRegistryStore } from './state/registry';
   import { appVisible } from './state/appVisibility';
   import { dockAppIds, dockSlotCount } from './state/dock';
@@ -135,7 +136,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <AppIcon
           name={slot.manifest.name}
           badgeSuppressed={!$badgeAllowed(slot.appId)}
-          color={slot.manifest.color}
+          color={flattenTile(slot.manifest.tile)}
           icon={slot.manifest.icon}
           badgeStore={slot.manifest.badgeStore}
           onclick={() => {

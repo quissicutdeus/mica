@@ -16,7 +16,13 @@
 import '../web/src/host/registerFacets';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { get } from 'svelte/store';
-import { ALL_CAPABILITIES, ALL_PERMISSIONS, defineApp } from './manifest';
+import {
+  ALL_CAPABILITIES,
+  ALL_PERMISSIONS,
+  defineApp,
+  flattenTile,
+  tileFromColorClasses
+} from './manifest';
 import { ADD_ON_REFUSED_PERMISSIONS, RESERVED_ADD_ON_IDS } from './permissions';
 import { allContracts } from '@mica/shared/contract';
 import '@mica/shared/contracts';
@@ -63,7 +69,7 @@ describe('defineApp: id casing', () => {
     const manifest = defineApp({
       id: 'MyApp',
       name: 'My App',
-      color: 'bg-blue-600',
+      tile: { bg: 'bg-blue-600' },
       icon: null,
       // Non-core, or the registry refuses to let the test clean up after itself.
       core: false
@@ -81,14 +87,14 @@ describe('defineApp: id casing', () => {
     // `id` is the storage namespace, the keybind claim and an event segment. Lowercasing it
     // once here is what keeps those consistent with `openApp`, which lowercases anyway.
     expect(
-      defineApp({ id: 'MyApp', name: 'x', color: 'bg-blue-600', icon: null, core: false }).id
+      defineApp({ id: 'MyApp', name: 'x', tile: { bg: 'bg-blue-600' }, icon: null, core: false }).id
     ).toBe('myapp');
   });
 
   it('warns about it, so the manifest gets fixed rather than silently rewritten', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    defineApp({ id: 'MyApp', name: 'x', color: 'bg-blue-600', icon: null, core: false });
+    defineApp({ id: 'MyApp', name: 'x', tile: { bg: 'bg-blue-600' }, icon: null, core: false });
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('MyApp'));
   });
@@ -96,7 +102,13 @@ describe('defineApp: id casing', () => {
   it('says nothing about an id that was already lower_snake_case', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    defineApp({ id: 'crypto_tracker', name: 'x', color: 'bg-blue-600', icon: null, core: false });
+    defineApp({
+      id: 'crypto_tracker',
+      name: 'x',
+      tile: { bg: 'bg-blue-600' },
+      icon: null,
+      core: false
+    });
 
     expect(warn).not.toHaveBeenCalled();
   });
@@ -107,7 +119,7 @@ describe('defineApp: id casing', () => {
  * still only warned about: it is in this tree, and review sees it.
  */
 describe('defineApp: an add-on id', () => {
-  const addOn = { color: 'bg-blue-600', icon: null, core: false } as const;
+  const addOn = { tile: { bg: 'bg-blue-600' }, icon: null, core: false } as const;
 
   it('refuses one outside lower_snake_case, which could forge a compound key', () => {
     expect(() => defineApp({ id: 'a:b', ...addOn })).toThrow(
@@ -124,7 +136,7 @@ describe('defineApp: an add-on id', () => {
 
   it('refuses them on a remote bundle that leaves core unsaid', () => {
     expect(() =>
-      defineApp({ id: 'system', color: 'bg-blue-600', icon: null, isRemote: true } as never)
+      defineApp({ id: 'system', tile: { bg: 'bg-blue-600' }, icon: null, isRemote: true } as never)
     ).toThrow(/add-on id 'system' is reserved/);
   });
 
@@ -178,14 +190,14 @@ describe('defineApp: name', () => {
   it('derives the display name from the id when it is omitted', () => {
     // Every one of the twelve apps in this repo had `name` spelled out and every one of
     // them matched the title-cased id exactly, so the field was pure duplication.
-    expect(defineApp({ id: 'notes', color: 'bg-yellow-400', icon: null, core: false }).name).toBe(
-      'Notes'
-    );
+    expect(
+      defineApp({ id: 'notes', tile: { bg: 'bg-yellow-400' }, icon: null, core: false }).name
+    ).toBe('Notes');
   });
 
   it('title-cases each word of a snake_case id', () => {
     expect(
-      defineApp({ id: 'crypto_tracker', color: 'bg-blue-600', icon: null, core: false }).name
+      defineApp({ id: 'crypto_tracker', tile: { bg: 'bg-blue-600' }, icon: null, core: false }).name
     ).toBe('Crypto Tracker');
   });
 
@@ -193,7 +205,8 @@ describe('defineApp: name', () => {
     // `GPS` and `My Bank` are not title-cased ids, which is why deriving is a default
     // rather than a rule.
     expect(
-      defineApp({ id: 'gps', name: 'GPS', color: 'bg-blue-600', icon: null, core: false }).name
+      defineApp({ id: 'gps', name: 'GPS', tile: { bg: 'bg-blue-600' }, icon: null, core: false })
+        .name
     ).toBe('GPS');
   });
 
@@ -201,14 +214,19 @@ describe('defineApp: name', () => {
     // `{ name: undefined }` spreads as a present key, so a naive default placed before the
     // spread would be clobbered by it and the launcher would render nothing for a label.
     expect(
-      defineApp({ id: 'notes', name: undefined, color: 'bg-yellow-400', icon: null, core: false })
-        .name
+      defineApp({
+        id: 'notes',
+        name: undefined,
+        tile: { bg: 'bg-yellow-400' },
+        icon: null,
+        core: false
+      }).name
     ).toBe('Notes');
   });
 
   it('still refuses a name that is present and empty', () => {
     expect(() =>
-      defineApp({ id: 'notes', name: '', color: 'bg-yellow-400', icon: null, core: false })
+      defineApp({ id: 'notes', name: '', tile: { bg: 'bg-yellow-400' }, icon: null, core: false })
     ).toThrow(/non-empty string/);
   });
 });
@@ -236,6 +254,42 @@ describe('defineApp: the launcher tile', () => {
     });
 
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MICA-419. With `color` gone from the manifest, `flattenTile` is the one place a tile
+ * becomes the class string every launcher, dock and Store reader paints, and the catalog
+ * generator writes. Each reader used to join `bg` and `fg` by hand.
+ */
+describe('flattenTile', () => {
+  it('puts the background first and the glyph after it', () => {
+    expect(flattenTile({ bg: 'bg-yellow-400', fg: 'text-gray-900' })).toBe(
+      'bg-yellow-400 text-gray-900'
+    );
+  });
+
+  it('is the background alone on a dark tile, with no trailing space', () => {
+    expect(flattenTile({ bg: 'bg-indigo-600' })).toBe('bg-indigo-600');
+  });
+
+  it("round-trips through the catalog's `tileFromColorClasses`", () => {
+    // The catalog wire format still speaks one `color` string: the generator writes it with
+    // `flattenTile` and the Store reads it back with `tileFromColorClasses`, so the two have
+    // to be inverses or a remote listing paints a different tile from the installed app.
+    for (const tile of [{ bg: 'bg-sky-500' }, { bg: 'bg-green-400', fg: 'text-gray-900' }]) {
+      expect(tileFromColorClasses(flattenTile(tile))).toEqual(tile);
+    }
+  });
+
+  it("flattens what `defineApp` validated, so the shell paints the manifest's own tile", () => {
+    const app = defineApp({
+      id: 'flat',
+      tile: { bg: 'bg-green-400', fg: 'text-gray-900' },
+      icon: null,
+      core: false
+    });
+    expect(flattenTile(app.tile)).toBe('bg-green-400 text-gray-900');
   });
 });
 
@@ -272,7 +326,7 @@ describe('defineApp: core', () => {
     expect(() =>
       // @ts-expect-error - the whole point is that the type requires this and the runtime
       // check exists for callers that are not typed, i.e. remote bundles.
-      defineApp({ id: 'undeclared', color: 'bg-blue-600', icon: null })
+      defineApp({ id: 'undeclared', tile: { bg: 'bg-blue-600' }, icon: null })
     ).toThrow(/must declare 'core'/);
   });
 
@@ -281,7 +335,7 @@ describe('defineApp: core', () => {
     // manifest used to come back protected.
     const app = defineApp({
       id: 'authored',
-      color: 'bg-blue-600',
+      tile: { bg: 'bg-blue-600' },
       icon: null,
       author: 'micaOS',
       core: false
@@ -297,7 +351,13 @@ describe('defineApp: core', () => {
     // refused to remove it, for the rest of the session. Spreading and then normalizing is
     // what closes that; a bundle cannot opt into protection.
     expect(() =>
-      defineApp({ id: 'hostile', color: 'bg-blue-600', icon: null, core: true, isRemote: true })
+      defineApp({
+        id: 'hostile',
+        tile: { bg: 'bg-blue-600' },
+        icon: null,
+        core: true,
+        isRemote: true
+      })
     ).toThrow(/remote app 'hostile' declares 'core: true'/);
   });
 
@@ -309,7 +369,7 @@ describe('defineApp: core', () => {
       // `CatalogEntry`, which predates `core`'s existence on some real installs. Cast
       // rather than `@ts-expect-error`, because the assertion under test is a runtime one
       // and the cast is what the real call site effectively does.
-      { id: 'legacy_remote', color: 'bg-blue-600', icon: null, isRemote: true } as never
+      { id: 'legacy_remote', tile: { bg: 'bg-blue-600' }, icon: null, isRemote: true } as never
     );
 
     expect(app.core).toBe(false);
@@ -320,7 +380,7 @@ describe('defineApp: keybinds', () => {
   it('passes through an optional keybinds array unchanged', () => {
     const manifest = defineApp({
       id: 'snek',
-      color: 'bg-green-600',
+      tile: { bg: 'bg-green-600' },
       icon: null,
       core: false,
       keybinds: [{ id: 'pause', label: 'Pause Game', defaultKey: 'p' }]
@@ -332,7 +392,7 @@ describe('defineApp: keybinds', () => {
   it('leaves keybinds undefined when the manifest declares none', () => {
     const manifest = defineApp({
       id: 'notes',
-      color: 'bg-yellow-600',
+      tile: { bg: 'bg-yellow-600' },
       icon: null,
       core: false
     });
@@ -349,7 +409,7 @@ describe('defineApp: networkHosts', () => {
     expect(() =>
       defineApp({
         id: 'sneaky',
-        color: 'bg-blue-600',
+        tile: { bg: 'bg-blue-600' },
         icon: null,
         core: false,
         networkHosts: ['https://api.example.com']
@@ -361,7 +421,7 @@ describe('defineApp: networkHosts', () => {
     expect(() =>
       defineApp({
         id: 'malformed',
-        color: 'bg-blue-600',
+        tile: { bg: 'bg-blue-600' },
         icon: null,
         core: false,
         requiresNetwork: true,
@@ -373,7 +433,7 @@ describe('defineApp: networkHosts', () => {
   it('accepts a well-formed origin alongside requiresNetwork: true', () => {
     const manifest = defineApp({
       id: 'networked',
-      color: 'bg-blue-600',
+      tile: { bg: 'bg-blue-600' },
       icon: null,
       core: false,
       requiresNetwork: true,
@@ -392,7 +452,7 @@ describe('defineApp: networkHosts', () => {
     // host to declare.
     const manifest = defineApp({
       id: 'signal_only',
-      color: 'bg-blue-600',
+      tile: { bg: 'bg-blue-600' },
       icon: null,
       core: false,
       requiresNetwork: true
@@ -413,7 +473,7 @@ describe('defineApp: services', () => {
   it('keeps a declared service on the way out', () => {
     const manifest = defineApp({
       id: 'blabber',
-      color: 'bg-sky-600',
+      tile: { bg: 'bg-sky-600' },
       icon: null,
       core: false,
       services: ['blabber', 'blabber_dms']
@@ -428,7 +488,7 @@ describe('defineApp: services', () => {
     expect(() =>
       defineApp({
         id: 'sneaky',
-        color: 'bg-blue-600',
+        tile: { bg: 'bg-blue-600' },
         icon: null,
         core: false,
         services: ['contacts']
@@ -442,7 +502,7 @@ describe('defineApp: services', () => {
     expect(() =>
       defineApp({
         id: 'blabber',
-        color: 'bg-blue-600',
+        tile: { bg: 'bg-blue-600' },
         icon: null,
         core: false,
         services: ['blabberx']
@@ -454,7 +514,7 @@ describe('defineApp: services', () => {
     expect(() =>
       defineApp({
         id: 'shouty',
-        color: 'bg-blue-600',
+        tile: { bg: 'bg-blue-600' },
         icon: null,
         core: false,
         services: ['Shouty'] as never
@@ -466,7 +526,7 @@ describe('defineApp: services', () => {
     expect(() =>
       defineApp({
         id: 'wrong_shape',
-        color: 'bg-blue-600',
+        tile: { bg: 'bg-blue-600' },
         icon: null,
         core: false,
         services: 'wrong_shape' as never
@@ -480,7 +540,7 @@ describe('defineApp: services', () => {
     // service" would stop each of them calling its own server.
     const manifest = defineApp({
       id: 'legacy_addon',
-      color: 'bg-blue-600',
+      tile: { bg: 'bg-blue-600' },
       icon: null,
       core: false
     });
@@ -491,7 +551,7 @@ describe('defineApp: services', () => {
 });
 
 describe('defineApp: devices (MICA-260)', () => {
-  const base = { color: 'bg-green-600', icon: null, core: false } as const;
+  const base = { tile: { bg: 'bg-green-600' }, icon: null, core: false } as const;
 
   it('keeps a declared list on the way out, and leaves an add-on that predates it alone', () => {
     expect(defineApp({ id: 'twofer', ...base, devices: ['phone', 'tablet'] }).devices).toEqual([
@@ -523,7 +583,7 @@ describe('defineApp: devices (MICA-260)', () => {
 });
 
 describe('defineApp: widget (MICA-245)', () => {
-  const addOn = { color: 'bg-green-600', icon: null, core: false } as const;
+  const addOn = { tile: { bg: 'bg-green-600' }, icon: null, core: false } as const;
   const core = { ...addOn, core: true } as const;
   const load = () => Promise.resolve({ default: (() => {}) as never });
 
@@ -585,7 +645,7 @@ describe('defineApp: widget (MICA-245)', () => {
  * the Store's permission sheet that grants nothing.
  */
 describe('defineApp: permissions an add-on cannot use', () => {
-  const addOn = { color: 'bg-green-600', icon: null, core: false } as const;
+  const addOn = { tile: { bg: 'bg-green-600' }, icon: null, core: false } as const;
 
   it('refuses each one on an add-on, naming it', () => {
     expect(ADD_ON_REFUSED_PERMISSIONS.length).toBeGreaterThan(0);
@@ -610,7 +670,7 @@ describe('defineApp: permissions an add-on cannot use', () => {
     expect(() =>
       defineApp({
         id: 'remote',
-        color: 'bg-green-600',
+        tile: { bg: 'bg-green-600' },
         icon: null,
         isRemote: true,
         permissions: ['keybinds-write']
@@ -633,7 +693,7 @@ describe('defineApp: requires', () => {
   it('keeps a declared capability on the way out', () => {
     const manifest = defineApp({
       id: 'moneyed',
-      color: 'bg-green-600',
+      tile: { bg: 'bg-green-600' },
       icon: null,
       core: false,
       requires: ['money']
@@ -650,7 +710,7 @@ describe('defineApp: requires', () => {
     expect(() =>
       defineApp({
         id: 'typo',
-        color: 'bg-green-600',
+        tile: { bg: 'bg-green-600' },
         icon: null,
         core: false,
         // Not `AppCapability`. A hand-written manifest, or one inside a published JS
@@ -665,7 +725,7 @@ describe('defineApp: requires', () => {
     expect(() =>
       defineApp({
         id: 'typo2',
-        color: 'bg-green-600',
+        tile: { bg: 'bg-green-600' },
         icon: null,
         core: false,
         requires: ['inventory'] as never
@@ -677,7 +737,7 @@ describe('defineApp: requires', () => {
     expect(() =>
       defineApp({
         id: 'stringly',
-        color: 'bg-green-600',
+        tile: { bg: 'bg-green-600' },
         icon: null,
         core: false,
         requires: 'money' as never
@@ -692,7 +752,7 @@ describe('defineApp: requires', () => {
     // apart from undefined.
     const legacy = defineApp({
       id: 'published_last_year',
-      color: 'bg-blue-600',
+      tile: { bg: 'bg-blue-600' },
       icon: null,
       core: false
     });
@@ -703,19 +763,24 @@ describe('defineApp: requires', () => {
 
   it('accepts an empty list as the same thing said explicitly', () => {
     expect(
-      defineApp({ id: 'explicit', color: 'bg-blue-600', icon: null, core: false, requires: [] })
-        .requires
+      defineApp({
+        id: 'explicit',
+        tile: { bg: 'bg-blue-600' },
+        icon: null,
+        core: false,
+        requires: []
+      }).requires
     ).toEqual([]);
   });
 
   it('survives being re-run over its own output', () => {
     // `shell/state/registry.ts` re-runs `defineApp` over an already-defined manifest to
-    // stamp `installedAt`, so every field has to round-trip. `color`/`tile` needed a rule
+    // stamp `installedAt`, so every field has to round-trip. `color`/`tile` once needed a rule
     // of their own for exactly this reason; `requires` must not grow a second check that
     // fires only on the second pass.
     const once = defineApp({
       id: 'twice',
-      color: 'bg-green-600',
+      tile: { bg: 'bg-green-600' },
       icon: null,
       core: false,
       requires: ['money']

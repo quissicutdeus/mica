@@ -6,6 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import AppIcon from '../../../sdk/ui/AppIcon.svelte';
+  import { flattenTile } from '../../../sdk/manifest';
   import { iconDragState } from './state/iconDrag';
   import { frame } from './state/device';
 
@@ -51,7 +52,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
     <AppIcon
       name={state.manifest.name}
-      color={state.manifest.color}
+      color={flattenTile(state.manifest.tile)}
       icon={state.manifest.icon}
       onclick={() => {}}
     />

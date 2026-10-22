@@ -8,6 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { closedPhoneToast } from './state/toast';
   import { frameMargin, phoneBox, viewportSize } from './state/display';
   import { fly } from '@mica/sdk';
+  import { flattenTile } from '../../../sdk/manifest';
   import Avatar from '../../../sdk/ui/Avatar.svelte';
   import { appRegistryStore } from './state/registry';
 
@@ -61,7 +62,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <Avatar
               src={typeof manifest.icon === 'string' ? manifest.icon : ''}
               initials={manifest.name.charAt(0)}
-              bgClass={manifest.color}
+              bgClass={flattenTile(manifest.tile)}
               size="size-icon-sm"
               textClass="text-label-small"
             />

@@ -28,7 +28,6 @@ import type { HydratePayload, ToShell } from './messages';
 const manifest: AppManifest = {
   id: 'two_roots',
   name: 'Two Roots',
-  color: 'bg-indigo-600',
   tile: { bg: 'bg-indigo-600' },
   icon: null,
   core: false,

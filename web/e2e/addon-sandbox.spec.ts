@@ -36,7 +36,7 @@ import { addOnFrame } from './support/addon';
 
 /** A fixture add-on's manifest, as `defineApp` needs it. */
 const manifestFor = (id: string, name: string) =>
-  JSON.stringify({ id, name, color: 'bg-red-500', icon: null, core: false });
+  JSON.stringify({ id, name, tile: { bg: 'bg-red-500' }, icon: null, core: false });
 
 /**
  * The probe's bundle.

@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { AppIconTile, type AppManifest, useLocale } from '@mica/sdk';
+  import { AppIconTile, type AppManifest, flattenTile, useLocale } from '@mica/sdk';
 
   const { t } = useLocale();
 
@@ -50,7 +50,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onclick={() => onselect(app)}
           class="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
-          <AppIconTile name={app.name} icon={app.icon} color={app.color} size="md" />
+          <AppIconTile name={app.name} icon={app.icon} color={flattenTile(app.tile)} size="md" />
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <span class="text-on-surface text-body-medium truncate">{app.name}</span>

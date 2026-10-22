@@ -60,7 +60,7 @@ const blabber = {
   id: 'blabber',
   name: 'Blabber',
   icon: ArchiveIcon,
-  color: 'bg-primary',
+  tile: { bg: 'bg-primary' },
   core: false,
   permissions: []
 } as unknown as AppManifest;

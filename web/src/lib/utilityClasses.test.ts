@@ -42,8 +42,8 @@ import {
  *   there's no literal text to check statically, by construction.
  * - `.svelte` markup is scanned in full. `.ts` files are scanned only for the one
  *   concrete, already-known pattern that hands a class *string* straight to a
- *   component: an app manifest's `color` field (`AppIcon` interpolates it directly into
- *   a `class`, per `sdk/manifest.ts`). Arbitrary string-tracking across `.ts` is not the
+ *   component: an app manifest's `tile` (`flattenTile` joins `bg` and `fg` into the one
+ *   string `AppIcon` interpolates into a `class`, per `sdk/manifest.ts`). Arbitrary string-tracking across `.ts` is not the
  *   goal — that would mean a real parser to avoid flagging every unrelated string
  *   literal that happens to look class-shaped — so this stays narrow and deliberate
  *   rather than growing into a second, noisier scanner.
@@ -255,11 +255,11 @@ describe('box-shadow does not compose across classes', () => {
 /**
  * A launcher tile's glyph has to be legible on the tile.
  *
- * `AppIcon.svelte` paints the tile with `manifest.color` and the glyph with an SVG whose
- * `stroke`/`fill` is `currentColor`, so the glyph takes whatever `color` is in scope. When
- * the manifest names no foreground class, that resolves all the way up to `Launcher`'s
- * `text-on-surface` — near-white in the dark scheme, which is right on a dark tile and
- * unreadable on a light one. Notes (`bg-yellow-400`) came out at 1.19:1 and Messages
+ * `AppIcon.svelte` paints the tile with `flattenTile(manifest.tile)` and the glyph with an
+ * SVG whose `stroke`/`fill` is `currentColor`, so the glyph takes whatever `color` is in
+ * scope. When the manifest names no foreground class, that resolves all the way up to
+ * `Launcher`'s `text-on-surface` — near-white in the dark scheme, which is right on a dark
+ * tile and unreadable on a light one. Notes (`bg-yellow-400`) came out at 1.19:1 and Messages
  * (`bg-green-400`) at 1.35:1: not a subtle regression, a glyph nobody could see, and
  * painful to look at besides (MICA-88).
  *
@@ -281,9 +281,9 @@ describe('box-shadow does not compose across classes', () => {
  * colors only ever applied on the launcher tile: the one place they were wrong.
  *
  * The rule now is that the **tile owns the glyph color** and the icon owns only its shape.
- * `AppIcon` already paints `manifest.color` around the glyph, and `currentColor` carries it
- * the rest of the way — on the tile, in the status bar, in the drawer, in the Store. So an
- * `Icon.svelte` default `class` may not name a `text-*` at all. That is a stricter rule
+ * `AppIcon` already paints the manifest's `tile` around the glyph, and `currentColor`
+ * carries it the rest of the way — on the tile, in the status bar, in the drawer, in the
+ * Store. So an `Icon.svelte` default `class` may not name a `text-*` at all. That is a stricter rule
  * than measuring contrast and a simpler one, and it is what makes the measurement below
  * meaningful rather than something an icon can quietly override.
  *

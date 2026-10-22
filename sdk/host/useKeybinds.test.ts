@@ -23,7 +23,6 @@ describe('useKeybinds groups', () => {
   const fakeManifest = {
     id: 'snek_hook_test',
     name: 'Snek Hook Test',
-    color: 'bg-green-600',
     tile: { bg: 'bg-green-600' },
     icon: null,
     core: false,
@@ -82,7 +81,6 @@ describe('useKeybinds groups', () => {
       {
         id: 'no_binds_app',
         name: 'No Binds',
-        color: 'bg-gray-600',
         tile: { bg: 'bg-gray-600' },
         icon: null,
         core: false
@@ -98,7 +96,6 @@ describe('useKeybinds groups', () => {
     const twoActionManifest = {
       id: 'snek_two_actions',
       name: 'Snek Two Actions',
-      color: 'bg-green-600',
       tile: { bg: 'bg-green-600' },
       icon: null,
       core: false,

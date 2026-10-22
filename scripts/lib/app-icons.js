@@ -109,8 +109,8 @@ const asDataUri = (id, body, color) => {
  * Render every named app's icon, in the order given.
  *
  * `apps` is `{ id, fg }` — the tile's foreground class, or nothing for a dark tile. The
- * caller splits that out of the manifest with the SDK's own `tileFromColorClasses`, rather
- * than this file re-deriving it from a colour string with a regex that would drift.
+ * caller reads it off the manifest's `tile.fg`, which `defineApp` validated, rather than
+ * this file re-deriving it from a colour string with a regex that would drift.
  *
  * esbuild and Svelte are both resolved from `web`: they are root devDependencies, and the
  * demo image installs with `--filter web...` precisely to leave those out, so a bare import

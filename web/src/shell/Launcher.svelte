@@ -11,6 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { get } from 'svelte/store';
   import { appVisible } from './state/appVisibility';
   import AppIcon from '../../../sdk/ui/AppIcon.svelte';
+  import { flattenTile } from '../../../sdk/manifest';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';
   import { attachDragGesture, clampProgress, shouldCommitDrag } from '../lib/phone/pointerDrag';
   import { abandonSheetDrag, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
@@ -448,7 +449,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <AppIcon
                 name={manifest.name}
                 badgeSuppressed={!$badgeAllowed(appId)}
-                color={manifest.color}
+                color={flattenTile(manifest.tile)}
                 icon={manifest.icon}
                 badgeStore={manifest.badgeStore}
                 onclick={() => openApp(appId)}
@@ -467,7 +468,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             >
               <div class="grid h-full w-full grid-cols-2 grid-rows-2 gap-0.5">
                 {#each previewApps as app (app.id)}
-                  <div class="{app.color} flex items-center justify-center rounded-box">
+                  <div class="{flattenTile(app.tile)} flex items-center justify-center rounded-box">
                     {#if typeof app.icon === 'string'}
                       <img
                         src={app.icon}

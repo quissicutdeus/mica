@@ -13,6 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { createSheetClose } from '../lib/phone/sheetDrag';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';
   import AppIcon from '../../../sdk/ui/AppIcon.svelte';
+  import { flattenTile } from '../../../sdk/manifest';
   import AppIconTile from '../../../sdk/ui/AppIconTile.svelte';
   import SearchIcon from '../../../sdk/ui/icons/SearchIcon.svelte';
   import { isAdmin } from '../services/admin';
@@ -329,7 +330,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <AppIcon
                 name={app.name}
                 badgeSuppressed={!$badgeAllowed(app.id)}
-                color={app.color}
+                color={flattenTile(app.tile)}
                 icon={app.icon}
                 badgeStore={app.badgeStore}
                 onclick={() => {
@@ -363,7 +364,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <AppIconTile
                 name={result.manifest.name}
                 icon={result.manifest.icon}
-                color={result.manifest.color}
+                color={flattenTile(result.manifest.tile)}
                 size="sm"
               />
             {:else}

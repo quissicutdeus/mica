@@ -12,6 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { registerHandler } from './state/keybinds';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';
   import AppIcon from '../../../sdk/ui/AppIcon.svelte';
+  import { flattenTile } from '../../../sdk/manifest';
   import { appRegistryStore } from './state/registry';
   import { appVisible } from './state/appVisibility';
   import { homeGridItems, openFolderId, renameFolder, type HomeGridFolder } from './state/homeGrid';
@@ -130,7 +131,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <AppIcon
               name={app.name}
               badgeSuppressed={!$badgeAllowed(app.id)}
-              color={app.color}
+              color={flattenTile(app.tile)}
               icon={app.icon}
               badgeStore={app.badgeStore}
               onclick={() => {

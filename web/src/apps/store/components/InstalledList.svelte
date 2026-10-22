@@ -9,6 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     AppIconTile,
     type AppManifest,
     type AppUpdate,
+    flattenTile,
     formatDate,
     formatRelativeTime,
     useLocale
@@ -113,7 +114,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onclick={() => onselect(app)}
         class="flex min-w-0 flex-1 items-center gap-3 text-left"
       >
-        <AppIconTile name={app.name} icon={app.icon} color={app.color} size="sm" />
+        <AppIconTile name={app.name} icon={app.icon} color={flattenTile(app.tile)} size="sm" />
         <div class="min-w-0 flex-1">
           <span class="text-on-surface text-body-medium block truncate">{app.name}</span>
           <div class="text-on-surface-variant text-label-small flex items-center gap-1.5 truncate">

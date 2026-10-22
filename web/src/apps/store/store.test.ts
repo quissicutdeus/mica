@@ -214,10 +214,10 @@ describe('remote catalog', () => {
         version: '2.0.0',
         description: 'Live weather from a remote catalog.',
         icon: 'https://store.example.com/icons/weather.svg',
-        color: 'bg-blue-500',
         // Split out of the wire field, so a remote listing carries the same structured
         // tile a bundled manifest does (MICA-91). The catalog itself still speaks
-        // `color`; that is a published format and stays a string.
+        // `color`; that is a published format and stays a string. The manifest does not
+        // carry it on (MICA-419).
         tile: { bg: 'bg-blue-500' },
         core: false,
         isRemote: true,
@@ -319,7 +319,6 @@ describe('add-on updates (MICA-74)', () => {
   const installedManifest = {
     id: 'remote_weather',
     name: 'Weather',
-    color: 'bg-blue-500',
     tile: { bg: 'bg-blue-500' },
     icon: null,
     core: false,

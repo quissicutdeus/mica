@@ -14,7 +14,8 @@ import {
   type AppManifest,
   type AppManifestInput,
   type AppPermission,
-  defineApp
+  defineApp,
+  tileFromColorClasses
 } from '../../../../sdk/manifest';
 import { clearAppStorage } from '../../../../sdk/host/useStorage';
 import { isBrowser, messageOf } from '@mica/sdk';
@@ -733,7 +734,10 @@ export function manifestFromEntry(
     name: entry.name,
     version: entry.version,
     description: entry.description,
-    color: entry.color,
+    // The catalog still speaks one `color` string; a manifest takes only `tile` (MICA-419).
+    // `isCatalogEntry` has already refused a row whose `color` names no `bg-` class, so the
+    // fallback is unreachable, and `defineApp` would refuse its `tile.bg` if it were not.
+    tile: tileFromColorClasses(entry.color) ?? { bg: entry.color },
     icon: entry.icon ?? null,
     permissions: entry.permissions,
     // The manifest is built from `entry` and nothing else, so a capability the catalog

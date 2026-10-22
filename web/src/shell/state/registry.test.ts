@@ -51,7 +51,6 @@ describe('App Registry Store', () => {
         {
           id: 'blabber',
           name: 'Blabber',
-          color: 'bg-sky-500',
           tile: { bg: 'bg-sky-500' },
           icon: null,
           core: false
@@ -65,7 +64,6 @@ describe('App Registry Store', () => {
         {
           id: 'blabber',
           name: 'Blabber Reinstalled',
-          color: 'bg-sky-500',
           tile: { bg: 'bg-sky-500' },
           icon: null,
           core: false
@@ -144,7 +142,6 @@ describe('App Registry Store', () => {
     const manifest: AppManifest = {
       id: 'dev_gate_fixture',
       name: 'Dev Gate Fixture',
-      color: 'bg-red-500',
       tile: { bg: 'bg-red-500' },
       icon: null,
       core: false
@@ -178,7 +175,6 @@ describe('App Registry Store', () => {
     const manifest: AppManifest = {
       id: 'ad_hoc_addon',
       name: 'Ad Hoc',
-      color: 'bg-teal-500',
       tile: { bg: 'bg-teal-500' },
       icon: null,
       core: false
@@ -205,7 +201,6 @@ describe('App Registry Store', () => {
     const addOn = (id: string, services?: readonly string[]): AppManifest => ({
       id,
       name: id,
-      color: 'bg-teal-500',
       tile: { bg: 'bg-teal-500' },
       icon: null,
       core: false,
@@ -291,7 +286,6 @@ describe('App Registry Store', () => {
     const contractAddOn = (sdkContract?: string): AppManifest => ({
       id: 'contract_probe',
       name: 'Contract Probe',
-      color: 'bg-teal-500',
       tile: { bg: 'bg-teal-500' },
       icon: null,
       core: false,
@@ -333,7 +327,6 @@ describe('App Registry Store', () => {
       appRegistryStore.registerAddOn({
         id: 'not_a_bundled_addon',
         name: 'Nope',
-        color: 'bg-red-500',
         tile: { bg: 'bg-red-500' },
         icon: null,
         core: false
@@ -387,7 +380,6 @@ describe('App Registry Store', () => {
     appRegistryStore.registerAddOn({
       id: 'blabber',
       name: 'Blabber',
-      color: 'bg-sky-500',
       tile: { bg: 'bg-sky-500' },
       icon: null,
       core: false
@@ -408,7 +400,6 @@ describe('App Registry Store', () => {
     const manifest: AppManifest = {
       id: 'remote_gone',
       name: 'Gone',
-      color: 'bg-gray-600',
       tile: { bg: 'bg-gray-600' },
       icon: null,
       core: false,
@@ -465,7 +456,6 @@ describe('an app the owner has disabled (MICA-234)', () => {
       appRegistryStore.registerAddOn({
         id: 'blabber',
         name: 'Blabber',
-        color: 'bg-sky-500',
         tile: { bg: 'bg-sky-500' },
         icon: null,
         core: false
@@ -504,7 +494,6 @@ describe('an app the owner has disabled (MICA-234)', () => {
       appRegistryStore.registerAddOn({
         id: 'blabber',
         name: 'Blabber',
-        color: 'bg-sky-500',
         tile: { bg: 'bg-sky-500' },
         icon: null,
         core: false
@@ -516,7 +505,6 @@ describe('an app the owner has disabled (MICA-234)', () => {
     appRegistryStore.registerAddOn({
       id: 'blabber',
       name: 'Blabber',
-      color: 'bg-sky-500',
       tile: { bg: 'bg-sky-500' },
       icon: null,
       core: false
@@ -754,7 +742,6 @@ describe("a core app's id is not for anything else", () => {
   const notBank: AppManifest = {
     id: 'bank',
     name: 'Not Bank',
-    color: 'bg-red-500',
     tile: { bg: 'bg-red-500' },
     icon: null,
     core: false
@@ -956,7 +943,6 @@ describe('installed add-on persistence', () => {
     appRegistryStore.registerAddOn({
       id: 'blabber',
       name: 'Blabber',
-      color: 'bg-sky-500',
       tile: { bg: 'bg-sky-500' },
       icon: null,
       core: false
@@ -971,7 +957,6 @@ describe('installed add-on persistence', () => {
     const manifest: AppManifest = {
       id: 'remote_installed_addons_test',
       name: 'Remote',
-      color: 'bg-gray-600',
       tile: { bg: 'bg-gray-600' },
       icon: null,
       core: false,

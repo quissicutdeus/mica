@@ -18,7 +18,7 @@ import { test, expect } from './support/test';
 const CRASHING_APP = `
   (id, name) => {
     window.appRegistryStore.registerApp(
-      { id, name, color: 'bg-red-500', icon: null, core: false },
+      { id, name, tile: { bg: 'bg-red-500' }, icon: null, core: false },
       () => { throw new Error('Simulated third-party app crash!'); }
     );
   }
@@ -33,7 +33,7 @@ const CRASHING_APP = `
 const SAFE_APP = `
   (id, name) => {
     window.appRegistryStore.registerApp(
-      { id, name, color: 'bg-blue-500', icon: null, core: false },
+      { id, name, tile: { bg: 'bg-blue-500' }, icon: null, core: false },
       () => {}
     );
   }

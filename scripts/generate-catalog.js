@@ -169,7 +169,7 @@ const { build } = await import(
 const work = mkdtempSync(join(tmpdir(), 'mica-catalog-'));
 let manifests;
 let isCatalogEntry;
-let tileFromColorClasses;
+let flattenTile;
 let publicCatalogUrl;
 try {
   const entry = join(work, 'entry.js');
@@ -179,7 +179,7 @@ try {
     entry,
     `${ids.map((id, i) => `import m${i} from ${JSON.stringify(join(appsDir, id, 'manifest.ts'))};`).join('\n')}
 export { isCatalogEntry } from ${JSON.stringify(join(root, 'sdk/catalog.ts'))};
-export { tileFromColorClasses } from ${JSON.stringify(join(root, 'sdk/manifest.ts'))};
+export { flattenTile } from ${JSON.stringify(join(root, 'sdk/manifest.ts'))};
 export { publicAddonCatalogUrl } from ${JSON.stringify(join(root, 'shared/addonConfig.ts'))};
 export { SDK_CONTRACT_VERSION } from ${JSON.stringify(join(root, 'sdk/version.ts'))};
 export default [${ids.map((_, i) => `m${i}`).join(', ')}];`
@@ -217,9 +217,9 @@ export default [${ids.map((_, i) => `m${i}`).join(', ')}];`
   const loaded = await import(pathToFileURL(out).href);
   manifests = loaded.default;
   isCatalogEntry = loaded.isCatalogEntry;
-  // The tile's two roles, split by the same function `defineApp` splits them with, rather
-  // than by a regex here that would drift from it.
-  tileFromColorClasses = loaded.tileFromColorClasses;
+  // The catalog's `color` string is the tile flattened by the SDK's own `flattenTile`, so it
+  // cannot drift from what the launcher paints.
+  flattenTile = loaded.flattenTile;
   // The public catalog's URL is computed by the same function the server's default reads,
   // from the contract the phone enforces at install, so the file lands where that URL says.
   publicCatalogUrl = loaded.publicAddonCatalogUrl(loaded.SDK_CONTRACT_VERSION);
@@ -256,16 +256,15 @@ if (origin) {
   /**
    * Every icon, rendered before the rows are built.
    *
-   * One esbuild pass for all of them, so the map below stays synchronous. The tile's two
-   * roles are split by the SDK's own `tileFromColorClasses` rather than by a regex here that
-   * would drift from `defineApp`.
+   * One esbuild pass for all of them, so the map below stays synchronous. The glyph role is
+   * read straight off `tile.fg`, the field `defineApp` validated.
    */
   const icons = await renderAppIcons({
     root,
     appsDir,
     apps: manifests.map((manifest, i) => ({
       id: manifest.id ?? ids[i],
-      fg: manifest.color ? tileFromColorClasses(manifest.color)?.fg : undefined
+      fg: manifest.tile?.fg
     }))
   }).catch((error) => {
     console.error(`generate-catalog: ${error.message}`);
@@ -283,8 +282,12 @@ if (origin) {
       process.exit(1);
     }
 
+    // The catalog is a published wire format and still speaks one `color` string, which
+    // `isCatalogEntry` splits back with `tileFromColorClasses`. The manifest stopped carrying
+    // it on 2026-10-22 (MICA-419), so it is flattened from `tile` here.
+    const fields = { ...manifest, color: manifest.tile ? flattenTile(manifest.tile) : undefined };
     const missing = REQUIRED.filter((field) => {
-      const value = manifest[field];
+      const value = fields[field];
       return typeof value !== 'string' || value.length === 0;
     });
     if (missing.length > 0) {
@@ -313,7 +316,7 @@ if (origin) {
       description: manifest.description,
       bundleUrl: `${origin}${BUNDLE_PATH_PREFIX}/${id}.js`,
       sha256: createHash('sha256').update(readFileSync(bundle)).digest('hex'),
-      color: manifest.color,
+      color: fields.color,
       icon: icons[i],
       permissions: manifest.permissions ?? [],
       ...(manifest.requires ? { requires: manifest.requires } : {}),
