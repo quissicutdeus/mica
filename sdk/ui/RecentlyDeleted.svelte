@@ -88,7 +88,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <p class="text-on-surface-variant text-body-small truncate">{item.preview}</p>
           {/if}
           <p class="text-on-surface-variant text-label-small mt-0.5">
-            {$t('ui.deletedAt', { when: formatRelativeTime(asDate(item.deletedAt)) })}
+            {$t('ui.deletedAt', { when: formatRelativeTime(asDate(item.deletedAt), $t) })}
           </p>
         </div>
         <Button variant="secondary" class="shrink-0" onclick={() => onrestore(item.id)}>

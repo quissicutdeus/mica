@@ -99,7 +99,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               ? 'text-primary '
               : 'text-on-surface-variant'} ml-2 whitespace-nowrap"
           >
-            {formatRelativeTime(conv.lastMessageAt)}
+            {formatRelativeTime(conv.lastMessageAt, $t)}
           </span>
         </div>
         <div class="flex items-center">

@@ -25,9 +25,5 @@
   "threadEmpty": "No messages in this thread",
   "loadOlder": "Load older messages",
   "loadingOlder": "Loading…",
-  "replyPlaceholder": "Reply as {label}",
-  "justNow": "Just now",
-  "minutesAgo": "{minutes}m ago",
-  "hoursAgo": "{hours}h ago",
-  "daysAgo": "{days}d ago"
+  "replyPlaceholder": "Reply as {label}"
 }

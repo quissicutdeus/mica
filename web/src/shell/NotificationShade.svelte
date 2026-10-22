@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import type { NotificationItem } from '@mica/shared/types';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { fade, fly, focusTrap } from '@mica/sdk';
+  import { fade, fly, focusTrap, formatRelativeTime } from '@mica/sdk';
   import { attachDragGesture } from '../lib/phone/pointerDrag';
   import { createSheetClose } from '../lib/phone/sheetDrag';
   import {
@@ -23,6 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import ChevronDownIcon from '../../../sdk/ui/icons/ChevronDownIcon.svelte';
   import CloseIcon from '../../../sdk/ui/icons/CloseIcon.svelte';
   import SettingsIcon from '../../../sdk/ui/icons/SettingsIcon.svelte';
+  import ReplyIcon from '../../../sdk/ui/icons/ReplyIcon.svelte';
   import TrashIcon from '../../../sdk/ui/icons/TrashIcon.svelte';
   import {
     clearAllNotifications,
@@ -86,11 +87,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     await clearAllNotifications(app);
   };
 
-  const handleClearGroup = async (e: MouseEvent, app: string) => {
-    e.stopPropagation();
-    await clearGroup(app);
-  };
-
   let showHistory = $state(false);
   let historyItems = $state<NotificationItem[]>([]);
   let loadingHistory = $state(false);
@@ -132,20 +128,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     historyItems = historyItems.filter((i) => i.id !== id);
   };
 
-  const handleRestoreSingle = async (e: MouseEvent, id: number) => {
-    e.stopPropagation();
-    await restoreSingle(id);
-  };
-
   const restoreGroup = async (app: string) => {
     const groupItemIds = historyItems.filter((i) => i.app === app).map((i) => i.id);
     await restoreNotifications(groupItemIds);
     historyItems = historyItems.filter((i) => i.app !== app);
-  };
-
-  const handleRestoreGroup = async (e: MouseEvent, app: string) => {
-    e.stopPropagation();
-    await restoreGroup(app);
   };
 
   onMount(() => {
@@ -165,24 +151,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const closeHistory = () => {
     showHistory = false;
-  };
-
-  const formatTimestamp = (raw: Date | string) => {
-    try {
-      const date = new Date(raw);
-      if (isNaN(date.getTime())) return '';
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours}h ago`;
-      const diffDays = Math.floor(diffHours / 24);
-      return `${diffDays}d ago`;
-    } catch {
-      return '';
-    }
   };
 
   const handleRowClick = async (item: NotificationItem) => {
@@ -224,11 +192,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     await clearNotifications([id]);
   };
 
-  const handleClearSingle = async (e: MouseEvent, id: number) => {
-    e.stopPropagation();
-    await clearSingle(id);
-  };
-
   /** Opening a conversation handles every message in it, not just the one tapped. */
   const handleConversationClick = async (convo: NotificationConversationGroup) => {
     await markNotificationsOpened(convo.items.map((i) => i.id));
@@ -243,20 +206,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     await clearNotifications(convo.items.map((i) => i.id));
   };
 
-  const handleClearConversation = async (e: MouseEvent, convo: NotificationConversationGroup) => {
-    e.stopPropagation();
-    await clearConversation(convo);
-  };
-
   const restoreConversation = async (convo: NotificationConversationGroup) => {
     const ids = convo.items.map((i) => i.id);
     await restoreNotifications(ids);
     historyItems = historyItems.filter((i) => !ids.includes(i.id));
-  };
-
-  const handleRestoreConversation = async (e: MouseEvent, convo: NotificationConversationGroup) => {
-    e.stopPropagation();
-    await restoreConversation(convo);
   };
 
   const handleClearAll = async () => {
@@ -501,59 +454,53 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <SwipeableRow onCommit={() => restoreSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-box border p-3.5 opacity-90 transition-all hover:opacity-100 active:scale-[0.99]"
-                    onclick={() => handleRowClick(item)}
-                    role="button"
-                    tabindex={0}
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        void handleRowClick(item);
-                      }
-                    }}
+                    data-shade-row
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex items-start gap-2 rounded-box border p-3.5 opacity-90 transition-all hover:opacity-100 active:scale-[0.99]"
                   >
-                    <!-- Avatar / App Icon -->
-                    <div class="shrink-0 pt-0.5">
-                      <Avatar
-                        src={item.avatar ?? undefined}
-                        initials={item.app ? item.app[0].toUpperCase() : 'N'}
-                        size="w-9 h-9"
-                        textClass="text-sm font-bold"
-                      />
-                    </div>
-
-                    <!-- Content Area -->
-                    <div class="min-w-0 flex-1 space-y-0.5">
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="text-primary text-body-small tracking-wide uppercase">
-                          {item.app}
-                        </span>
-                        <div class="flex items-center gap-2">
-                          <span class="text-on-surface-variant text-label-small">
-                            {formatTimestamp(item.cleared_at ?? item.created_at)}
+                    <button
+                      type="button"
+                      data-shade-row-open
+                      class="flex min-w-0 flex-1 cursor-pointer items-start gap-3 text-left focus:outline-none"
+                      onclick={() => handleRowClick(item)}
+                    >
+                      <span class="shrink-0 pt-0.5">
+                        <Avatar
+                          src={item.avatar ?? undefined}
+                          initials={item.app ? item.app[0].toUpperCase() : 'N'}
+                          size="w-9 h-9"
+                          textClass="text-sm font-bold"
+                        />
+                      </span>
+                      <span class="block min-w-0 flex-1 space-y-0.5">
+                        <span class="flex items-center justify-between gap-2">
+                          <span class="text-primary text-body-small tracking-wide uppercase">
+                            {item.app}
                           </span>
-                          <button
-                            type="button"
-                            class="text-error hover:bg-surface-container hover:text-on-surface duration-short ease-standard shrink-0 rounded-full p-1 transition-all"
-                            onclick={(e) => handleRestoreSingle(e, item.id)}
-                            title={$t('shell.restoreToActive')}
-                            aria-label={$t('shell.restoreToActive')}
+                          <span class="text-on-surface-variant text-label-small">
+                            {formatRelativeTime(item.cleared_at ?? item.created_at, $t)}
+                          </span>
+                        </span>
+                        <span class="text-on-surface text-body-medium block truncate">
+                          {item.title}
+                        </span>
+                        {#if item.body}
+                          <span
+                            class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
                           >
-                            <TrashIcon class="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <h3 class="text-on-surface text-body-medium truncate">
-                        {item.title}
-                      </h3>
-
-                      {#if item.body}
-                        <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
-                          {item.body}
-                        </p>
-                      {/if}
-                    </div>
+                            {item.body}
+                          </span>
+                        {/if}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      class="text-primary hover:bg-surface-container duration-short ease-standard relative z-10 shrink-0 rounded-full p-1 transition-all"
+                      onclick={() => restoreSingle(item.id)}
+                      title={$t('shell.restoreToActive')}
+                      aria-label={$t('shell.restoreToActive')}
+                    >
+                      <ReplyIcon class="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </SwipeableRow>
               {:else}
@@ -563,80 +510,78 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => restoreGroup(group.app)}>
-                    <div
-                      class="flex cursor-pointer items-start gap-3 select-none"
-                      onclick={() => toggleHistoryGroupExpand(group.app)}
-                      role="button"
-                      tabindex={0}
-                      onkeydown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          toggleHistoryGroupExpand(group.app);
-                        }
-                      }}
-                    >
-                      <div class="shrink-0 pt-0.5">
-                        <Avatar
-                          src={group.latest.avatar ?? undefined}
-                          initials={group.app ? group.app[0].toUpperCase() : 'N'}
-                          size="w-9 h-9"
-                          textClass="text-sm font-bold"
-                        />
-                      </div>
-
-                      <div class="min-w-0 flex-1 space-y-0.5">
-                        <div class="flex items-center justify-between gap-2">
-                          <div class="flex items-center gap-2">
-                            <span class="text-primary text-body-small tracking-wide uppercase">
-                              {group.app}
+                    <div data-shade-row class="relative flex items-start gap-1.5 select-none">
+                      <button
+                        type="button"
+                        data-shade-row-open
+                        class="flex min-w-0 flex-1 cursor-pointer items-start gap-3 text-left focus:outline-none"
+                        aria-expanded={!!expandedHistoryGroups[group.app]}
+                        onclick={() => toggleHistoryGroupExpand(group.app)}
+                      >
+                        <span class="shrink-0 pt-0.5">
+                          <Avatar
+                            src={group.latest.avatar ?? undefined}
+                            initials={group.app ? group.app[0].toUpperCase() : 'N'}
+                            size="w-9 h-9"
+                            textClass="text-sm font-bold"
+                          />
+                        </span>
+                        <span class="block min-w-0 flex-1 space-y-0.5">
+                          <span class="flex items-center justify-between gap-2">
+                            <span class="flex items-center gap-2">
+                              <span class="text-primary text-body-small tracking-wide uppercase">
+                                {group.app}
+                              </span>
+                              <span
+                                class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-chip px-2 py-0.5 ring-1"
+                              >
+                                {$t(
+                                  group.items.length === 1
+                                    ? 'shell.notificationCountOne'
+                                    : 'shell.notificationCountOther',
+                                  { count: group.items.length }
+                                )}
+                              </span>
                             </span>
-                            <span
-                              class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-chip px-2 py-0.5 ring-1"
-                            >
-                              {$t(
-                                group.items.length === 1
-                                  ? 'shell.notificationCountOne'
-                                  : 'shell.notificationCountOther',
-                                { count: group.items.length }
-                              )}
+                            <span class="flex items-center gap-1.5">
+                              <span class="text-on-surface-variant text-label-small">
+                                {formatRelativeTime(
+                                  group.latest.cleared_at ?? group.latest.created_at,
+                                  $t
+                                )}
+                              </span>
+                              <ChevronDownIcon
+                                class="text-on-surface-variant duration-medium ease-emphasized size-icon-sm transition-transform {expandedHistoryGroups[
+                                  group.app
+                                ]
+                                  ? 'text-primary rotate-180'
+                                  : ''}"
+                              />
                             </span>
-                          </div>
-                          <div class="flex items-center gap-1.5">
-                            <span class="text-on-surface-variant text-label-small">
-                              {formatTimestamp(group.latest.cleared_at ?? group.latest.created_at)}
+                          </span>
+                          <span class="text-on-surface text-body-medium block truncate">
+                            {group.latest.title}
+                          </span>
+                          {#if group.latest.body}
+                            <span class="text-on-surface-variant text-body-small line-clamp-1">
+                              {group.latest.body}
                             </span>
-                            <button
-                              type="button"
-                              class="text-error hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
-                              onclick={(e) => handleRestoreGroup(e, group.app)}
-                              title={$t('shell.restoreAllGroupNotifications', {
-                                app: group.app
-                              })}
-                              aria-label={$t('shell.restoreAllGroupNotifications', {
-                                app: group.app
-                              })}
-                            >
-                              <TrashIcon class="h-3.5 w-3.5" />
-                            </button>
-                            <ChevronDownIcon
-                              class="text-on-surface-variant duration-medium ease-emphasized size-icon-sm transition-transform {expandedHistoryGroups[
-                                group.app
-                              ]
-                                ? 'text-primary rotate-180'
-                                : ''}"
-                            />
-                          </div>
-                        </div>
-
-                        <h3 class="text-on-surface text-body-medium truncate">
-                          {group.latest.title}
-                        </h3>
-                        {#if group.latest.body}
-                          <p class="text-on-surface-variant text-body-small line-clamp-1">
-                            {group.latest.body}
-                          </p>
-                        {/if}
-                      </div>
+                          {/if}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        class="text-primary hover:bg-surface-container duration-short ease-standard relative z-10 shrink-0 rounded-full p-1 transition-colors"
+                        onclick={() => restoreGroup(group.app)}
+                        title={$t('shell.restoreAllGroupNotifications', {
+                          app: group.app
+                        })}
+                        aria-label={$t('shell.restoreAllGroupNotifications', {
+                          app: group.app
+                        })}
+                      >
+                        <ReplyIcon class="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </SwipeableRow>
 
@@ -651,23 +596,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       {#each groupNotificationsByConversation(group.items) as convo (convo.title)}
                         <SwipeableRow onCommit={() => restoreConversation(convo)}>
                           <div
-                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-box border p-2.5 transition-colors active:scale-[0.99]"
-                            onclick={() => handleConversationClick(convo)}
-                            role="button"
-                            tabindex={0}
-                            onkeydown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                void handleConversationClick(convo);
-                              }
-                            }}
+                            data-shade-row
+                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard relative flex items-start gap-1.5 rounded-box border p-2.5 transition-colors active:scale-[0.99]"
                           >
-                            <div class="min-w-0 flex-1 space-y-0.5">
-                              <div class="flex items-center justify-between gap-2">
-                                <div class="flex min-w-0 items-center gap-1.5">
-                                  <h4 class="text-on-surface text-body-small truncate">
+                            <button
+                              type="button"
+                              data-shade-row-open
+                              class="block min-w-0 flex-1 cursor-pointer space-y-0.5 text-left focus:outline-none"
+                              onclick={() => handleConversationClick(convo)}
+                            >
+                              <span class="flex items-center justify-between gap-2">
+                                <span class="flex min-w-0 items-center gap-1.5">
+                                  <span class="text-on-surface text-body-small block truncate">
                                     {convo.title}
-                                  </h4>
+                                  </span>
                                   {#if convo.items.length > 1}
                                     <span
                                       class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex shrink-0 items-center rounded-chip px-1.5 py-0.5 ring-1"
@@ -675,32 +617,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                                       {convo.items.length}
                                     </span>
                                   {/if}
-                                </div>
-                                <div class="flex items-center gap-1.5">
-                                  <span class="text-on-surface-variant text-label-small">
-                                    {formatTimestamp(
-                                      convo.latest.cleared_at ?? convo.latest.created_at
-                                    )}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    class="text-error hover:text-on-surface duration-short ease-standard rounded-full p-0.5 transition-colors"
-                                    onclick={(e) => handleRestoreConversation(e, convo)}
-                                    title={$t('shell.restoreToActive')}
-                                    aria-label={$t('shell.restoreToActive')}
-                                  >
-                                    <TrashIcon class="h-3 w-3" />
-                                  </button>
-                                </div>
-                              </div>
+                                </span>
+                                <span class="text-on-surface-variant text-label-small">
+                                  {formatRelativeTime(
+                                    convo.latest.cleared_at ?? convo.latest.created_at,
+                                    $t
+                                  )}
+                                </span>
+                              </span>
                               {#if convo.latest.body}
-                                <p
+                                <span
                                   class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
                                 >
                                   {convo.latest.body}
-                                </p>
+                                </span>
                               {/if}
-                            </div>
+                            </button>
+                            <button
+                              type="button"
+                              class="text-primary hover:text-on-surface duration-short ease-standard relative z-10 shrink-0 rounded-full p-0.5 transition-colors"
+                              onclick={() => restoreConversation(convo)}
+                              title={$t('shell.restoreToActive')}
+                              aria-label={$t('shell.restoreToActive')}
+                            >
+                              <ReplyIcon class="h-3 w-3" />
+                            </button>
                           </div>
                         </SwipeableRow>
                       {/each}
@@ -736,59 +677,53 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <SwipeableRow onCommit={() => clearSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-box border p-3.5 transition-all active:scale-[0.99]"
-                    onclick={() => handleRowClick(item)}
-                    role="button"
-                    tabindex={0}
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        void handleRowClick(item);
-                      }
-                    }}
+                    data-shade-row
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex items-start gap-2 rounded-box border p-3.5 transition-all active:scale-[0.99]"
                   >
-                    <!-- Avatar / App Icon -->
-                    <div class="shrink-0 pt-0.5">
-                      <Avatar
-                        src={item.avatar ?? undefined}
-                        initials={item.app ? item.app[0].toUpperCase() : 'N'}
-                        size="w-9 h-9"
-                        textClass="text-sm font-bold"
-                      />
-                    </div>
-
-                    <!-- Content Area -->
-                    <div class="min-w-0 flex-1 space-y-0.5">
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="text-primary text-body-small tracking-wide uppercase">
-                          {item.app}
-                        </span>
-                        <div class="flex items-center gap-2">
-                          <span class="text-on-surface-variant text-label-small">
-                            {formatTimestamp(item.created_at)}
+                    <button
+                      type="button"
+                      data-shade-row-open
+                      class="flex min-w-0 flex-1 cursor-pointer items-start gap-3 text-left focus:outline-none"
+                      onclick={() => handleRowClick(item)}
+                    >
+                      <span class="shrink-0 pt-0.5">
+                        <Avatar
+                          src={item.avatar ?? undefined}
+                          initials={item.app ? item.app[0].toUpperCase() : 'N'}
+                          size="w-9 h-9"
+                          textClass="text-sm font-bold"
+                        />
+                      </span>
+                      <span class="block min-w-0 flex-1 space-y-0.5">
+                        <span class="flex items-center justify-between gap-2">
+                          <span class="text-primary text-body-small tracking-wide uppercase">
+                            {item.app}
                           </span>
-                          <button
-                            type="button"
-                            class="text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard shrink-0 rounded-full p-1 opacity-0 transition-all group-hover:opacity-100"
-                            onclick={(e) => handleClearSingle(e, item.id)}
-                            title={$t('shell.clearNotification')}
-                            aria-label={$t('shell.clearNotification')}
+                          <span class="text-on-surface-variant text-label-small">
+                            {formatRelativeTime(item.created_at, $t)}
+                          </span>
+                        </span>
+                        <span class="text-on-surface text-body-medium block truncate">
+                          {item.title}
+                        </span>
+                        {#if item.body}
+                          <span
+                            class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
                           >
-                            <TrashIcon class="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <h3 class="text-on-surface text-body-medium truncate">
-                        {item.title}
-                      </h3>
-
-                      {#if item.body}
-                        <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
-                          {item.body}
-                        </p>
-                      {/if}
-                    </div>
+                            {item.body}
+                          </span>
+                        {/if}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      class="text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard relative z-10 shrink-0 rounded-full p-1 opacity-0 transition-all group-hover:opacity-100"
+                      onclick={() => clearSingle(item.id)}
+                      title={$t('shell.clearNotification')}
+                      aria-label={$t('shell.clearNotification')}
+                    >
+                      <TrashIcon class="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </SwipeableRow>
               {:else}
@@ -798,80 +733,75 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => clearGroup(group.app)}>
-                    <div
-                      class="flex cursor-pointer items-start gap-3 select-none"
-                      onclick={() => toggleGroupExpand(group.app)}
-                      role="button"
-                      tabindex={0}
-                      onkeydown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          toggleGroupExpand(group.app);
-                        }
-                      }}
-                    >
-                      <div class="shrink-0 pt-0.5">
-                        <Avatar
-                          src={group.latest.avatar ?? undefined}
-                          initials={group.app ? group.app[0].toUpperCase() : 'N'}
-                          size="w-9 h-9"
-                          textClass="text-sm font-bold"
-                        />
-                      </div>
-
-                      <div class="min-w-0 flex-1 space-y-0.5">
-                        <div class="flex items-center justify-between gap-2">
-                          <div class="flex items-center gap-2">
-                            <span class="text-primary text-body-small tracking-wide uppercase">
-                              {group.app}
+                    <div data-shade-row class="relative flex items-start gap-1.5 select-none">
+                      <button
+                        type="button"
+                        data-shade-row-open
+                        class="flex min-w-0 flex-1 cursor-pointer items-start gap-3 text-left focus:outline-none"
+                        aria-expanded={!!expandedGroups[group.app]}
+                        onclick={() => toggleGroupExpand(group.app)}
+                      >
+                        <span class="shrink-0 pt-0.5">
+                          <Avatar
+                            src={group.latest.avatar ?? undefined}
+                            initials={group.app ? group.app[0].toUpperCase() : 'N'}
+                            size="w-9 h-9"
+                            textClass="text-sm font-bold"
+                          />
+                        </span>
+                        <span class="block min-w-0 flex-1 space-y-0.5">
+                          <span class="flex items-center justify-between gap-2">
+                            <span class="flex items-center gap-2">
+                              <span class="text-primary text-body-small tracking-wide uppercase">
+                                {group.app}
+                              </span>
+                              <span
+                                class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-chip px-2 py-0.5 ring-1"
+                              >
+                                {$t(
+                                  group.items.length === 1
+                                    ? 'shell.notificationCountOne'
+                                    : 'shell.notificationCountOther',
+                                  { count: group.items.length }
+                                )}
+                              </span>
                             </span>
-                            <span
-                              class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex items-center rounded-chip px-2 py-0.5 ring-1"
-                            >
-                              {$t(
-                                group.items.length === 1
-                                  ? 'shell.notificationCountOne'
-                                  : 'shell.notificationCountOther',
-                                { count: group.items.length }
-                              )}
+                            <span class="flex items-center gap-1.5">
+                              <span class="text-on-surface-variant text-label-small">
+                                {formatRelativeTime(group.latest.created_at, $t)}
+                              </span>
+                              <ChevronDownIcon
+                                class="text-on-surface-variant duration-medium ease-emphasized size-icon-sm transition-transform {expandedGroups[
+                                  group.app
+                                ]
+                                  ? 'text-primary rotate-180'
+                                  : ''}"
+                              />
                             </span>
-                          </div>
-                          <div class="flex items-center gap-1.5">
-                            <span class="text-on-surface-variant text-label-small">
-                              {formatTimestamp(group.latest.created_at)}
+                          </span>
+                          <span class="text-on-surface text-body-medium block truncate">
+                            {group.latest.title}
+                          </span>
+                          {#if group.latest.body}
+                            <span class="text-on-surface-variant text-body-small line-clamp-1">
+                              {group.latest.body}
                             </span>
-                            <button
-                              type="button"
-                              class="text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard rounded-full p-1 transition-colors"
-                              onclick={(e) => handleClearGroup(e, group.app)}
-                              title={$t('shell.clearAllGroupNotifications', {
-                                app: group.app
-                              })}
-                              aria-label={$t('shell.clearAllGroupNotifications', {
-                                app: group.app
-                              })}
-                            >
-                              <TrashIcon class="h-3.5 w-3.5" />
-                            </button>
-                            <ChevronDownIcon
-                              class="text-on-surface-variant duration-medium ease-emphasized size-icon-sm transition-transform {expandedGroups[
-                                group.app
-                              ]
-                                ? 'text-primary rotate-180'
-                                : ''}"
-                            />
-                          </div>
-                        </div>
-
-                        <h3 class="text-on-surface text-body-medium truncate">
-                          {group.latest.title}
-                        </h3>
-                        {#if group.latest.body}
-                          <p class="text-on-surface-variant text-body-small line-clamp-1">
-                            {group.latest.body}
-                          </p>
-                        {/if}
-                      </div>
+                          {/if}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        class="text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard relative z-10 shrink-0 rounded-full p-1 transition-colors"
+                        onclick={() => clearGroup(group.app)}
+                        title={$t('shell.clearAllGroupNotifications', {
+                          app: group.app
+                        })}
+                        aria-label={$t('shell.clearAllGroupNotifications', {
+                          app: group.app
+                        })}
+                      >
+                        <TrashIcon class="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </SwipeableRow>
 
@@ -886,23 +816,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       {#each groupNotificationsByConversation(group.items) as convo (convo.title)}
                         <SwipeableRow onCommit={() => clearConversation(convo)}>
                           <div
-                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard flex cursor-pointer items-start gap-2.5 rounded-box border p-2.5 transition-colors active:scale-[0.99]"
-                            onclick={() => handleConversationClick(convo)}
-                            role="button"
-                            tabindex={0}
-                            onkeydown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                void handleConversationClick(convo);
-                              }
-                            }}
+                            data-shade-row
+                            class="group/item border-outline-variant bg-surface-container-lowest hover:border-outline-variant hover:bg-surface-container duration-short ease-standard relative flex items-start gap-1.5 rounded-box border p-2.5 transition-colors active:scale-[0.99]"
                           >
-                            <div class="min-w-0 flex-1 space-y-0.5">
-                              <div class="flex items-center justify-between gap-2">
-                                <div class="flex min-w-0 items-center gap-1.5">
-                                  <h4 class="text-on-surface text-body-small truncate">
+                            <button
+                              type="button"
+                              data-shade-row-open
+                              class="block min-w-0 flex-1 cursor-pointer space-y-0.5 text-left focus:outline-none"
+                              onclick={() => handleConversationClick(convo)}
+                            >
+                              <span class="flex items-center justify-between gap-2">
+                                <span class="flex min-w-0 items-center gap-1.5">
+                                  <span class="text-on-surface text-body-small block truncate">
                                     {convo.title}
-                                  </h4>
+                                  </span>
                                   {#if convo.items.length > 1}
                                     <span
                                       class="bg-primary-container text-on-primary-container ring-primary text-label-small inline-flex shrink-0 items-center rounded-chip px-1.5 py-0.5 ring-1"
@@ -910,30 +837,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                                       {convo.items.length}
                                     </span>
                                   {/if}
-                                </div>
-                                <div class="flex items-center gap-1.5">
-                                  <span class="text-on-surface-variant text-label-small">
-                                    {formatTimestamp(convo.latest.created_at)}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    class="text-on-surface-variant hover:text-error duration-short ease-standard rounded-full p-0.5 opacity-0 transition-opacity group-hover/item:opacity-100"
-                                    onclick={(e) => handleClearConversation(e, convo)}
-                                    title={$t('shell.clearConversation')}
-                                    aria-label={$t('shell.clearConversation')}
-                                  >
-                                    <TrashIcon class="h-3 w-3" />
-                                  </button>
-                                </div>
-                              </div>
+                                </span>
+                                <span class="text-on-surface-variant text-label-small">
+                                  {formatRelativeTime(convo.latest.created_at, $t)}
+                                </span>
+                              </span>
                               {#if convo.latest.body}
-                                <p
+                                <span
                                   class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
                                 >
                                   {convo.latest.body}
-                                </p>
+                                </span>
                               {/if}
-                            </div>
+                            </button>
+                            <button
+                              type="button"
+                              class="text-on-surface-variant hover:text-error duration-short ease-standard relative z-10 shrink-0 rounded-full p-0.5 opacity-0 transition-opacity group-hover/item:opacity-100"
+                              onclick={() => clearConversation(convo)}
+                              title={$t('shell.clearConversation')}
+                              aria-label={$t('shell.clearConversation')}
+                            >
+                              <TrashIcon class="h-3 w-3" />
+                            </button>
                           </div>
                         </SwipeableRow>
                       {/each}
@@ -948,3 +873,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   </div>
 {/if}
+
+<style>
+  /* Each row is a surface, not a control (MICA-411): its own action (open, or expand a group)
+     and its clear or restore control are sibling buttons, never one inside the other. The
+     action's `::after` stretches its hit area over the whole row, so a tap anywhere but the
+     clear/restore control still does what it did when the row was one `role="button"`.
+     The action button stays unpositioned so `::after` resolves against the row, the other
+     control sits above it at z-10, and `isolation` keeps that z-10 inside the row. Both
+     predate Chromium 103: `isolation` 41, `inset` 87. */
+  [data-shade-row] {
+    isolation: isolate;
+  }
+  [data-shade-row-open]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+</style>

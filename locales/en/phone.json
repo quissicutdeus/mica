@@ -14,9 +14,5 @@
   "speaker": "Speaker",
   "answerCall": "Answer Call",
   "endCall": "End Call",
-  "justNow": "Just now",
-  "minutesAgo": "{minutes}m ago",
-  "hoursAgo": "{hours}h ago",
-  "daysAgo": "{days}d ago",
   "viaLine": "via {label}"
 }

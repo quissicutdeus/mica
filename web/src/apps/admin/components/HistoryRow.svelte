@@ -35,7 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           ? 'text-error'
           : 'text-on-surface-variant'}"
       >
-        {resolution} · {formatRelativeTime(report.updated_at)}
+        {resolution} · {formatRelativeTime(report.updated_at, $t)}
       </p>
     </div>
     <button

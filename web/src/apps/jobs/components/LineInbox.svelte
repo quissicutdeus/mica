@@ -5,9 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { EmptyState, ListItem, Skeleton, useLocale } from '@mica/sdk';
+  import { EmptyState, ListItem, Skeleton, formatRelativeTime, useLocale } from '@mica/sdk';
   import type { JobLineThread } from '@mica/shared/types';
-  import { ago } from '../time';
 
   /**
    * A job line's shared inbox (MICA-307): one row per player who has written to the line,
@@ -53,7 +52,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {thread.from ? nameFor(thread.from) : $t('jobs.unknownCaller')}
             </span>
             <span class="text-on-surface-variant text-label-small shrink-0">
-              {ago(thread.last_at, $t)}
+              {formatRelativeTime(thread.last_at, $t)}
             </span>
           </div>
           <div class="mt-0.5 flex items-center gap-2">

@@ -14,9 +14,5 @@
   "speaker": "Lautsprecher",
   "answerCall": "Anruf annehmen",
   "endCall": "Anruf beenden",
-  "justNow": "Gerade eben",
-  "minutesAgo": "vor {minutes} Min.",
-  "hoursAgo": "vor {hours} Std.",
-  "daysAgo": "vor {days} T.",
   "viaLine": "über {label}"
 }

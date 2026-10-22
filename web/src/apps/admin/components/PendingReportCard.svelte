@@ -30,7 +30,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="min-w-0">
       <p class="text-error font-medium">{category}</p>
       <p class="text-on-surface-variant text-body-small mt-0.5">
-        {$t('admin.reported', { when: formatRelativeTime(report.created_at) })}
+        {$t('admin.reported', { when: formatRelativeTime(report.created_at, $t) })}
       </p>
     </div>
     <span

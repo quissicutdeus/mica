@@ -25,9 +25,5 @@
   "threadEmpty": "Keine Nachrichten in diesem Verlauf",
   "loadOlder": "Ältere Nachrichten laden",
   "loadingOlder": "Wird geladen…",
-  "replyPlaceholder": "Als {label} antworten",
-  "justNow": "Gerade eben",
-  "minutesAgo": "vor {minutes} Min.",
-  "hoursAgo": "vor {hours} Std.",
-  "daysAgo": "vor {days} T."
+  "replyPlaceholder": "Als {label} antworten"
 }

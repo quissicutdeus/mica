@@ -276,7 +276,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 </span>
                 <span class="text-on-surface-variant text-label-small">•</span>
                 <span class="text-on-surface-variant text-label-small">
-                  {formatRelativeTime(msg.created_at)}
+                  {formatRelativeTime(msg.created_at, $t)}
                 </span>
               </div>
               <p class="text-on-surface text-body-small truncate leading-relaxed">

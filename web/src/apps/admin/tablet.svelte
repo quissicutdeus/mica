@@ -152,8 +152,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     </p>
                     <p class="text-on-surface-variant text-body-small mt-0.5">
                       {tab === 'pending'
-                        ? $t('admin.reported', { when: formatRelativeTime(report.created_at) })
-                        : `${resolutionFor(report)} · ${formatRelativeTime(report.updated_at)}`}
+                        ? $t('admin.reported', { when: formatRelativeTime(report.created_at, $t) })
+                        : `${resolutionFor(report)} · ${formatRelativeTime(report.updated_at, $t)}`}
                     </p>
                   </div>
                   <span
@@ -197,8 +197,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </p>
             <p class="text-on-surface-variant text-body-small">
               {tab === 'pending'
-                ? $t('admin.reported', { when: formatRelativeTime(report.created_at) })
-                : `${resolutionFor(report)} · ${formatRelativeTime(report.updated_at)}`}
+                ? $t('admin.reported', { when: formatRelativeTime(report.created_at, $t) })
+                : `${resolutionFor(report)} · ${formatRelativeTime(report.updated_at, $t)}`}
             </p>
           </div>
 

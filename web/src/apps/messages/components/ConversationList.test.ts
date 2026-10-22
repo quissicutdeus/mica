@@ -10,9 +10,11 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../../host/registerFacets';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { tick } from 'svelte';
 import { render, fireEvent } from '@testing-library/svelte';
 import { registerMessages, type UIConversation } from '@mica/sdk';
+import { locale } from '../../../../../sdk/i18n';
 import ConversationList from './ConversationList.svelte';
 import en from '../locales/en.json';
 import de from '../locales/de.json';
@@ -105,5 +107,22 @@ describe('ConversationList: older pages', () => {
       props: props({ loaded: false, hasMore: true })
     });
     expect(queryByText('Load older conversations')).toBeNull();
+  });
+});
+
+describe('ConversationList: the row time follows the locale (MICA-412)', () => {
+  afterEach(() => locale.set('en'));
+
+  it('re-words when the phone switches language, with nothing else re-rendering it', async () => {
+    const recent = {
+      ...conversation(1),
+      lastMessageAt: new Date(Date.now() - 5 * 60 * 1000).toISOString()
+    };
+    const { getByText } = render(ConversationList, { props: props({ conversations: [recent] }) });
+    expect(getByText('5m ago')).toBeTruthy();
+
+    locale.set('de');
+    await tick();
+    expect(getByText('vor 5 Min.')).toBeTruthy();
   });
 });

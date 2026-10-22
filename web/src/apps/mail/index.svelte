@@ -156,7 +156,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </p>
           </div>
           <span class="text-on-surface-variant text-body-small"
-            >{formatRelativeTime(selectedMail.created_at)}</span
+            >{formatRelativeTime(selectedMail.created_at, $t)}</span
           >
         </div>
         <h3 class="text-md text-primary mt-2 font-semibold">{selectedMail.subject}</h3>
@@ -203,7 +203,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   {email.sender}
                 </h2>
                 <span class="text-on-surface-variant text-body-small ml-2 whitespace-nowrap">
-                  {formatRelativeTime(email.created_at)}
+                  {formatRelativeTime(email.created_at, $t)}
                 </span>
               </div>
               <h3

@@ -12,6 +12,8 @@
 import '../../web/src/host/registerFacets';
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { locale } from '../i18n';
 import RecentlyDeleted from './RecentlyDeleted.svelte';
 
 // jsdom has no Web Animations API, and the confirm dialog behind permanent delete uses
@@ -92,6 +94,22 @@ describe('RecentlyDeleted', () => {
     expect(getByText('milk, eggs, bread')).toBeTruthy();
     // The first item supplied no preview — nothing should be invented for it.
     expect(queryByText('undefined')).toBeNull();
+  });
+
+  it('re-words "deleted when" on a locale switch, without a re-render from outside', async () => {
+    const { getAllByText, queryAllByText } = render(RecentlyDeleted, {
+      items: ITEMS,
+      onrestore: () => {}
+    });
+    expect(getAllByText('Deleted Just now')).toHaveLength(2);
+    try {
+      locale.set('de');
+      await tick();
+      expect(getAllByText('Gelöscht Gerade eben')).toHaveLength(2);
+      expect(queryAllByText('Deleted Just now')).toHaveLength(0);
+    } finally {
+      locale.set('en');
+    }
   });
 
   it('restores immediately — no confirmation step on the non-destructive path', () => {
