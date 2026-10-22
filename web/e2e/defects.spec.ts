@@ -244,7 +244,8 @@ test.describe('Notes and Contacts persist in the browser mock', () => {
     // (always present, never reaching count 0) instead of proving the delete actually
     // completed. `ContactDetails.svelte`'s own button is `aria-label="Delete"`, exactly.
     const del = page.getByRole('button', { name: 'Delete', exact: true }).first();
-    if ((await del.count()) === 0) test.skip();
+    // A missing button is a failure, not a skip: it is the thing under test.
+    await expect(del).toBeVisible();
     await del.click();
 
     // Contacts deletes straight away — there is no confirmation step to click through.

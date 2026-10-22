@@ -5,7 +5,7 @@ import { test, expect, type FrameLocator, type Locator, type Page } from './supp
 import AxeBuilder from '@axe-core/playwright';
 import type { AxeResults, Result } from 'axe-core';
 import { addOnFrame } from './support/addon';
-import { seedHomeGrid } from './support/homeGrid';
+import { openAppDrawer, seedHomeGrid } from './support/homeGrid';
 import { settlePhoneOpen } from './support/phoneOpen';
 import { blurred, seedStreamerMode } from './support/streamerMode';
 
@@ -50,9 +50,9 @@ import { blurred, seedStreamerMode } from './support/streamerMode';
  *
  * ## What is switched off
  *
- * Two rules that cannot apply here (`NOT_APPLICABLE`) and four defects this gate found and
- * did not fix (`KNOWN_OPEN`) — both lists are below, each entry with its reason. Nothing
- * else: a new axe rule arrives here as a failure, which is the point.
+ * Rules that cannot apply here (`NOT_APPLICABLE`) and defects this gate found and did not
+ * fix (`KNOWN_OPEN`) — both lists are below, each entry with its reason, and they are the
+ * whole of it. Nothing else: a new axe rule arrives here as a failure, which is the point.
  */
 
 const WEB = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -126,27 +126,10 @@ const NOT_APPLICABLE = ['region', 'landmark-one-main'];
  * somebody's decision rather than a mechanical fix. Anything else on that surface still
  * fails. Deleting an entry is how one gets closed.
  *
- * - **`shade` / `nested-interactive`** — a notification row is a `role="button"` div with
- *   a real `<button>` (restore, dismiss) inside it, four of them on screen. The role hides
- *   its own descendants from assistive tech, so those buttons are unreachable. The fix is
- *   to restructure the row — an overlay button for the row action, the per-item buttons as
- *   siblings above it — which changes the shade's interaction model and belongs to whoever
- *   owns that, not to a contrast ticket.
- *
- * - **`bank` / `color-contrast`** — `TransactionItem` pairs `text-error` (a role, so it
- *   follows the scheme) with `text-green-400` (a literal, so it does not). Measured 1.49:1
- *   on a light surface. It cannot be fixed by picking a better green: passing 4.5:1 against
- *   the dark surface needs relative luminance >= 0.213 and against the light one <= 0.145,
- *   so no single literal exists. AGENTS.md §5 sanctions raw palette classes for signal
- *   colours precisely because `tertiary` is seeded — but that reasoning predates light
- *   mode. The real fix is a scheme-aware positive-signal token generated in `m3.ts`
- *   alongside `error`, which is a change to the token set and therefore not this ticket's
- *   to make.
+ * There are none open at the moment; the mechanism stays so the next one is named here
+ * rather than hidden.
  */
-const KNOWN_OPEN: Record<string, string[]> = {
-  shade: ['nested-interactive'],
-  bank: ['color-contrast']
-};
+const KNOWN_OPEN: Record<string, string[]> = {};
 
 const scan = (page: Page, surface: string) =>
   new AxeBuilder({ page })
@@ -253,33 +236,65 @@ test('Settings > Privacy > Your data has no accessibility violations', async ({ 
   );
 });
 
-test('the home screen, the drawer and the shade have no accessibility violations', async ({
-  page
-}) => {
+/**
+ * The home screen, the app drawer and the notification shade, one scan per test: axe's cost
+ * scales with the DOM and three scans in one 30s budget are what timed out under load
+ * (MICA-407). The two sheets are opened through the same helpers their own specs use
+ * (`home-grid.spec.ts`, `notifications.spec.ts` own the gestures); this is a scan of what
+ * is on screen.
+ */
+const openHome = async (page: Page) => {
   await seedHomeGrid(page, ['settings', 'contacts', 'store', 'messages']);
   await page.goto('/');
   await settlePhoneOpen(page);
+};
 
-  const home = await scan(page, 'home');
-  expect(summarise(home), `home:\n  ${summarise(home).join('\n  ')}`).toEqual([]);
-
-  // The two sheets, opened through their own state rather than their gestures — this is a
-  // scan of what is on screen, not a test of how it got there (`home-grid.spec.ts` and
-  // `notifications.spec.ts` own the gestures).
-  await page.getByRole('button', { name: 'Open notification shade' }).click();
-  const shade = page.getByRole('dialog', { name: /notification/i });
-  await expect(shade).toBeVisible();
-  // `toBeVisible` resolves when the sheet is in the DOM, which is the *start* of its fly-in
-  // and of the status bar date's 150ms fade. Contrast measured on a fading element is
-  // measured on a colour that exists for one frame: this scan failed one run in three on
-  // the date span before the wait went in, at whatever ratio it happened to catch.
-  await expect
-    .poll(async () => shade.evaluate((el) => el.getAnimations({ subtree: true }).length), {
+/** Contrast measured on a fading element is measured on a colour that exists for one frame. */
+const settleWithin = async (sheet: Locator) =>
+  expect
+    .poll(async () => sheet.evaluate((el) => el.getAnimations({ subtree: true }).length), {
       timeout: 5000
     })
     .toBe(0);
+
+test('the home screen has no accessibility violations', async ({ page }) => {
+  await openHome(page);
+  const home = await scan(page, 'home');
+  expect(summarise(home), `home:\n  ${summarise(home).join('\n  ')}`).toEqual([]);
+});
+
+test('the app drawer has no accessibility violations', async ({ page }) => {
+  await openHome(page);
+  await openAppDrawer(page);
+  const drawer = page.getByRole('dialog', { name: 'App Drawer' });
+  await expect(drawer).toBeVisible();
+  await settleWithin(drawer);
+  const results = await scan(page, 'drawer');
+  expect(summarise(results), `drawer:\n  ${summarise(results).join('\n  ')}`).toEqual([]);
+});
+
+test('the notification shade has no accessibility violations', async ({ page }) => {
+  await openHome(page);
+  await page.getByRole('button', { name: 'Open notification shade' }).click();
+  const shade = page.getByRole('dialog', { name: /notification/i });
+  await expect(shade).toBeVisible();
+  // `toBeVisible` resolves at the *start* of the fly-in and of the status bar date's 150ms
+  // fade; this scan failed one run in three on the date span before the wait went in.
+  await settleWithin(shade);
   const shadeResults = await scan(page, 'shade');
   expect(summarise(shadeResults), `shade:\n  ${summarise(shadeResults).join('\n  ')}`).toEqual([]);
+});
+
+test('the notification archive has no accessibility violations', async ({ page }) => {
+  await openHome(page);
+  await page.getByRole('button', { name: 'Open notification shade' }).click();
+  const shade = page.getByRole('dialog', { name: /notification/i });
+  await expect(shade).toBeVisible();
+  await settleWithin(shade);
+  await page.getByRole('button', { name: 'Notification Archive' }).click();
+  await settleWithin(shade);
+  const results = await scan(page, 'shade archive');
+  expect(summarise(results), `archive:\n  ${summarise(results).join('\n  ')}`).toEqual([]);
 });
 
 /**
@@ -297,87 +312,94 @@ test('the home screen, the drawer and the shade have no accessibility violations
  * player is mounted outside the phone frame entirely, which is why `music.spec.ts` rather
  * than axe is what holds it out of the tab order.
  */
-test('Music has no accessibility violations with a track loaded, in the app and in the shade', async ({
-  page
-}) => {
-  await page.route(/https:\/\/www\.youtube(-nocookie)?\.com\//, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'text/html',
-      // Enough of a stub to refuse a video on demand — the refusal state paints
-      // `text-error` on two surfaces and is scanned below. `apps/music.spec.ts` owns the
-      // protocol itself; all this has to do is load and answer.
-      body:
-        '<!doctype html><title>s</title><script>window.__error=(c)=>' +
-        "parent.postMessage(JSON.stringify({event:'onError',info:c}),'*')</script>"
-    })
-  );
+test.describe('Music with a track loaded', () => {
+  // One scan per test (MICA-407): three scans in one 30s budget are the next timeout.
+  test.beforeEach(async ({ page }) => {
+    await page.route(/https:\/\/www\.youtube(-nocookie)?\.com\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        // Enough of a stub to refuse a video on demand — the refusal state paints
+        // `text-error` on two surfaces and is scanned below. `apps/music.spec.ts` owns the
+        // protocol itself; all this has to do is load and answer.
+        body:
+          '<!doctype html><title>s</title><script>window.__error=(c)=>' +
+          "parent.postMessage(JSON.stringify({event:'onError',info:c}),'*')</script>"
+      })
+    );
 
-  // The artwork host, for the same reason and with the same consequence if it were left
-  // out: since MICA-111 the now-playing card re-themes itself from the cover's dominant
-  // colour, so an unstubbed thumbnail would mean this sweep measured a different palette
-  // depending on whether YouTube answered — and axe's contrast rule is exactly the rule
-  // that would notice. A solid red square, with the CORS header the canvas read needs, so
-  // the card is tinted on every run and the M3 roles are what is being measured.
-  await page.route(/https:\/\/img\.youtube\.com\//, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'image/png',
-      headers: { 'access-control-allow-origin': '*' },
-      body: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4oaGBFTEMLQkAgl1GAWqNFmsAAAAASUVORK5CYII=',
-        'base64'
-      )
-    })
-  );
+    // The artwork host, for the same reason and with the same consequence if it were left
+    // out: since MICA-111 the now-playing card re-themes itself from the cover's dominant
+    // colour, so an unstubbed thumbnail would mean this sweep measured a different palette
+    // depending on whether YouTube answered — and axe's contrast rule is exactly the rule
+    // that would notice. A solid red square, with the CORS header the canvas read needs, so
+    // the card is tinted on every run and the M3 roles are what is being measured.
+    await page.route(/https:\/\/img\.youtube\.com\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        headers: { 'access-control-allow-origin': '*' },
+        body: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4oaGBFTEMLQkAgl1GAWqNFmsAAAAASUVORK5CYII=',
+          'base64'
+        )
+      })
+    );
+  });
 
-  const frame = page.getByTestId('phone-frame');
-  const settled = async () =>
+  const frame = (page: Page) => page.getByTestId('phone-frame');
+  const settled = async (page: Page) =>
     expect
-      .poll(async () => frame.evaluate((el) => el.getAnimations({ subtree: true }).length), {
+      .poll(async () => frame(page).evaluate((el) => el.getAnimations({ subtree: true }).length), {
         timeout: 5000
       })
       .toBe(0);
 
-  const openMusicWithATrack = async () => {
+  const openMusicWithATrack = async (page: Page) => {
     await page.goto('/?app=music');
     await settlePhoneOpen(page);
     const field = page.getByLabel('YouTube link');
     await field.fill('dQw4w9WgXcQ');
     await field.press('Enter');
     await expect(page.locator('button[aria-label="Stop music"]')).toBeVisible();
-    await settled();
+    await settled(page);
   };
 
-  await openMusicWithATrack();
-  const app = await scan(page, 'music');
-  expect(summarise(app), `music (loaded):\n  ${summarise(app).join('\n  ')}`).toEqual([]);
+  test('in the app', async ({ page }) => {
+    await openMusicWithATrack(page);
+    const app = await scan(page, 'music');
+    expect(summarise(app), `music (loaded):\n  ${summarise(app).join('\n  ')}`).toEqual([]);
+  });
 
-  await page.getByRole('button', { name: 'Open notification shade' }).click();
-  await expect(page.getByRole('group', { name: 'Now playing' })).toBeVisible();
-  await settled();
-  const shade = await scan(page, 'shade');
-  expect(summarise(shade), `shade (playing):\n  ${summarise(shade).join('\n  ')}`).toEqual([]);
+  test('in the shade, playing', async ({ page }) => {
+    await openMusicWithATrack(page);
+    await page.getByRole('button', { name: 'Open notification shade' }).click();
+    await expect(page.getByRole('group', { name: 'Now playing' })).toBeVisible();
+    await settled(page);
+    const shade = await scan(page, 'shade');
+    expect(summarise(shade), `shade (playing):\n  ${summarise(shade).join('\n  ')}`).toEqual([]);
+  });
 
-  // The refusal state, which is its own palette: `text-error` on the now-playing card and
-  // again on the queue row, neither of which appears on any other screen this file sweeps.
-  // `error` is a role token so it should follow the scheme — the claim worth measuring
-  // rather than assuming, and the one the `bank` entry in `KNOWN_OPEN` above is the
-  // cautionary tale for.
-  //
-  // Reached by starting over rather than by closing the shade: the shade is opened and
-  // closed by a drag (`notifications.spec.ts` owns that gesture) and has no close button to
-  // click, so a second pass is both cheaper and less of a lie about what is being tested.
-  await openMusicWithATrack();
-  await page
-    .frameLocator('iframe[title="micaOS music player"]')
-    .locator('body')
-    .evaluate(() => (window as unknown as { __error: (code: number) => void }).__error(101));
-  await expect(page.getByText("Can't play", { exact: true })).toBeVisible();
-  await settled();
+  test('refused', async ({ page }) => {
+    // The refusal state, which is its own palette: `text-error` on the now-playing card and
+    // again on the queue row, neither of which appears on any other screen this file sweeps.
+    // `error` is a role token so it should follow the scheme — the claim worth measuring
+    // rather than assuming, as Bank's literal green once showed (a `KNOWN_OPEN` entry,
+    // now fixed).
+    //
+    // Its own test, so it starts from a fresh page rather than closing the shade (a drag,
+    // which `notifications.spec.ts` owns, with no close button to click).
+    await openMusicWithATrack(page);
+    await page
+      .frameLocator('iframe[title="micaOS music player"]')
+      .locator('body')
+      .evaluate(() => (window as unknown as { __error: (code: number) => void }).__error(101));
+    await expect(page.getByText("Can't play", { exact: true })).toBeVisible();
+    await settled(page);
 
-  const failed = await scan(page, 'music');
-  expect(summarise(failed), `music (refused):\n  ${summarise(failed).join('\n  ')}`).toEqual([]);
+    const failed = await scan(page, 'music');
+    expect(summarise(failed), `music (refused):\n  ${summarise(failed).join('\n  ')}`).toEqual([]);
+  });
 });
 
 /**
@@ -389,7 +411,8 @@ test('Music has no accessibility violations with a track loaded, in the app and 
  * rather than added through edit mode, which `home-widgets.spec.ts` owns.
  */
 for (const size of ['2x1', '2x2'] as const) {
-  test(`placed widgets at ${size} have no accessibility violations`, async ({ page }) => {
+  // One scan per test (MICA-407): axe's cost scales with the DOM.
+  const placed = async (page: Page) => {
     await page.route(/https:\/\/www\.youtube(-nocookie)?\.com\//, (route) =>
       route.fulfill({
         status: 200,
@@ -444,9 +467,17 @@ for (const size of ['2x1', '2x2'] as const) {
         })
         .toBe(0);
     await settled();
+    return settled;
+  };
+
+  test(`placed widgets at ${size}, empty, have no accessibility violations`, async ({ page }) => {
+    await placed(page);
     const empty = await scan(page, 'home');
     expect(summarise(empty), `widgets (empty):\n  ${summarise(empty).join('\n  ')}`).toEqual([]);
+  });
 
+  test(`placed widgets at ${size}, playing, have no accessibility violations`, async ({ page }) => {
+    const settled = await placed(page);
     // Start a track from the Music app and come back: the widget now shows the player.
     await page.getByTestId('widget-music-empty').click();
     const field = page.getByLabel('YouTube link');
@@ -552,7 +583,7 @@ const fillSparkEditor = async (frame: FrameLocator): Promise<void> => {
   await frame.getByTestId('spark-age').fill('29');
   await frame.getByTestId('spark-bio').fill('Night shifts and good coffee.');
   await frame.getByTestId('spark-add-photo').click();
-  const picker = frame.getByRole('dialog');
+  const picker = frame.getByRole('dialog', { name: 'Choose photos' });
   await expect(picker).toBeVisible();
   await pickRevealedPhoto(frame);
   await picker.getByRole('button', { name: /^Done/ }).click();
@@ -626,7 +657,7 @@ const STREAMER_SURFACES: { surface: string; open: (page: Page) => Promise<Scope>
       const frame = addOnFrame(page, 'spark');
       await expect(frame.getByTestId('spark-editor')).toBeVisible();
       await frame.getByTestId('spark-add-photo').click();
-      await expect(frame.getByRole('dialog')).toBeVisible();
+      await expect(frame.getByRole('dialog', { name: 'Choose photos' })).toBeVisible();
       return frame;
     }
   },
@@ -672,7 +703,7 @@ const STREAMER_SURFACES: { surface: string; open: (page: Page) => Promise<Scope>
       await frame.getByRole('button', { name: 'Blab', exact: true }).click();
       await frame.locator('textarea').fill('pictured');
       await frame.getByRole('button', { name: 'Attach photo' }).click();
-      await expect(frame.getByRole('dialog')).toBeVisible();
+      await expect(frame.getByRole('dialog', { name: 'Select Photos' })).toBeVisible();
       await pickRevealedPhoto(frame);
       await frame.getByRole('button', { name: /^Done/ }).click();
       await frame.getByRole('button', { name: 'Post', exact: true }).click();
