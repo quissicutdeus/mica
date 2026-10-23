@@ -1223,8 +1223,9 @@ the convar is invisible until the resource restarts.
   console says so. The notices are recorded as `retention:<table>:<days>d` rows
   in `mica_schema_migrations`; turning retention off records a `retention-off:`
   marker that voids them, and turning it back on starts a fresh notice. Run
-  `micamedia` first to see how large the media table is. **This frees no disk**:
-  a hidden row is still stored.
+  `micamedia` first to see how large the media table is, and `micastorage` for
+  every table's size and rows by status. **This frees no disk**: a hidden row is
+  still stored.
 - **`mica_darkchat_retention` — Dark Chat's window, in hours (24) (MICA-254).**
   A Dark Chat message older than the window is never shown and is moved to
   `expired`, kept but hidden, by a sweep every 15 minutes, 500 rows at a time.
@@ -1270,10 +1271,12 @@ the convar is invisible until the resource restarts.
   [`docs/security.md`](docs/security.md#message-bodies-at-rest) has what stays
   readable and why. Keep the real file out of the database backup and out of git
   (the server warns at start when it sits inside `mica` or inside
-  `server-data`), and back it up somewhere else: **a lost key is every body
-  sealed with it gone**, shown as 🔒. Once anything has been sealed, a missing
-  or unreadable key file refuses new messages rather than storing them in
-  plaintext. Read once at resource start. Rotating it is in
+  `server-data`), and back it up somewhere else, **as a setup step**: nothing is
+  deleted any more, so the rows kept as evidence are sealed under it too, and
+  **a lost key is every body and every kept row sealed with it gone**, shown as
+  🔒. A database backup without its key file is unreadable. Once anything has
+  been sealed, a missing or unreadable key file refuses new messages rather than
+  storing them in plaintext. Read once at resource start. Rotating it is in
   [`docs/in-game-commands.md`](docs/in-game-commands.md). A text message or a
   note is at most 12,276 characters, so its sealed form still fits the column; a
   longer note already stored stays plaintext, and `micacrypt status` counts it

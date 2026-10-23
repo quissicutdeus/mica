@@ -683,6 +683,19 @@ Six edges, each chosen rather than overlooked:
 **Lose the key and every body sealed with it is gone.** Back the key file up
 somewhere that is not the database backup.
 
+**Back the key up as a step of turning encryption on, not as an afterthought.**
+Since MICA-428 and MICA-429 nothing is deleted: an erased, expired or taken-down
+row stays in the database as evidence, and since MICA-431 and MICA-432 most of
+what those rows hold is sealed under this key, with the blind indexes and sealed
+version snapshots beside it. Evidence retention therefore depends on the key
+file as much as on the database: lose the file and every kept row is unreadable
+for good, which is the opposite of what keeping it was for. A database backup
+without its key file is just as unreadable. Keep a copy of the whole file, every
+line, outside `server-data`, outside the repo, and not in the same place as the
+dump, so that neither leak gives up the other. Rotating a key and then removing
+its old line has the same effect on every row still under it; `micacrypt status`
+says when none are ([`docs/in-game-commands.md`](in-game-commands.md)).
+
 **A thread or a channel is bound to its own key** (MICA-432). A Dark Chat
 channel or a Messages thread is not the character's alone: its owner can change,
 and `citizenid` is the wrong thing to bind a name or a join code to. Such a

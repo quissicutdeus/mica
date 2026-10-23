@@ -44,6 +44,7 @@ principals to check.
 | `micaschema apply`                      | **Console only.** Runs pending migrations, then creates missing tables and adds columns |
 | `micamedia`                             | Reports `mica_media`'s size and its top ten holders. Changes nothing                    |
 | `micamedia prune`                       | **Console only.** Expires old media and erases orphaned media now; deletes nothing      |
+| `micastorage`                           | Reports every `mica_` table's size and rows by status, largest first. Changes nothing   |
 | `micacharge [playerId] <0-100>`         | Sets a player's battery level; omit the id for yourself                                 |
 | `micaseed` / `micaseed add`             | Creates test characters, contacts and threads for the caller                            |
 | `micaseed text <firstname> <message>`   | Has a seeded character text you — exercises inbound delivery                            |
@@ -59,9 +60,9 @@ principals to check.
 | `micahttp webhook`                      | **Console only.** Posts one labelled test embed to the audit webhook; prints the answer |
 | `micahttp catalog`                      | **Console only.** Fetches the add-on catalog now, past its cache; prints what came back |
 
-Source: `server/services/Schema.ts`, `Media.ts`, `Battery.ts`, `Seed.ts`,
-`Phone.ts`, `Import.ts`, `ContentKeys.ts` and `OutboundHttp.ts` respectively —
-one `RegisterCommand` each.
+Source: `server/services/Schema.ts`, `Media.ts`, `Storage.ts`, `Battery.ts`,
+`Seed.ts`, `Phone.ts`, `Import.ts`, `ContentKeys.ts` and `OutboundHttp.ts`
+respectively — one `RegisterCommand` each.
 
 ## The two that are gated harder than the rest
 
@@ -82,6 +83,20 @@ setting `mica_media_retention`, since a retention window nobody measured against
 the real table is how a sweep hides more than anyone expected. If
 `mica_media_retention` is unset, `prune` says so and still runs the orphan
 sweep.
+
+**`micastorage` is the report to read when planning storage.** Since nothing is
+deleted any more (MICA-428, MICA-429), the database only grows: retention,
+erasure and a player's own delete move a status, and the row stays. It lists
+every `mica_` table, largest first, with its data and index size and its rows by
+status, `active` kept apart from every other status. A table with no status (the
+audit log, the migrations ledger) gets a plain count. Read "inactive" as "not
+`active`", not as "hidden": it includes statuses players still see, such as
+`paid`, `sold` and `archived`. It changes nothing, so there is no subcommand and
+no dry run, and it is admin-gated like `micamedia`. The breakdown prints to the
+server console; an in-game admin gets a one-line toast. A second run while one
+is reading is refused. Sizes are InnoDB's statistics and lag a table that just
+grew; the row counts are exact. It prints table names, statuses, counts and
+sizes, never a player.
 
 ## `micaimport` takes the console for its dry run too
 
@@ -128,6 +143,15 @@ one `status` or `backfill` runs at a time.
   is refused, since a key file with one id twice is refused whole. A path is
   refused: "keygen takes no path". Use `set`, never `setr`, which would send the
   path to every client.
+- **Back up the key file** (a step of keygen's list, not an afterthought). Since
+  MICA-428 nothing is deleted: erased, expired and taken-down rows are kept as
+  evidence, and most of them are sealed under this key. Lose the file and every
+  one of them, every blind index and every sealed version is unreadable for
+  good. Copy the **whole file, every line**, to somewhere that is not
+  `server-data`, not the repo, and not the same place as your database backup: a
+  database backup without its key file cannot be read, and a key stored beside
+  the dump defends nothing. Do it before running `backfill --apply` the first
+  time, and again each time the file changes.
 - **`status`** and **`backfill`** cover every sealed column, a phone's own
   content included (MICA-431): notes, contacts, the call log, saved places,
   photos, notifications, a report's note and a Dark Chat export's alias, as well
@@ -158,13 +182,16 @@ one `status` or `backfill` runs at a time.
   has the source row for. `status` and `backfill` warn that entries under an
   older key match a re-import only while that key stays in the key file.
 
-**Rotating the key** starts from the same steps. Write the new key's line with
-step 2 into a scratch file, put it **first** in the live key file with the old
-lines after it, restart the resource, run `backfill --apply`, and remove an old
-line only once `status` shows nothing left under it. A body under a key that is
-no longer in the file reads as 🔒. Import ledger entries keyed under the old key
-stay under it unless a `micaimport` re-run re-keys them; once that key is gone,
-`micaimport --apply` refuses to run until it is back.
+**Rotating the key** starts from the same steps, and the backup is one of them:
+copy the new file, old lines included, before you restart. An old line removed
+from the live file is gone for any row still under it, so keep the last backup
+that holds it until `status` shows nothing left there. Write the new key's line
+with step 2 into a scratch file, put it **first** in the live key file with the
+old lines after it, restart the resource, run `backfill --apply`, and remove an
+old line only once `status` shows nothing left under it. A body under a key that
+is no longer in the file reads as 🔒. Import ledger entries keyed under the old
+key stay under it unless a `micaimport` re-run re-keys them; once that key is
+gone, `micaimport --apply` refuses to run until it is back.
 
 ## `micahttp` reaches out on demand, from the console only
 
