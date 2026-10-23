@@ -98,6 +98,24 @@ const dbMock = vi.hoisted(() => {
       store.beforeUpdate = null;
       hook();
     }
+    // A blind index brought to the active key (MICA-432): compare-and-set on the old index, and
+    // the unique key the table holds it under, which a second row with the same index trips.
+    const reindex =
+      /^UPDATE `([a-z_]+)` SET `([a-z_]+)` = \?(?:, `updated_at` = `updated_at`)? WHERE `id` = \? AND `([a-z_]+)` <=> \?$/.exec(
+        sql
+      );
+    if (reindex) {
+      const [, table, column] = reindex;
+      const [value, id, was] = params;
+      const rows = store.tables.get(table) ?? [];
+      const row = rows.find((r) => r.id === id);
+      if (!row || (row[column] ?? null) !== was) return false;
+      if (rows.some((r) => r.id !== id && r[column] === value)) {
+        throw new Error(`Duplicate entry '${String(value)}' for key '${table}.${column}'`);
+      }
+      row[column] = value;
+      return true;
+    }
     const cas =
       /^UPDATE `([a-z_]+)` SET `([a-z_]+)` = \?(?:, `updated_at` = `updated_at`)? WHERE `id` = \? AND CAST\(`[a-z_]+` AS BINARY\) = \?((?: AND CAST\(`[a-z_]+` AS BINARY\) <=> CAST\(\? AS BINARY\))*)$/.exec(
         sql
@@ -119,12 +137,15 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import {
   UNREADABLE_CONTENT,
+  blindIndexFor,
   contentContext,
   openContent,
+  registerBlindIndex,
   registerEncryptedColumn,
   resetContentCipherForTests,
   sealContent,
   sealedKeyId,
+  unregisterBlindIndexForTests,
   unregisterEncryptedColumnForTests,
   type EncryptedColumn
 } from '../lib/contentCipher';
@@ -609,6 +630,86 @@ describe('the walk is bounded', () => {
       expect(store.updates).toEqual([]);
     } finally {
       unregisterEncryptedColumnForTests(BODIES.table, BODIES.column);
+    }
+  });
+
+  /**
+   * MICA-432: every blind index is brought to the active key after the values are sealed — the
+   * `plain:` one from before the first key, an older key's after a rotation, none on a row from
+   * before the column — read off the value as it now stands; a second run writes nothing; and
+   * two rows the unique key says are one value are counted and left, not forced.
+   */
+  it('re-indexes under the active key, once, and leaves a duplicate for the owner', async () => {
+    const PHONES: EncryptedColumn = {
+      table: 'test_book',
+      column: 'phone',
+      scope: [],
+      hasUpdatedAt: true
+    };
+    const INDEX = {
+      table: 'test_book',
+      column: 'phone',
+      index: 'phone_index',
+      scope: [] as string[],
+      normalize: (value: string) => value.toLowerCase()
+    };
+    registerEncryptedColumn(PHONES);
+    registerBlindIndex(INDEX);
+    const newLine = keyLine('new');
+    const oldLine = keyLine('old');
+    try {
+      useKeys(keyFileOf([newLine, oldLine]));
+      store.capacity.set('test_book.phone', 166);
+      store.capacity.set('test_book.phone_index', 81);
+      const old = { id: 2, citizenid: 'CIT_A', phone: '', phone_index: '' };
+      useKeys(keyFileOf([oldLine]));
+      old.phone = await seal(PHONES, old, '555-0102');
+      old.phone_index = await blindIndexFor(INDEX, old, '555-0102');
+      useKeys(keyFileOf([newLine, oldLine]));
+      const current = { id: 3, citizenid: 'CIT_A', phone: '', phone_index: '' };
+      current.phone = await seal(PHONES, current, '555-0103');
+      current.phone_index = await blindIndexFor(INDEX, current, '555-0103');
+      store.tables.set('test_book', [
+        { id: 1, citizenid: 'CIT_A', phone: '555-0101', phone_index: 'plain:555-0101' },
+        old,
+        current,
+        { id: 4, citizenid: 'CIT_B', phone: '555-0104', phone_index: null },
+        { id: 5, citizenid: 'CIT_A', phone: null, phone_index: null },
+        // The same number as row 1, which only the unique key can tell.
+        { id: 6, citizenid: 'CIT_C', phone: '555-0101', phone_index: 'plain:something-else' }
+      ]);
+
+      const status = await walkContent({ apply: false });
+      const before = status.indexes.find((i) => i.table === 'test_book')!;
+      expect(before).toMatchObject({ rows: 6, active: 1, empty: 1 });
+      expect(before.stale).toEqual({ plain: 2, old: 1, none: 1 });
+      expect(formatStatus(status).join('\n')).toContain(
+        'test_book.phone_index: 6 row(s) — on the active key 1, to re-index 4 (none 1, old 1, plain 2), empty 1.'
+      );
+
+      const report = await walkContent({ apply: true, pause: noPause });
+      const after = report.indexes.find((i) => i.table === 'test_book')!;
+      expect(after).toMatchObject({ reindexed: 3, conflicts: 1, raced: 0, unreadable: 0 });
+      const rows = store.tables.get('test_book')!;
+      const want = async (row: Record<string, unknown>, phone: string) =>
+        await blindIndexFor(INDEX, row, phone);
+      expect(rows[0].phone_index).toBe(await want(rows[0], '555-0101'));
+      expect(rows[1].phone_index).toBe(await want(rows[1], '555-0102'));
+      expect(rows[3].phone_index).toBe(await want(rows[3], '555-0104'));
+      // Left as it was: the unique key refused it, and the owner decides.
+      expect(rows[5].phone_index).toBe('plain:something-else');
+      expect(formatBackfill(report).join('\n')).toContain('refused as a duplicate 1');
+
+      store.updates = [];
+      const again = await walkContent({ apply: true, pause: noPause });
+      expect(again.indexes.find((i) => i.table === 'test_book')).toMatchObject({
+        reindexed: 0,
+        conflicts: 1
+      });
+      expect(store.updates.filter((u) => u.includes('`phone_index` = ?'))).toHaveLength(1);
+    } finally {
+      unregisterBlindIndexForTests('test_book', 'phone');
+      unregisterEncryptedColumnForTests('test_book', 'phone');
     }
   });
 

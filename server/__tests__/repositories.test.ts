@@ -142,8 +142,9 @@ describe('shipped repositories — declared client filter policy', () => {
     // one is ever turned on: `ServiceEndpoint` forces `filter.citizenid` on every non-public
     // read *after* `sanitizeFilter`, so `app` can only ever partition the caller's own rows.
     ['notifications', ['app']],
-    // The address book looks a contact up by number and filters the favourites list.
-    ['contacts', ['phone', 'favorite']],
+    // The favourites list. Not the number since MICA-432: it is sealed, and the address book
+    // finds a contact by number in the list it already holds.
+    ['contacts', ['favorite']],
     ['conversations', []],
     ['mail', []],
     ['messages', []],

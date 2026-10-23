@@ -81,9 +81,10 @@ export const mail = defineService<Mail, typeof mailContract>({
   /** A mail row is its own thread: the body is bound to its table, column and owner alone. */
   encryptionScope: [],
   schema: {
-    sender: { type: 'string', length: 100, notNull: true },
-    sender_address: { type: 'string', length: 100 },
-    subject: { type: 'string', length: 255, notNull: true },
+    /** Who wrote, their address and the subject: sealed at rest like the body (MICA-432). */
+    sender: { type: 'string', length: 100, notNull: true, encrypted: true },
+    sender_address: { type: 'string', length: 100, encrypted: true },
+    subject: { type: 'string', length: 255, notNull: true, encrypted: true },
     /** Sealed at rest (MICA-165); at most `MAIL_CONTENT_MAX` characters, so the seal fits. */
     content: { type: 'text', notNull: true, encrypted: true },
     read: { type: 'bool', notNull: true, default: 0 }
@@ -174,9 +175,10 @@ export const SendSystemEmail = async (
     }
     const mailItem: Partial<Mail> = {
       citizenid: targetCitizenId,
-      sender: emailData.sender,
-      sender_address: emailData.sender_address || 'system@mica.local',
-      subject: emailData.subject,
+      // A script's words too, sealed since MICA-432, so never refused for how they start.
+      sender: await storablePlaintext(emailData.sender, 100),
+      sender_address: await storablePlaintext(emailData.sender_address || 'system@mica.local', 100),
+      subject: await storablePlaintext(emailData.subject, 255),
       // A script's words, often a player's relayed: never refused for starting like a sealed
       // value (MICA-165), and never lost to a null the caller cannot tell from a failure.
       content: await storablePlaintext(emailData.content, MAIL_CONTENT_MAX),

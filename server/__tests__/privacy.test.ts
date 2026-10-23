@@ -153,8 +153,14 @@ describe('what an export selects (MICA-168)', () => {
     expect(sql).toContain(`${plaintextBytesSql('`data`')} AS \`data_bytes\``);
     expect(sql).toContain(`${plaintextBytesSql('`thumbnail`')} AS \`thumbnail_bytes\``);
     expect(sql).not.toMatch(/(^|[ ,])`data`,/);
-    // A column not sealed is measured as before.
-    expect(exportSql(planOf('mica_contacts'))).toContain('LENGTH(`avatar`) AS `avatar_bytes`');
+    // A column not sealed is measured as before: the same plan, on a table that seals nothing.
+    expect(exportSql({ ...planOf('mica_contacts'), table: 'no_sealed_columns' })).toContain(
+      'LENGTH(`avatar`) AS `avatar_bytes`'
+    );
+    // The avatar is sealed since MICA-432, so it is measured as the plaintext it holds too.
+    expect(exportSql(planOf('mica_contacts'))).toContain(
+      `${plaintextBytesSql('`avatar`')} AS \`avatar_bytes\``
+    );
   });
 
   it("withholds another player's identity and the other side of a thread", () => {
@@ -287,13 +293,15 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
   mica_darkchat: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'name'],
     sized: [],
-    // MICA-254: a key to a room other people speak in.
-    withheld: ['code']
+    // MICA-254: a key to a room other people speak in. MICA-432: the channel's seal key and the
+    // code's blind index, the server's own.
+    withheld: ['seal_key', 'code', 'code_index']
   },
   mica_darkchat_members: {
     plain: ['id', 'channel_id', 'alias', 'status', 'left_at', 'created_at'],
     sized: [],
-    withheld: ['handle', 'alias_key', 'live_citizen']
+    // MICA-432: the alias's and the handle's blind indexes beside them.
+    withheld: ['alias_index', 'handle', 'handle_index', 'alias_key', 'live_citizen']
   },
   mica_darkchat_messages: {
     plain: [
@@ -380,13 +388,15 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'default_number'
     ],
     sized: ['avatar'],
-    // MICA-335: `phone` again while live, NULL otherwise — the unique key's, not the player's.
-    withheld: ['phone_key']
+    // MICA-335: the number's key while live, NULL otherwise — the unique key's, not the player's.
+    // MICA-432: the number's blind index, the server's to match on.
+    withheld: ['phone_index', 'phone_key']
   },
   mica_messages_conversations: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'is_group', 'name', 'absent_number'],
     sized: [],
-    withheld: ['participant_a', 'participant_b', 'pair_key']
+    // MICA-432: the thread's seal key, the server's own.
+    withheld: ['seal_key', 'participant_a', 'participant_b', 'pair_key']
   },
   mica_messages_participants: {
     plain: [
@@ -529,9 +539,8 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'device_id',
       'name',
       'street_label',
-      'x',
-      'y',
-      'z'
+      // MICA-432: where the place is, one sealed value, opened for the player like the name.
+      'position'
     ],
     sized: [],
     withheld: []

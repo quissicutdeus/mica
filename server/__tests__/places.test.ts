@@ -67,23 +67,26 @@ beforeEach(() => {
 
 describe('places:create (MICA-65)', () => {
   it('saves the caller position under the given name', async () => {
+    // Stored as one `position` (MICA-432), and handed back as `x`, `y` and `z`.
     dbMock.single.mockResolvedValue({
       id: 101,
       citizenid: 'CIT_A',
       name: 'Home',
-      x: 100,
-      y: 200,
-      z: 30
+      position: '{"x":100,"y":200,"z":30}'
     });
 
     const reply = await call('create', { name: 'Home' });
 
-    expect(reply).toMatchObject({ id: 101, place: expect.objectContaining({ name: 'Home' }) });
+    expect(reply).toMatchObject({
+      id: 101,
+      place: expect.objectContaining({ name: 'Home', x: 100, y: 200, z: 30 })
+    });
+    expect(reply.place).not.toHaveProperty('position');
     const [sql, params] = dbMock.insert.mock.calls[0];
     expect(String(sql)).toBe(
-      'INSERT INTO `mica_places` (`name`, `x`, `y`, `z`, `citizenid`, `device_id`) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO `mica_places` (`name`, `citizenid`, `device_id`, `position`) VALUES (?, ?, ?, ?)'
     );
-    expect(params).toEqual(['Home', 100, 200, 30, 'CIT_A', TEST_PHONE_ID]);
+    expect(params).toEqual(['Home', 'CIT_A', TEST_PHONE_ID, '{"x":100,"y":200,"z":30}']);
   });
 
   it('carries street_label when the caller sends one', async () => {
@@ -132,7 +135,7 @@ describe('places:create (MICA-65)', () => {
 
     const [, params] = dbMock.insert.mock.calls[0];
     // The resolved native position. There is nothing from the payload to prefer it over.
-    expect(params).toEqual(expect.arrayContaining([100, 200, 30]));
+    expect(params.at(-1)).toBe('{"x":100,"y":200,"z":30}');
 
     dbMock.insert.mockClear();
     const reply = await call('create', { name: 'Home', x: 0, y: 0, z: 0 });
@@ -145,9 +148,10 @@ describe('places:create (MICA-65)', () => {
     await call('create', { name: 'Home' });
 
     const [, params] = dbMock.insert.mock.calls[0];
-    // The citizen, then the phone in their hand (MICA-282) — both resolved by the server.
-    expect(params.at(-2)).toBe('CIT_A');
-    expect(params.at(-1)).toBe(TEST_PHONE_ID);
+    // The citizen, then the phone in their hand (MICA-282) — both resolved by the server — and
+    // then where the place is.
+    expect(params.at(-3)).toBe('CIT_A');
+    expect(params.at(-2)).toBe(TEST_PHONE_ID);
 
     dbMock.insert.mockClear();
     const reply = await call('create', { name: 'Home', citizenid: 'CIT_VICTIM' });
@@ -160,11 +164,13 @@ describe('places:create (MICA-65)', () => {
 describe('places — the declaration', () => {
   it('disables the generic create in favour of the custom one', () => {
     expect(handlers.has('mica:server:places:create')).toBe(true);
-    expect(places.resolved.columns).toContain('x');
+    // One sealed `position`, never three readable floats (MICA-432).
+    expect(places.resolved.columns).toContain('position');
+    expect(places.resolved.columns).not.toContain('x');
   });
 
-  it('keeps x/y/z out of the client-writable set, so the generic update cannot move a place', () => {
-    for (const column of ['x', 'y', 'z']) {
+  it('keeps the position out of the client-writable set, so the generic update cannot move a place', () => {
+    for (const column of ['position', 'x', 'y', 'z']) {
       expect(places.repo['clientWritable']).not.toContain(column);
     }
     expect(places.repo['clientWritable']).toEqual(expect.arrayContaining(['name', 'street_label']));

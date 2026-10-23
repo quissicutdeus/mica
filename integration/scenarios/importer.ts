@@ -151,18 +151,22 @@ export const importerScenarios: Scenario[] = [
             'WHERE `citizenid` = ?',
           [alice.citizenid]
         );
-        const firstname = contact
-          ? openSealed(contact.firstname, harnessKeys(), {
-              table: 'mica_contacts',
-              column: 'firstname',
-              citizenid: String(contact.citizenid),
-              deviceId: (contact.device_id as string | null) ?? null,
-              scope: []
-            })
-          : null;
+        // The name and the number are both sealed to the phone (MICA-431, MICA-432).
+        const openContact = (column: 'firstname' | 'phone'): string | null =>
+          contact
+            ? openSealed(contact[column], harnessKeys(), {
+                table: 'mica_contacts',
+                column,
+                citizenid: String(contact.citizenid),
+                deviceId: (contact.device_id as string | null) ?? null,
+                scope: []
+              })
+            : null;
+        const firstname = openContact('firstname');
+        const phone = openContact('phone');
         assert(
-          firstname === 'Bob' && contact?.phone === bob.number,
-          `the imported contact is ${JSON.stringify({ ...contact, firstname })}`
+          firstname === 'Bob' && phone === bob.number,
+          `the imported contact is ${JSON.stringify({ ...contact, firstname, phone })}`
         );
 
         const ledger = await ledgerRows([alice.citizenid, bob.citizenid]);

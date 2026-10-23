@@ -204,36 +204,55 @@ interface MemberRow {
 }
 
 /** One citizen's member rows in one channel, oldest first. `left_at` read as a flag, not a date. */
-const memberRows = async (channelId: number, citizenid: string): Promise<MemberRow[]> =>
-  (
-    await db.rows(
-      'SELECT `id`, `handle`, `alias`, `status`, (`left_at` IS NULL) AS live ' +
-        'FROM `mica_darkchat_members` WHERE `channel_id` = ? AND `citizenid` = ? ORDER BY `id`',
-      [channelId, citizenid]
-    )
-  ).map((row) => ({
+const memberRows = async (channelId: number, citizenid: string): Promise<MemberRow[]> => {
+  const rows = await db.rows(
+    'SELECT `id`, `citizenid`, `channel_id`, `handle`, `alias`, `status`, ' +
+      '(`left_at` IS NULL) AS live ' +
+      'FROM `mica_darkchat_members` WHERE `channel_id` = ? AND `citizenid` = ? ORDER BY `id`',
+    [channelId, citizenid]
+  );
+  // The alias and handle are sealed to the member and the channel (MICA-432): opened with the
+  // key the harness wrote.
+  const keys = harnessKeys();
+  const open = (row: Record<string, unknown>, column: 'alias' | 'handle'): string =>
+    openSealed(row[column], keys, {
+      table: 'mica_darkchat_members',
+      column,
+      citizenid: String(row.citizenid),
+      scope: [Number(row.channel_id)]
+    });
+  return rows.map((row) => ({
     id: Number(row.id),
-    handle: String(row.handle),
-    alias: String(row.alias),
+    handle: open(row, 'handle'),
+    alias: open(row, 'alias'),
     status: String(row.status),
     live: Number(row.live) === 1
   }));
+};
 
 const channelRow = async (
   id: number
 ): Promise<{ citizenid: string; name: string; code: string; status: string } | null> => {
   const row = await db.row(
-    'SELECT `citizenid`, `name`, `code`, `status` FROM `mica_darkchat` WHERE `id` = ?',
+    'SELECT `citizenid`, `seal_key`, `name`, `code`, `status` FROM `mica_darkchat` WHERE `id` = ?',
     [id]
   );
-  return row
-    ? {
-        citizenid: String(row.citizenid),
-        name: String(row.name),
-        code: String(row.code),
-        status: String(row.status)
-      }
-    : null;
+  if (!row) return null;
+  // The name and code are sealed to the channel (`seal_key`, MICA-432), not to its owner.
+  const open = (column: 'name' | 'code'): string =>
+    openSealed(row[column], harnessKeys(), {
+      table: 'mica_darkchat',
+      column,
+      citizenid: String(row.citizenid),
+      sealKey: String(row.seal_key),
+      scope: []
+    });
+  return {
+    citizenid: String(row.citizenid),
+    name: open('name'),
+    code: open('code'),
+    status: String(row.status)
+  };
 };
 
 /** A well-formed code no channel holds, so a refusal of it is the code's and not its shape's. */
@@ -243,8 +262,19 @@ const unusedCode = async (): Promise<string> => {
     for (let i = 0; i < 8; i += 1) {
       code += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
     }
-    const taken = await db.count('SELECT COUNT(*) FROM `mica_darkchat` WHERE `code` = ?', [code]);
-    if (taken === 0) return code;
+    // Every channel's code, opened (MICA-432): the code is sealed, so SQL cannot compare it.
+    const rows = await db.rows('SELECT `citizenid`, `seal_key`, `code` FROM `mica_darkchat`');
+    const taken = rows.some(
+      (row) =>
+        openSealed(row.code, harnessKeys(), {
+          table: 'mica_darkchat',
+          column: 'code',
+          citizenid: String(row.citizenid),
+          sealKey: String(row.seal_key),
+          scope: []
+        }) === code
+    );
+    if (!taken) return code;
   }
   throw new Error('could not draw a code no channel holds in five tries');
 };

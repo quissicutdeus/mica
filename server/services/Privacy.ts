@@ -8,6 +8,8 @@ import { Database } from '../lib/Database';
 import { AUDIT_LOG_TABLE, AuditLogger } from '../lib/AuditLogger';
 import { declaredServices, type ColumnDef, type ColumnType } from '../lib/defineService';
 import {
+  SEAL_KEY_COLUMN,
+  blindIndexesOf,
   contextColumns,
   encryptedColumnsOf,
   openRow,
@@ -335,7 +337,13 @@ export interface ExportPlan {
 export const planFor = ({ table, column }: OwnedTable): ExportPlan | null => {
   const columns = columnsOf(table);
   if (!columns) return null;
-  const extra = new Set(WITHHELD[table] ?? []);
+  // The server's own lookup and binding columns (MICA-432) — a value's blind index, a row's seal
+  // key — say nothing a player wrote, and a blind index is no use to anyone outside the server.
+  const extra = new Set([
+    ...(WITHHELD[table] ?? []),
+    ...blindIndexesOf(table).map((entry) => entry.index),
+    SEAL_KEY_COLUMN
+  ]);
   const plan: ExportPlan = {
     table,
     owner: column,

@@ -36,6 +36,12 @@ import {
   CONTENT_CIPHER_MARKER_ID,
   KeyringError,
   __aadForTests,
+  blindIndexCandidates,
+  blindIndexFor,
+  blindIndexKeyId,
+  newSealKey,
+  registerBlindIndex,
+  unregisterBlindIndexForTests,
   SEALED_PREFIX,
   UNREADABLE_CONTENT,
   activeKeyId,
@@ -861,5 +867,129 @@ describe('the binding (MICA-431)', () => {
     // The four-byte bound is the one that refused it.
     expect(maxPlaintextChars(16777215)).toBeLessThan(4 * 1024 * 1024);
     expect(sealedLength(maxPlaintextChars(16777215, 1))).toBeLessThanOrEqual(16777215);
+  });
+});
+
+/**
+ * MICA-432: the blind index beside a sealed value something looks up or keeps unique, and the
+ * binding to a row for a table whose owner passes on.
+ */
+describe('blind indexes (MICA-432)', () => {
+  const numbers = {
+    table: 'test_book',
+    column: 'phone',
+    scope: [] as string[],
+    hasUpdatedAt: true,
+    binding: 'device' as const
+  };
+  const index = {
+    table: 'test_book',
+    column: 'phone',
+    index: 'phone_index',
+    scope: ['device_id'],
+    normalize: (value: string) => value.toLowerCase().trimEnd()
+  };
+  beforeEach(() => {
+    registerEncryptedColumn(numbers);
+    registerBlindIndex(index);
+  });
+  afterEach(() => {
+    unregisterBlindIndexForTests('test_book', 'phone');
+    unregisterEncryptedColumnForTests('test_book', 'phone');
+  });
+  const onPhone = { device_id: 'a'.repeat(32) };
+
+  it('is the normalized value, marked plain, on a server that never had a key', async () => {
+    expect(await blindIndexFor(index, onPhone, '555-TAXI ')).toBe('plain:555-taxi');
+    expect(await blindIndexCandidates(index, onPhone, '555-taxi')).toEqual(['plain:555-taxi']);
+    expect(blindIndexKeyId('plain:555-taxi')).toBe('plain');
+    expect(ledger.marker).toBe(false);
+  });
+
+  it('is a keyed digest under the active key, the same for the same value in the same scope', async () => {
+    const key = randomBytes(32);
+    useKeyFile(keyFile([`k1 ${key.toString('base64')}`]));
+    const first = await blindIndexFor(index, onPhone, '555-TAXI');
+    expect(first).toMatch(/^k1\$[0-9a-f]{64}$/);
+    expect(await blindIndexFor(index, onPhone, '555-taxi ')).toBe(first);
+    // Equal only for equal values in one scope: another phone gives an unrelated digest.
+    expect(await blindIndexFor(index, { device_id: 'b'.repeat(32) }, '555-taxi')).not.toBe(first);
+    expect(await blindIndexFor(index, onPhone, '555-0100')).not.toBe(first);
+    // Its own derivation: not an HMAC under the content key as it is.
+    const raw = createHmac('sha256', key)
+      .update(['test_book', 'phone', onPhone.device_id, '555-taxi'].join('\0'))
+      .digest('hex');
+    expect(first).not.toBe(`k1$${raw}`);
+    // And a keyed index is recorded as keyed data, as a sealed value is.
+    expect(ledger.marker).toBe(true);
+    expect(blindIndexKeyId(first)).toBe('k1');
+  });
+
+  it('is looked up by every form a stored one can take: each loaded key, then plain', async () => {
+    useKeyFile(keyFile([`k2 ${b64()}`, `k1 ${b64()}`]));
+    const candidates = await blindIndexCandidates(index, onPhone, '555-taxi');
+    expect(candidates).toHaveLength(3);
+    expect(candidates[0]).toBe(await blindIndexFor(index, onPhone, '555-taxi'));
+    expect(candidates[0]).toMatch(/^k2\$/);
+    expect(candidates[1]).toMatch(/^k1\$/);
+    expect(candidates[2]).toBe('plain:555-taxi');
+  });
+
+  it('fails closed: refused key file, or no key over a database that holds keyed data', async () => {
+    useKeyFile(keyFile([`not a key`]));
+    await expect(blindIndexFor(index, onPhone, '1')).rejects.toThrow(/unusable/);
+    await expect(blindIndexCandidates(index, onPhone, '1')).rejects.toThrow(/unusable/);
+    useKeyFile('');
+    resetContentCipherForTests();
+    ledger.marker = true;
+    await expect(blindIndexFor(index, onPhone, '1')).rejects.toThrow(/missing/);
+    await expect(blindIndexCandidates(index, onPhone, '1')).rejects.toThrow(/missing/);
+  });
+
+  it('refuses a row without its scope, an index over a plaintext column, and a second one', async () => {
+    await expect(blindIndexCandidates(index, {}, '1')).rejects.toThrow(/device_id/);
+    expect(() => registerBlindIndex({ ...index, table: 'test_plain' })).toThrow(/not sealed/);
+    expect(() => registerBlindIndex(index)).toThrow(/already has/);
+    expect(() => registerBlindIndex({ ...index, column: 'phone', scope: ['phone'] })).toThrow();
+  });
+});
+
+describe('the row binding (MICA-432)', () => {
+  const names = {
+    table: 'test_rooms',
+    column: 'name',
+    scope: [] as string[],
+    hasUpdatedAt: true,
+    binding: 'row' as const
+  };
+  beforeEach(() => registerEncryptedColumn(names));
+  afterEach(() => unregisterEncryptedColumnForTests('test_rooms', 'name'));
+
+  it("binds to the row's seal key, under its own domain, and not to its owner", async () => {
+    useKeyFile(keyFile([`k1 ${b64()}`]));
+    expect(contextColumns(encryptedColumn('test_rooms', 'name')!)).toEqual(['seal_key']);
+    const row = { citizenid: 'FIRST_OWNER', seal_key: 'k'.repeat(32), name: 'Docks' };
+    const context = contentContext(encryptedColumn('test_rooms', 'name')!, row);
+    expect(__aadForTests(context)).toBe(
+      `micaOS row content v1\0test_rooms\0name\0row\0${'k'.repeat(32)}`
+    );
+    const sealed = await sealRow('test_rooms', row);
+    // The owner passes on: still opens.
+    expect(openRow('test_rooms', { ...sealed, citizenid: 'HEIR' }).name).toBe('Docks');
+    // Another row's key: does not.
+    expect(openRow('test_rooms', { ...sealed, seal_key: 'j'.repeat(32) }).name).toBe(
+      UNREADABLE_CONTENT
+    );
+  });
+
+  it('refuses to seal or open a row with no seal key', () => {
+    expect(() =>
+      contentContext(encryptedColumn('test_rooms', 'name')!, { seal_key: null })
+    ).toThrow(/no seal_key/);
+    expect(() =>
+      registerEncryptedColumn({ ...names, column: 'topic', scope: ['seal_key'] })
+    ).toThrow(/seal_key/);
+    expect(newSealKey()).toMatch(/^[0-9a-f]{32}$/);
+    expect(newSealKey()).not.toBe(newSealKey());
   });
 });

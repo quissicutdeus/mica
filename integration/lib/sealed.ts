@@ -21,6 +21,9 @@ import { createDecipheriv } from 'node:crypto';
  * A phone's own table (MICA-431) is bound to the phone instead: `micaOS device content v1`,
  * table, column, `device` and the row's `device_id` — or, on a row with no phone, `citizen` and
  * its citizenid — then the scope. Say which by passing the row's `deviceId`, null included.
+ *
+ * A table whose rows pass between owners (MICA-432) is bound to the row: `micaOS row content v1`,
+ * table, column, `row` and the row's `seal_key`, then the scope. Pass `sealKey` for those.
  */
 export const SEALED_PREFIX = '$mc1$';
 
@@ -30,6 +33,7 @@ const TAG_BYTES = 16;
 const KEY_BYTES = 32;
 const AAD_DOMAIN = 'micaOS content v1';
 const AAD_DEVICE_DOMAIN = 'micaOS device content v1';
+const AAD_ROW_DOMAIN = 'micaOS row content v1';
 
 export interface SealedContext {
   table: string;
@@ -40,11 +44,16 @@ export interface SealedContext {
    * the character; null or `''` on a phone's table whose row is on no phone.
    */
   deviceId?: string | null;
+  /** The row's `seal_key`, on a table sealed to its rows (MICA-432). */
+  sealKey?: string;
   scope: readonly (string | number | null)[];
 }
 
 /** The AAD's owner half: the citizenid, or the phone's kind of owner and its id. */
 const ownerOf = (context: SealedContext): string[] => {
+  if (context.sealKey !== undefined) {
+    return [AAD_ROW_DOMAIN, context.table, context.column, 'row', context.sealKey];
+  }
   if (context.deviceId === undefined)
     return [AAD_DOMAIN, context.table, context.column, context.citizenid];
   const phone = context.deviceId !== null && context.deviceId !== '';

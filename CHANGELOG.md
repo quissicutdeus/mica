@@ -47,6 +47,47 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply`, then `micacrypt backfill --apply`, to encrypt contact
+numbers, Dark Chat, mail headers, thread names, places and invoices
+(MICA-432).** With a content key set, these are now sealed as well:
+
+- a contact's number and photo;
+- a Dark Chat channel's name and join code, and each member's alias and handle,
+  including who stands behind an alias;
+- a mail's subject, sender and sender address;
+- a group thread's name;
+- a saved place's coordinates;
+- an invoice's sender label and memo.
+
+A value the server still has to look up or keep unique gets a blind index next
+to it. That covers a contact's number, a join code, and an alias or handle. The
+index is a keyed hash, scoped to the phone or the channel, so the same number on
+two phones reads differently in a dump.
+
+Migration `0014_private_lookups_get_blind_indexes` makes the schema changes:
+
+- **Index columns:** it adds `phone_index` to `mica_contacts`, replacing its
+  `citizenid_phone` key. It adds `code_index` to `mica_darkchat`, and
+  `alias_index` and `handle_index` to `mica_darkchat_members`, and moves the
+  unique keys onto them.
+- **Seal keys:** it adds a per-row `seal_key` to `mica_darkchat` and to
+  `mica_messages_conversations`.
+- **Places:** it moves `mica_places`' `x`, `y` and `z` into one `position`
+  column.
+- **Contact photos:** it retypes `mica_contacts.avatar` to text.
+- **Widths:** it widens the newly sealed columns.
+
+A run that stops part-way is finished by the next one.
+
+`micacrypt backfill --apply` then seals the values and re-keys their indexes,
+and `micacrypt status` counts what is left. Run the backfill again after
+rotating keys. A server with no content key stores all of this unencrypted, as
+before.
+
+One edge case: while a key is being enabled or rotated, and before the backfill
+finishes, two contacts with the same number could both be saved. The backfill
+reports any such pair.
+
 **Run `micaschema apply`, then `micacrypt backfill --apply`, to encrypt notes,
 contacts, the call log, places, photos and notifications (MICA-431).**
 
@@ -1772,6 +1813,11 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**A contact's number can no longer be used as a filter (MICA-432).** It is
+sealed now, and the server looks it up through a keyed index, so `phone` is no
+longer a filter a `contacts` read accepts. Fetch the contacts and match on the
+phone instead.
 
 **`useSearchProvider` now needs the `search` permission (MICA-433).** The shell
 hands every search provider the player's query one keystroke at a time while the

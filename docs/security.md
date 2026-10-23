@@ -561,26 +561,34 @@ messages can. What it stops is the far commoner leak: a FiveM database backup
 left on a share, pasted into a support thread, or sold, read by someone who
 never had the server (MICA-165).
 
-With `mica_content_key_file` set, twenty columns are sealed with AES-256-GCM in
-`server/lib/contentCipher.ts` before they reach SQL, and opened after every
-read. Five came with MICA-165, the bodies of conversations; fifteen more came
-with MICA-431, a phone's own private content:
+With `mica_content_key_file` set, thirty-three columns are sealed with
+AES-256-GCM in `server/lib/contentCipher.ts` before they reach SQL, and opened
+after every read. Five came with MICA-165, the bodies of conversations; fifteen
+more came with MICA-431, a phone's own private content; thirteen more with
+MICA-432, the names, numbers and codes that identify who and what:
 
-| Column                                           | What it holds                            | Bound to, besides the table and column    |
-| ------------------------------------------------ | ---------------------------------------- | ----------------------------------------- |
-| `mica_messages.message`                          | A text message                           | `citizenid`, `conversation_id`            |
-| `mica_blabber_dms.body`                          | A direct message, in any social app      | `citizenid`, `from_account`, `to_account` |
-| `mica_mail.content`                              | An email's body                          | `citizenid`; a mailbox is its own thread  |
-| `mica_darkchat_messages.body`                    | A Dark Chat line                         | `citizenid`, `channel_id`                 |
-| `mica_darkchat_messages.bot_alias`               | The alias an export's line is signed as  | `citizenid`, `channel_id`                 |
-| `mica_reports.target_preview`                    | The snapshot of a reported message or DM | `citizenid`, `target_table`, `target_id`  |
-| `mica_reports.note`                              | The reporter's own note                  | `citizenid`, `target_table`, `target_id`  |
-| `mica_notes.title`, `.content`                   | A note                                   | the phone, `device_id`                    |
-| `mica_contacts.firstname`, `.lastname`, `.email` | A contact's name and email               | the phone, `device_id`                    |
-| `mica_phone_call_log.number`                     | The number of a call                     | the phone, `device_id`                    |
-| `mica_places.name`, `.street_label`              | A saved place                            | the phone, `device_id`                    |
-| `mica_media.data`, `.thumbnail`, `.alt_text`     | A photo, its thumbnail and alt text      | the phone, `device_id`                    |
-| `mica_notifications.title`, `.body`              | A notification                           | the phone, `device_id`                    |
+| Column                                            | What it holds                                                  | Bound to, besides the table and column                     |
+| ------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------- |
+| `mica_messages.message`                           | A text message                                                 | `citizenid`, `conversation_id`                             |
+| `mica_blabber_dms.body`                           | A direct message, in any social app                            | `citizenid`, `from_account`, `to_account`                  |
+| `mica_mail.content`                               | An email's body                                                | `citizenid`; a mailbox is its own thread                   |
+| `mica_darkchat_messages.body`                     | A Dark Chat line                                               | `citizenid`, `channel_id`                                  |
+| `mica_darkchat_messages.bot_alias`                | The alias an export's line is signed as                        | `citizenid`, `channel_id`                                  |
+| `mica_reports.target_preview`                     | The snapshot of a reported message or DM                       | `citizenid`, `target_table`, `target_id`                   |
+| `mica_reports.note`                               | The reporter's own note                                        | `citizenid`, `target_table`, `target_id`                   |
+| `mica_notes.title`, `.content`                    | A note                                                         | the phone, `device_id`                                     |
+| `mica_contacts.firstname`, `.lastname`, `.email`  | A contact's name and email                                     | the phone, `device_id`                                     |
+| `mica_phone_call_log.number`                      | The number of a call                                           | the phone, `device_id`                                     |
+| `mica_places.name`, `.street_label`               | A saved place                                                  | the phone, `device_id`                                     |
+| `mica_media.data`, `.thumbnail`, `.alt_text`      | A photo, its thumbnail and alt text                            | the phone, `device_id`                                     |
+| `mica_mail.subject`, `.sender`, `.sender_address` | An email's subject and sender                                  | `citizenid`; a mailbox is its own thread                   |
+| `mica_invoices.memo`, `.from_label`               | An invoice's memo and who it is from                           | `citizenid`                                                |
+| `mica_contacts.phone`, `.avatar`                  | A contact's number and picture                                 | the phone, `device_id` (the number also has a blind index) |
+| `mica_places.position`                            | A saved place's x, y and z, merged into one sealed JSON column | the phone, `device_id`                                     |
+| `mica_messages_conversations.name`                | A thread's name                                                | the thread's `seal_key`                                    |
+| `mica_darkchat.name`, `.code`                     | A channel's name and join code                                 | the channel's `seal_key` (the code also has a blind index) |
+| `mica_darkchat_members.alias`, `.handle`          | A member's alias and handle                                    | `citizenid`, `channel_id` (both also have a blind index)   |
+| `mica_notifications.title`, `.body`               | A notification                                                 | the phone, `device_id`                                     |
 
 **A phone's data is bound to the phone, not the character** (MICA-431). A
 handover moves a phone's rows to its new holder by rewriting `citizenid` on
@@ -621,14 +629,14 @@ cannot do. `defineService` refuses an `encryptionScope` column that is
 client-writable, because a scope column rewritten after the fact would strand
 the ciphertext bound to it.
 
-What stays readable in a dump, deliberately: who talked to whom and when, mail
-subjects and senders (system-written), Blabs (public posts), attachments, and
-every other table, which includes columns MICA-432 has yet to cover. Photos,
-their thumbnails and alt text, and a notification's title and body are no longer
-among them. Nothing in micaOS searches these bodies in SQL, so none of that had
-to change: Home search (MICA-248) filters what the phone already has, and
-retention (MICA-167) and the purges delete by age and status without reading a
-body.
+What stays readable in a dump, deliberately: who talked to whom and when, Blabs
+(public posts), attachments, and every other table. Names, numbers, codes, mail
+subjects and senders, invoice memos, saved places, photos and notification text
+are no longer among them. A mail's subject and sender used to be left readable
+as system-written; MICA-432 reversed that, since a subject says what a message
+is about and a sender says who it came from. Home search (MICA-248) filters what
+the phone already has, and retention (MICA-167) and the purges delete by age and
+status without reading a body.
 
 Six edges, each chosen rather than overlooked:
 
@@ -675,6 +683,60 @@ Six edges, each chosen rather than overlooked:
 **Lose the key and every body sealed with it is gone.** Back the key file up
 somewhere that is not the database backup.
 
+**A thread or a channel is bound to its own key** (MICA-432). A Dark Chat
+channel or a Messages thread is not the character's alone: its owner can change,
+and `citizenid` is the wrong thing to bind a name or a join code to. Such a
+table (`encryptionBinding: 'row'`) draws a random `seal_key` for each row when
+it is written, never rewrites it, and binds its sealed values to it, under a
+domain of their own. A row written before its table had the column is given one
+by migration 0014 before anything is sealed; a value is never sealed to an empty
+key, which every such row would share. Child tables are sealed with their own
+scope: a Dark Chat member's alias and handle are bound to the member and the
+channel (`channel_id`), as a Dark Chat line is.
+
+### Blind indexes: looking up what you cannot read
+
+A contact's number is unique per phone, a Dark Chat join code is how a channel
+is found, and an alias and a handle are unique within a channel. Sealing the
+value breaks each of those lookups, since every seal of the same text differs. A
+**blind index** keeps them: a column beside the sealed value holding an HMAC of
+it, which `WHERE` and `UNIQUE` can use and which reveals nothing by itself.
+
+- **The key is derived, and separate.** It is HMAC-SHA-256 under an index key
+  derived from the content key for the purpose `'micaOS blind index v1'`
+  (`server/lib/contentCipher.ts`), so it is not the sealing key and not the log
+  salt (`who()`). A leaked index does not open a sealed value, and the sealing
+  key is never used as a digest key.
+- **The form is `<kid>$<64 hex>`**, the key id then the digest. It is scoped
+  like the AAD: the value is digested together with the columns it is unique
+  within (the phone's `device_id` for a contact, the `channel_id` for an alias),
+  so the same number on two phones gives two unrelated indexes. A dump cannot
+  show that two players saved the same number.
+- **With no key the index is `plain:<normalized>`.** It holds what the plaintext
+  lookup column held before, no more, and cannot be mistaken for a keyed one. It
+  **fails closed exactly as sealing does**: once anything has been sealed, a
+  missing or unusable key file refuses the write and the lookup rather than
+  writing `plain:` beside keyed rows or missing a row. A keyed index records the
+  enabled marker first, as a seal does.
+- **A lookup tries every loaded key id plus `plain:`**, so a row is found
+  whichever key indexed it, mid-rotation included. `micacrypt backfill --apply`
+  re-indexes to the active key, and `micacrypt status` counts index rows not on
+  it. Remove an old key line only when that count is zero.
+- **What a number's uniqueness compares** is what the column's collation did
+  before it was sealed: case-blind, trailing spaces ignored. `555-0100` and
+  `5550100` are still two numbers, as the player typed them
+  (`server/lib/contactNumbers.ts`).
+- **An add-on can no longer filter on `contacts.phone`.** A client cannot filter
+  over a sealed value, so the field is not `clientFilterable`; the address-book
+  finds a contact through the server.
+
+**An accepted race.** Between enabling a key, or rotating one, and the backfill
+finishing, some rows carry a `plain:` or older index. A lookup finds them, but a
+uniqueness check compares indexes, so a duplicate contact number written in that
+window under the new key can slip past one still indexed the old way. The
+backfill reports it when it re-indexes. It lasts until
+`micacrypt backfill --apply` has run.
+
 ## Dark Chat: anonymous to players, not to staff
 
 Dark Chat (MICA-254) hides who is who from the other members of a channel. It
@@ -708,17 +770,20 @@ channel's owner, so a report would name the owner as its author.
 **What the database holds.** Every member row and message row carries its
 player's citizenid, because ownership is how every micaOS table is authorized
 and swept. A message body is sealed under the content key when one is set
-(above), bound to its channel. A message is deleted permanently once it is past
-`mica_darkchat_retention` (24 hours by default, with no off switch), except one
-under an open report, which waits for the report to be resolved, and one staff
-have taken down, which waits for as long as it is `moderated`. The same sweep
-deletes the row that ties a member's alias to their citizenid once they have
-left and the window has passed, and a closed channel once nobody's row is left
-in it. A `removed` member's row is kept while the channel lives, because it is
-what stops them joining again. Every read filters to the window, so a row the
-sweep has not reached yet is never shown, and the player data export filters the
-same way. The export leaves out the join code, which is a credential for the
-channel, not the player's data.
+(above), bound to its channel, and so are the channel's name and join code, a
+member's alias and handle, and an export's alias, so a dump shows a table of
+ciphertext and the citizenid beside it, not who is called what or how to join.
+The join code and the alias and handle are found through blind indexes (above).
+A message is deleted permanently once it is past `mica_darkchat_retention` (24
+hours by default, with no off switch), except one under an open report, which
+waits for the report to be resolved, and one staff have taken down, which waits
+for as long as it is `moderated`. The same sweep deletes the row that ties a
+member's alias to their citizenid once they have left and the window has passed,
+and a closed channel once nobody's row is left in it. A `removed` member's row
+is kept while the channel lives, because it is what stops them joining again.
+Every read filters to the window, so a row the sweep has not reached yet is
+never shown, and the player data export filters the same way. The export leaves
+out the join code, which is a credential for the channel, not the player's data.
 
 **Accepted.** Anyone with database access can tie an alias to a player while
 that player is in the channel, until the window after they leave, and for as
@@ -1257,13 +1322,14 @@ by this list until someone re-weighs it.
   columns (the lock-screen passcode hash and salt), columns naming another
   player (a report's target and preview, an invoice's payee, a conversation's
   other party), and the audit ledger, whose rows carry what admins read of other
-  players; media bytes become their size, the plaintext size even when the photo
-  is sealed (`plaintextBytesSql`), not the length of the stored ciphertext. Each
-  owned table's exported columns are pinned by a test, so exposing a new column
-  is a decision, not a default. Both actions are audit-logged with counts and no
-  content, and an export is never posted to the staff Discord. The rate limits
-  (a few exports a minute, one completed delete an hour) are in memory, so a
-  resource restart resets them.
+  players, plus the blind-index and `seal_key` columns, which are lookup and
+  sealing machinery and not the player's data; media bytes become their size,
+  the plaintext size even when the photo is sealed (`plaintextBytesSql`), not
+  the length of the stored ciphertext. Each owned table's exported columns are
+  pinned by a test, so exposing a new column is a decision, not a default. Both
+  actions are audit-logged with counts and no content, and an export is never
+  posted to the staff Discord. The rate limits (a few exports a minute, one
+  completed delete an hour) are in memory, so a resource restart resets them.
 - **A hosted photo can outlive its character when the database deletes the rows
   (MICA-292).** With an image host configured (MICA-243), a photo is a public
   URL, so a file left behind is a privacy leak and not just a storage bill.

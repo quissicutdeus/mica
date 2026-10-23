@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineService } from '../lib/defineService';
+import { storablePlaintext } from '../lib/contentCipher';
 import { InvoiceRepository, type InvoiceRow } from '../repositories/InvoiceRepository';
 import { invoicesContract } from '@mica/shared/contracts/invoices';
 import { buildDeepLink } from '@mica/shared/deepLink';
@@ -42,10 +43,21 @@ export const invoices = defineService<InvoiceRow, typeof invoicesContract>({
   contract: invoicesContract,
   access: { read: 'owner', write: 'server' },
   statuses: ['active', 'paid', 'declined', 'expired', 'deleted'],
+  /**
+   * Who billed and what for are sealed at rest (MICA-432), bound to the billed player: an
+   * invoice row is its own thread, as a mail is.
+   */
+  encryptionScope: [],
   schema: {
-    from_label: { type: 'string', length: 64, notNull: true, clientWritable: false },
+    from_label: {
+      type: 'string',
+      length: 64,
+      notNull: true,
+      clientWritable: false,
+      encrypted: true
+    },
     amount: { type: 'int', notNull: true, clientWritable: false },
-    memo: { type: 'string', length: 140, clientWritable: false },
+    memo: { type: 'string', length: 140, clientWritable: false, encrypted: true },
     society: { type: 'string', length: 64, clientWritable: false },
     payee: { type: 'string', citizenId: true, clientWritable: false },
     resource: { type: 'string', length: 64, notNull: true, clientWritable: false },
@@ -196,7 +208,14 @@ export const createInvoice = async (
   cbs: InvoiceCallbacks = {}
 ): Promise<number> => {
   const expires_at = nowSeconds() + expiryDays() * DAY_SECONDS;
-  const id = await repo.create({ ...input, expires_at, paid_at: null } as Partial<InvoiceRow>);
+  // Another resource's words, sealed since MICA-432: never refused for how they start.
+  const id = await repo.create({
+    ...input,
+    from_label: await storablePlaintext(input.from_label, 64),
+    memo: input.memo === null ? null : await storablePlaintext(input.memo, 140),
+    expires_at,
+    paid_at: null
+  } as Partial<InvoiceRow>);
   rememberCallbacks(id, input.resource, cbs);
 
   const outcome = appEventChannel('bank').push(

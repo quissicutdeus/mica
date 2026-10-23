@@ -84,12 +84,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * `runWedgedPairsMigration` to 459, and MICA-330's `runMouthKeyMigration`s (18 on each shape)
  * to 495, and MICA-388's `runApplyCreatesMissingTables` (9 on each shape, over a current ledger
  * and over an empty one) to 531, and MICA-389's `runApplyFinishesHalfCreated` (11 on each
- * shape) to 553 — so the margin here is eight again.
+ * shape) to 553, and MICA-432's `runBlindIndexMigration`s (10 on each shape) to 573 — so the
+ * margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 545;
+const MINIMUM_CHECKS = 565;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -854,10 +855,15 @@ const regressContactKey = async (connection) => {
   await connection.query(
     'ALTER TABLE mica_contacts DROP KEY device_phone_unique, DROP COLUMN phone_key'
   );
-  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [
-    CONTACT_KEY_MIGRATION
+  // 0014 rebuilds the key 0010 makes onto the number's blind index (MICA-432): a database from
+  // before 0010 is from before 0014 too, so both are pending, as they would be in the world.
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id IN (?, ?)', [
+    CONTACT_KEY_MIGRATION,
+    BLIND_INDEX_MIGRATION
   ]);
 };
+
+const BLIND_INDEX_MIGRATION = '0014_private_lookups_get_blind_indexes';
 
 /* --------------------------------- MICA-284: the number follows the phone */
 
@@ -1255,10 +1261,11 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
   );
 
   const run = await server.runPendingMigrations();
-  check(`${label}: the migration applied, and 0008 and 0010 after it`, run.applied, [
+  check(`${label}: the migration applied, and 0008, 0010 and 0014 after it`, run.applied, [
     DATA_MIGRATION,
     RENAME_MIGRATION,
-    CONTACT_KEY_MIGRATION
+    CONTACT_KEY_MIGRATION,
+    BLIND_INDEX_MIGRATION
   ]);
   check(`${label}: and failed nothing`, run.failed, null);
 
@@ -1784,6 +1791,220 @@ const runReimportOverFlattenedBaseline = async ({ connection, server }) => {
   );
 };
 
+/* --------------------- MICA-432: blind indexes, seal keys, a place's position */
+
+/**
+ * Put back what 0014 changes: the unique keys on the plaintext columns, no index or seal-key
+ * columns, a place's three coordinates, the blob avatar, the narrow widths. Reconstructed by
+ * hand from the DDL as it shipped, as the other regressions here are.
+ */
+const regressBlindIndexes = async (connection) => {
+  await connection.query(
+    'ALTER TABLE mica_contacts DROP KEY device_phone_unique, DROP COLUMN phone_key, ' +
+      'DROP COLUMN phone_index'
+  );
+  await connection.query(
+    'ALTER TABLE mica_contacts MODIFY phone varchar(20) NOT NULL, ' +
+      'MODIFY avatar mediumblob DEFAULT NULL, ' +
+      "ADD COLUMN phone_key varchar(20) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' " +
+      'THEN `phone` ELSE NULL END) VIRTUAL, ' +
+      'ADD UNIQUE KEY device_phone_unique (device_id, phone_key), ADD KEY phone (phone), ' +
+      'ADD KEY citizenid_phone (citizenid, phone)'
+  );
+  await connection.query(
+    'ALTER TABLE mica_darkchat DROP KEY code_index, DROP COLUMN code_index, DROP COLUMN seal_key, ' +
+      'MODIFY name varchar(32) NOT NULL, MODIFY code varchar(8) NOT NULL, ADD UNIQUE KEY code (code)'
+  );
+  await connection.query(
+    'ALTER TABLE mica_darkchat_members DROP KEY channel_alias, DROP KEY handle_index, ' +
+      'DROP COLUMN alias_key, DROP COLUMN alias_index, DROP COLUMN handle_index, ' +
+      'MODIFY alias varchar(24) NOT NULL, MODIFY handle varchar(16) NOT NULL'
+  );
+  await connection.query(
+    'ALTER TABLE mica_darkchat_members ADD COLUMN alias_key varchar(24) GENERATED ALWAYS AS ' +
+      '(CASE WHEN `left_at` IS NULL THEN `alias` ELSE NULL END) VIRTUAL, ' +
+      'ADD UNIQUE KEY channel_alias (channel_id, alias_key), ADD UNIQUE KEY handle (handle)'
+  );
+  await connection.query(
+    'ALTER TABLE mica_messages_conversations DROP COLUMN seal_key, MODIFY name varchar(50) DEFAULT NULL'
+  );
+  await connection.query(
+    'ALTER TABLE mica_places DROP COLUMN position, ADD COLUMN x float DEFAULT NULL, ' +
+      'ADD COLUMN y float DEFAULT NULL, ADD COLUMN z float DEFAULT NULL'
+  );
+  await connection.query(
+    'ALTER TABLE mica_invoices MODIFY from_label varchar(64) NOT NULL, MODIFY memo varchar(140) DEFAULT NULL'
+  );
+  await connection.query(
+    'ALTER TABLE mica_mail MODIFY sender varchar(100) NOT NULL, ' +
+      'MODIFY sender_address varchar(100) DEFAULT NULL, MODIFY subject varchar(255) NOT NULL'
+  );
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [
+    BLIND_INDEX_MIGRATION
+  ]);
+};
+
+/**
+ * MICA-432's 0014, executed rather than read: the schema from before it, a row on every table it
+ * touches, and the real runner. The end state is held to a fresh import column for column and
+ * key for key; every value it filled is what the server would have written with no key; no
+ * `updated_at` moved; and the keys it moved still refuse what they refused.
+ */
+const runBlindIndexMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} blind indexes`;
+  step(`${schemaFile} — MICA-432 ${BLIND_INDEX_MIGRATION}, on a ${variant} database`);
+
+  const fresh = async (database) => {
+    await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+    await connection.query(`CREATE DATABASE \`${database}\``);
+    await connection.changeUser({ database });
+    if (hasPlayers) await connection.query(PLAYERS_TABLE);
+    await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  };
+  await fresh(`mica_blind_shape_${variant}`);
+  const shape = {
+    columns: (await wholeSchema(connection)).toSorted(),
+    keys: await allIndexes(connection)
+  };
+
+  await fresh(`mica_blind_${variant}`);
+  await regressBlindIndexes(connection);
+  const A = hasPlayers ? 'CIT_A' : SWEEP_LIVE;
+  const PHONE = 'a'.repeat(32);
+  const AT = '2026-01-01 00:00:00';
+  const AVATAR = 'data:image/png;base64,AAAA';
+  await connection.query(
+    'INSERT INTO mica_contacts (citizenid, device_id, firstname, phone, avatar, updated_at) ' +
+      'VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, NULL, ?)',
+    [A, PHONE, 'Taxi', '555-TAXI ', AVATAR, AT, A, PHONE, 'Mom', '5550100', AT]
+  );
+  const [channel] = await connection.query(
+    'INSERT INTO mica_darkchat (citizenid, name, code, updated_at) VALUES (?, ?, ?, ?), (?, ?, ?, ?)',
+    [A, 'Docks', 'ABCD2345', AT, A, 'Pier', 'EFGH6789', AT]
+  );
+  await connection.query(
+    'INSERT INTO mica_darkchat_members (channel_id, citizenid, alias, handle) VALUES (?, ?, ?, ?)',
+    [channel.insertId, A, 'Ghost', 'HANDLEHANDLE2345']
+  );
+  await connection.query(
+    'INSERT INTO mica_messages_conversations (citizenid, is_group, name, updated_at) ' +
+      'VALUES (?, 1, ?, ?), (?, 1, NULL, ?)',
+    [A, 'Crew', AT, A, AT]
+  );
+  // Coordinates a float holds only past six significant digits, which `JSON_OBJECT` over a
+  // float rounds to (-1037.2342 to -1037.23, 99999.99 to 100000); and a row with only `x`.
+  await connection.query(
+    'INSERT INTO mica_places (citizenid, device_id, name, x, y, z, updated_at) ' +
+      'VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, NULL, NULL, ?)',
+    [A, PHONE, 'Home', -1037.2342, 99999.99, 0.1234567, AT, A, PHONE, 'Half', 5.5, AT]
+  );
+  // A run that stopped between adding `code_index`'s key and dropping `code`'s: both are there.
+  await connection.query(
+    'ALTER TABLE mica_darkchat ADD COLUMN code_index varchar(81) DEFAULT NULL AFTER code'
+  );
+  await connection.query(
+    "UPDATE mica_darkchat SET code_index = CONCAT('plain:', code), updated_at = updated_at"
+  );
+  await connection.query('ALTER TABLE mica_darkchat ADD UNIQUE KEY code_index (code_index)');
+  check(
+    `${label}: a run stopped half-way through moving the code's key left both keys`,
+    (await allIndexes(connection)).filter((key) => key.startsWith('mica_darkchat.code')),
+    ['mica_darkchat.code (unique)', 'mica_darkchat.code_index (unique)']
+  );
+
+  const run = await server.runPendingMigrations();
+  check(
+    `${label}: 0014 applies, alone, and fails nothing`,
+    [run.applied, run.failed],
+    [[BLIND_INDEX_MIGRATION], null]
+  );
+  check(
+    `${label}: every column a fresh import has, type, nullability and collation`,
+    (await wholeSchema(connection)).toSorted(),
+    shape.columns
+  );
+  check(`${label}: and every key`, await allIndexes(connection), shape.keys);
+
+  const [[taxi]] = await connection.query(
+    "SELECT phone_index, avatar, CAST(updated_at AS CHAR) AS at FROM mica_contacts WHERE firstname = 'Taxi'"
+  );
+  const [[member]] = await connection.query(
+    'SELECT alias_index, handle_index FROM mica_darkchat_members LIMIT 1'
+  );
+  const [codes] = await connection.query('SELECT code_index FROM mica_darkchat ORDER BY id');
+  check(
+    `${label}: each index is what the server writes with no key: plain, and as it compares`,
+    [taxi.phone_index, member.alias_index, member.handle_index, codes.map((c) => c.code_index)],
+    [
+      'plain:555-taxi',
+      'plain:ghost',
+      'plain:HANDLEHANDLE2345',
+      ['plain:ABCD2345', 'plain:EFGH6789']
+    ]
+  );
+  const [keys] = await connection.query(
+    'SELECT seal_key FROM mica_darkchat UNION ALL SELECT seal_key FROM mica_messages_conversations'
+  );
+  const drawn = keys.map((row) => String(row.seal_key));
+  check(
+    `${label}: every channel and thread has a seal key of its own`,
+    [drawn.length, drawn.every((key) => /^[0-9a-f]{32}$/.test(key)), new Set(drawn).size],
+    [4, true, 4]
+  );
+  const [placed] = await connection.query('SELECT name, position FROM mica_places ORDER BY id');
+  const home = JSON.parse(String(placed[0].position));
+  const half = JSON.parse(String(placed[1].position));
+  // What the float holds, to the double it is: within a millionth, where six digits are off by
+  // thousandths and more.
+  const near = (a, b) => typeof a === 'number' && Math.abs(a - Math.fround(b)) < 1e-6;
+  check(
+    `${label}: a place's coordinates moved into its position as doubles, a missing one as null`,
+    [near(home.x, -1037.2342), near(home.y, 99999.99), near(home.z, 0.1234567), half],
+    [true, true, true, { x: 5.5, y: null, z: null }]
+  );
+  const [stamps] = await connection.query(
+    'SELECT CAST(updated_at AS CHAR) AS at FROM mica_contacts UNION ALL ' +
+      'SELECT CAST(updated_at AS CHAR) FROM mica_darkchat UNION ALL ' +
+      'SELECT CAST(updated_at AS CHAR) FROM mica_messages_conversations UNION ALL ' +
+      'SELECT CAST(updated_at AS CHAR) FROM mica_places'
+  );
+  check(
+    `${label}: nothing it filled reads as edited: no updated_at moved, and the avatar is the same text`,
+    [stamps.every((row) => row.at === AT), String(taxi.avatar)],
+    [true, AVATAR]
+  );
+  check(
+    `${label}: the moved keys still refuse a second live number on a phone, and a live alias`,
+    [
+      await rejects(() =>
+        connection.query(
+          'INSERT INTO mica_contacts (citizenid, device_id, firstname, phone, phone_index) ' +
+            "VALUES (?, ?, 'Again', 'x', 'plain:555-taxi')",
+          [A, PHONE]
+        )
+      ),
+      await rejects(() =>
+        connection.query(
+          'INSERT INTO mica_darkchat_members (channel_id, citizenid, alias, handle, alias_index, ' +
+            "handle_index) VALUES (?, 'OTHER', 'x', 'y', 'plain:ghost', 'plain:Z')",
+          [channel.insertId]
+        )
+      )
+    ],
+    ['ER_DUP_ENTRY', 'ER_DUP_ENTRY']
+  );
+
+  const settled = await wholeSchema(connection);
+  await server.migrations.find((m) => m.id === BLIND_INDEX_MIGRATION).up();
+  const second = await server.runPendingMigrations();
+  check(
+    `${label}: running up() again changes nothing, and a second run applies nothing`,
+    [await wholeSchema(connection), second.applied],
+    [settled, []]
+  );
+};
+
 /**
  * MICA-335's 0010, run the way an owner runs it: `micaschema apply` (`runApply`), so the
  * migration and then the additive pass, on a database that predates all three of MICA-335's
@@ -1961,10 +2182,13 @@ const runContactKeyMigration = async ({ connection, schemaFile, hasPlayers, serv
   );
 
   step(`${schemaFile} — what device_phone_unique allows and refuses`);
+  // The key is on the number's blind index since MICA-432, which the server writes beside the
+  // number: here its no-key form, as a server with no content key writes it.
   const save = (device, status = 'active') =>
     connection.query(
-      'INSERT INTO mica_contacts (citizenid, device_id, firstname, phone, status) VALUES (?, ?, ?, ?, ?)',
-      [A, device, 'Again', '5550100', status]
+      'INSERT INTO mica_contacts (citizenid, device_id, firstname, phone, phone_index, status) ' +
+        'VALUES (?, ?, ?, ?, ?, ?)',
+      [A, device, 'Again', '5550100', 'plain:5550100', status]
     );
   check(
     `${label}: a second live contact with a number the device has is refused`,
@@ -3904,6 +4128,15 @@ const main = async () => {
     // MICA-335. 0010 through `micaschema apply`, on both shapes; 0002's scenario runs it too.
     await runContactKeyMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runContactKeyMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-432. 0014 through the runner, on both shapes, then what its moved keys refuse.
+    await runBlindIndexMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runBlindIndexMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

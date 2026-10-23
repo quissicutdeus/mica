@@ -78,7 +78,7 @@ const FLOW_CHECKS = {
   groupRing: { standalone: 17, qb: 15 },
   text: { standalone: 15, qb: 15 },
   invoice: { standalone: 14, qb: 14 },
-  refusals: { standalone: 9, qb: 9 },
+  refusals: { standalone: 12, qb: 12 },
   reconnect: { standalone: 8, qb: 8 },
   createCall: { standalone: 25, qb: 25 },
   micacall: { standalone: 15, qb: 15 },
@@ -1069,6 +1069,28 @@ const runRefusals = async (shape, numbers) => {
     (await shape.rows('SELECT `citizenid` FROM `mica_contacts` WHERE `id` = ?', [contact.id]))[0]
       ?.citizenid,
     shape.citizenOf(PEOPLE[1])
+  );
+
+  // MICA-432: the number is found by its blind index — here its no-key form, as this harness
+  // loads no key — and the same number again, as the index compares it, is refused end to end.
+  step(`${kind}: 1 saves the same number again, and reads it back`);
+  check(
+    `${kind}: the number's blind index is beside it`,
+    (await shape.rows('SELECT `phone_index` FROM `mica_contacts` WHERE `id` = ?', [contact.id]))[0]
+      ?.phone_index,
+    'plain:5551234'
+  );
+  check(
+    `${kind}: the same number with a trailing space is the same number, and refused`,
+    (await shape.call(1, 'contacts', 'create', { firstname: 'Twice', phone: '5551234 ' }))?.key,
+    'server.contacts.numberTaken'
+  );
+  check(
+    `${kind}: and the list reads the number back as saved`,
+    ((await shape.call(1, 'contacts', 'get', {})) ?? []).some(
+      (row) => row.id === contact.id && row.phone === '5551234'
+    ),
+    true
   );
 
   step(`${kind}: 4 asks for its invoices sixty-one times in a minute`);

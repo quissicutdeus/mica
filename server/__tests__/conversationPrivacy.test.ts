@@ -686,6 +686,12 @@ describe('conversations:update — rename is the admin on the phone in hand (F15
   });
 
   it('writes only through the admin membership, on the citizen and the phone together', async () => {
+    // The thread's seal key, which the sealed name is bound to and the write names (MICA-432).
+    dbMock.scalar.mockImplementation(async (sql: string) =>
+      String(sql).startsWith('SELECT seal_key FROM mica_messages_conversations')
+        ? 'k'.repeat(32)
+        : null
+    );
     const reply = await call('conversations', 'update', { id: 1, name: 'Crew' });
 
     expect(reply).toBe(true);
@@ -693,9 +699,11 @@ describe('conversations:update — rename is the admin on the phone in hand (F15
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(String(sql)).toContain("p.role = 'admin' AND p.status = 'active' AND p.left_at IS NULL");
     expect(String(sql)).toContain('p.citizenid = ? AND p.device_id = ?');
+    expect(String(sql)).toContain('c.seal_key = ?');
     // Not the creator's row predicate the generic update wrote, which never moved on handover.
     expect(String(sql)).not.toMatch(/WHERE `id` = \? AND `citizenid` = \?/);
-    expect(params).toEqual(['Crew', 1, 'CIT_A', TEST_PHONE_ID]);
+    // No key in this suite, so the name is stored as it is.
+    expect(params).toEqual(['Crew', 1, 'k'.repeat(32), 'CIT_A', TEST_PHONE_ID]);
   });
 
   it('answers false, as the generic update did, when the caller is not the admin', async () => {

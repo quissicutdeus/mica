@@ -4,6 +4,7 @@
 
 import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { openRows } from '../lib/contentCipher';
 import type { Invoice } from '@mica/shared/types';
 
 /**
@@ -47,12 +48,18 @@ const OPEN_COLUMNS = [
 export class InvoiceRepository extends SchemaRepository<InvoiceRow> {
   /** Open invoices for one citizen that have not lapsed, newest first. */
   async findOpen(citizenid: string, now: number): Promise<Invoice[]> {
-    return await Database.query<Invoice[]>(
-      `SELECT ${OPEN_COLUMNS} FROM \`mica_invoices\`
-        WHERE \`citizenid\` = ? AND \`status\` = 'active' AND \`expires_at\` > ?
-        ORDER BY \`id\` DESC`,
-      [citizenid, now]
+    // `from_label` and `memo` are sealed to the billed player (MICA-432): `citizenid` is read
+    // to open them, and dropped again — it is the reader's own, and the list never carried it.
+    const rows = openRows(
+      'mica_invoices',
+      await Database.query<(Invoice & { citizenid: string })[]>(
+        `SELECT ${OPEN_COLUMNS}, \`citizenid\` FROM \`mica_invoices\`
+          WHERE \`citizenid\` = ? AND \`status\` = 'active' AND \`expires_at\` > ?
+          ORDER BY \`id\` DESC`,
+        [citizenid, now]
+      )
     );
+    return rows.map(({ citizenid: _reader, ...invoice }) => invoice as Invoice);
   }
 
   /**

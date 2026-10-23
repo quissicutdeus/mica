@@ -10,6 +10,11 @@ import { playerCoords } from '../lib/playerCoords';
 
 const MAX_NAME_LENGTH = 100;
 const MAX_STREET_LABEL_LENGTH = 255;
+/**
+ * `{"x":…,"y":…,"z":…}`: three doubles at their longest, seventeen significant digits, a sign
+ * and an exponent each, and the punctuation, with room.
+ */
+const POSITION_MAX = 96;
 
 /**
  * Saved places (MICA-65): a name and a snapshot of where the player was standing when
@@ -23,7 +28,68 @@ const MAX_STREET_LABEL_LENGTH = 255;
  * `update`/`delete`/`get` stay fully generic — renaming a place or moving its
  * `street_label` never touches where it actually is.
  */
+/**
+ * A saved place as stored: its coordinates are one sealed `position` (MICA-432), a JSON object
+ * of `x`, `y` and `z`, rather than three readable floats.
+ */
+type StoredPlace = Omit<SavedPlace, 'x' | 'y' | 'z'> & { position?: string | null };
+
+/** The coordinates as stored: three finite numbers, as JSON. */
+export const positionOf = (x: number, y: number, z: number): string => JSON.stringify({ x, y, z });
+
+/**
+ * A stored row as the wire has always carried it: `x`, `y` and `z`, opened out of `position`.
+ * A position that does not read — the padlock of one that would not open, or anything else —
+ * reads as no position, `null` each, and the place is still listed by its name.
+ */
+const toPlace = (row: StoredPlace): SavedPlace => {
+  const { position, ...rest } = row;
+  let point: { x?: unknown; y?: unknown; z?: unknown } = {};
+  try {
+    point = typeof position === 'string' ? (JSON.parse(position) as typeof point) : {};
+  } catch {
+    point = {};
+  }
+  const number = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return {
+    ...rest,
+    x: number(point.x),
+    y: number(point.y),
+    z: number(point.z)
+  } as unknown as SavedPlace;
+};
+
 export class PlacesRepository extends SchemaRepository<SavedPlace> {
+  /** The generic read, with `position` opened out into `x`, `y` and `z` (MICA-432). */
+  override async findAll(
+    where: Partial<SavedPlace> = {},
+    page?: { limit?: number; cursor?: number },
+    projection?: readonly string[]
+  ): Promise<SavedPlace[]> {
+    const rows = await super.findAll(where, page, projection);
+    return (rows as unknown as StoredPlace[]).map(toPlace);
+  }
+
+  override async findById(
+    id: number | string,
+    citizenid?: string,
+    deviceId?: string
+  ): Promise<SavedPlace | null> {
+    const row = await super.findById(id, citizenid, deviceId);
+    return row ? toPlace(row as unknown as StoredPlace) : null;
+  }
+
+  override async findDeleted(
+    citizenid: string,
+    windowDays: number,
+    projection?: readonly string[],
+    deviceId?: string
+  ): Promise<SavedPlace[]> {
+    const rows = await super.findDeleted(citizenid, windowDays, projection, deviceId);
+    return (rows as unknown as StoredPlace[]).map(toPlace);
+  }
+
   /**
    * A named method rather than a service-level bypass (§2.9): `x`/`y`/`z` are
    * `clientWritable: false` precisely so no payload can reach them, and this is the one
@@ -36,7 +102,15 @@ export class PlacesRepository extends SchemaRepository<SavedPlace> {
     deviceId: string,
     item: Partial<SavedPlace>
   ): Promise<number> {
-    return await super.create({ ...item, citizenid, device_id: deviceId } as Partial<SavedPlace>);
+    const { x, y, z, ...rest } = item;
+    // The coordinates go in as one sealed `position` (MICA-432), never as three columns.
+    const stored: Partial<StoredPlace> = {
+      ...rest,
+      citizenid,
+      device_id: deviceId,
+      position: positionOf(Number(x), Number(y), Number(z))
+    };
+    return await super.create(stored as unknown as Partial<SavedPlace>);
   }
 }
 
@@ -48,16 +122,23 @@ export const places = defineService<SavedPlace, typeof placesContract>({
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   /**
-   * The name and the street are sealed at rest (MICA-431), bound to the phone. The coordinates
-   * are not: they are numbers, and sealing them is a type change (MICA-432).
+   * The name, the street and where the place is are sealed at rest (MICA-431, MICA-432), bound
+   * to the phone. The coordinates are one `position`, a JSON object of `x`, `y` and `z`: three
+   * readable floats were where a player has been, to anyone with the database. The wire still
+   * carries `x`, `y` and `z` (`PlacesRepository`). `0014_private_lookups_get_blind_indexes`
+   * moved existing rows' coordinates into it and dropped the three columns.
    */
   encryptionScope: [],
   schema: {
     name: { type: 'string', length: MAX_NAME_LENGTH, notNull: true, encrypted: true },
     street_label: { type: 'string', length: MAX_STREET_LABEL_LENGTH, encrypted: true },
-    x: { type: 'float', clientWritable: false },
-    y: { type: 'float', clientWritable: false },
-    z: { type: 'float', clientWritable: false }
+    position: {
+      type: 'string',
+      length: POSITION_MAX,
+      clientWritable: false,
+      encrypted: true,
+      ascii: true
+    }
   },
   // No extra indexes: `citizenid_status` is already emitted for every primary table, and
   // that is the only shape a saved-places list is ever queried by.

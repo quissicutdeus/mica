@@ -106,6 +106,18 @@ export const checkReply = async (
 const OWNER_KEYS: ReadonlySet<string> = new Set(['citizenid', 'device_id']);
 
 /**
+ * Columns only the server reads (MICA-432): a sealed value's blind index, a unique key generated
+ * over one, a row's seal key. Registered by `defineService` from each declaration, so no reply
+ * carries one under any action, a custom one written later included — a `plain:` index is the
+ * value itself, and a keyed one is no business of the phone's.
+ */
+const serverOnly = new Set<string>();
+
+export const registerServerOnlyColumns = (names: Iterable<string>): void => {
+  for (const name of names) serverOnly.add(name);
+};
+
+/**
  * A record to walk. Not by prototype: a row that crossed from oxmysql's resource is built in
  * another realm, whose `Object.prototype` is not this one's, and a prototype check would wave
  * exactly those through. Everything object-shaped is walked but a date and binary data.
@@ -137,7 +149,7 @@ export const withoutOwnerKeys = (value: unknown): unknown => {
   if (!isPlainRecord(value)) return value;
   const out: Record<string, unknown> = {};
   for (const [key, inner] of Object.entries(value)) {
-    if (!OWNER_KEYS.has(key)) out[key] = withoutOwnerKeys(inner);
+    if (!OWNER_KEYS.has(key) && !serverOnly.has(key)) out[key] = withoutOwnerKeys(inner);
   }
   return out;
 };

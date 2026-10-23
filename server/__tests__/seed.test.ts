@@ -21,15 +21,53 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { SEED_CHARACTERS, clearSeed, seedFor } from '../lib/seed';
 import {
+  blindIndexCandidates,
+  blindIndexOf,
   contentContext,
   encryptedColumn,
   openContent,
+  registerBlindIndex,
   registerEncryptedColumn,
   resetContentCipherForTests,
   sealRow,
   sealedKeyId,
   unregisterEncryptedColumnForTests
 } from '../lib/contentCipher';
+import { contactNumberKey } from '../lib/contactNumbers';
+
+/**
+ * The contact number's seal and blind index, as `services/Contacts.ts` declares them (MICA-432):
+ * this suite does not load that service, and the seed refuses to write a contact without them.
+ */
+if (!blindIndexOf('mica_contacts', 'phone')) {
+  registerEncryptedColumn({
+    table: 'mica_contacts',
+    column: 'phone',
+    scope: [],
+    hasUpdatedAt: true,
+    binding: 'device'
+  });
+  registerBlindIndex({
+    table: 'mica_contacts',
+    column: 'phone',
+    index: 'phone_index',
+    scope: ['device_id'],
+    normalize: contactNumberKey
+  });
+}
+
+/** Which seed number a lookup's bound index candidates are of: the read names no number. */
+const seedNumberOf = async (params: unknown[]): Promise<string> => {
+  for (const character of SEED_CHARACTERS) {
+    const forms = await blindIndexCandidates(
+      blindIndexOf('mica_contacts', 'phone')!,
+      { device_id: null },
+      character.phone
+    );
+    if (params.some((value) => forms.includes(String(value)))) return character.phone;
+  }
+  return '';
+};
 
 /**
  * `micaseed` writes and deletes rows in tables the framework owns, on a live server,
@@ -70,18 +108,20 @@ describe('clearSeed', () => {
     // name is sealed, so it is matched after the rows are read and opened, and deleted by id.
     dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
       String(sql).startsWith('SELECT id, citizenid, device_id, firstname, lastname')
-        ? contactsOn(String(params[0]))
+        ? contactsOn(await seedNumberOf(params))
         : []
     );
 
     await clearSeed();
 
+    // By the number's blind index on no phone (MICA-432): the number is sealed, and the seed
+    // writes on no phone.
     const reads = dbMock.query.mock.calls.filter((c) =>
-      String(c[0]).includes('FROM mica_contacts WHERE phone = ?')
+      String(c[0]).includes('FROM mica_contacts WHERE device_id IS NULL AND phone_index IN (')
     );
-    expect(reads.map((c) => c[1][0]).toSorted()).toEqual(
-      SEED_CHARACTERS.map((c) => c.phone).toSorted()
-    );
+    const read = await Promise.all(reads.map(async (c) => await seedNumberOf(c[1])));
+    expect(read.toSorted()).toEqual(SEED_CHARACTERS.map((c) => c.phone).toSorted());
+    for (const [sql] of reads) expect(String(sql)).not.toMatch(/\bphone = \?/);
     const contactDeletes = dbMock.query.mock.calls.filter((c) =>
       String(c[0]).includes('DELETE FROM mica_contacts')
     );
@@ -268,11 +308,17 @@ describe('MICA-165: seeded messages are sealed', () => {
     );
     expect(inserts).toHaveLength(SEED_CHARACTERS.length);
     const first = encryptedColumn('mica_contacts', 'firstname')!;
-    for (const [, [owner, firstname, , phone]] of inserts) {
+    const number = encryptedColumn('mica_contacts', 'phone')!;
+    for (const [, [owner, firstname, , phone, index]] of inserts) {
       expect(sealedKeyId(firstname)).toBe('seed');
-      const named = SEED_CHARACTERS.find((c) => c.phone === phone)!;
-      const context = contentContext(first, { citizenid: owner, device_id: null });
-      expect(openContent(context, firstname)).toBe(named.firstname);
+      expect(sealedKeyId(phone)).toBe('seed');
+      const place = { citizenid: owner, device_id: null };
+      const opened = openContent(contentContext(number, place), phone);
+      const named = SEED_CHARACTERS.find((c) => c.phone === opened)!;
+      expect(openContent(contentContext(first, place), firstname)).toBe(named.firstname);
+      // The index beside it, under the key (MICA-432), and the one a lookup asks for first.
+      expect(String(index)).toMatch(/^seed\$[0-9a-f]{64}$/);
+      expect(await seedNumberOf([index])).toBe(named.phone);
     }
   });
 
@@ -281,7 +327,7 @@ describe('MICA-165: seeded messages are sealed', () => {
       await Promise.all(contactsOn(phone).map(async (row) => await sealRow('mica_contacts', row)));
     dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
       String(sql).startsWith('SELECT id, citizenid, device_id, firstname, lastname')
-        ? await sealedOn(String(params[0]))
+        ? await sealedOn(await seedNumberOf(params))
         : []
     );
 

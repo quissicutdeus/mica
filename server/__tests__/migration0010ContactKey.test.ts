@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { dbMock } = vi.hoisted(() => ({
@@ -123,13 +125,27 @@ describe('0010_contact_numbers_unique_per_device', () => {
     expect(dbMock.query).not.toHaveBeenCalled();
   });
 
-  it('restates the expression the declaration has today', () => {
+  /**
+   * 0010 is frozen as it shipped, over `phone`; MICA-432's 0014 moved the key onto the number's
+   * blind index and restates it in turn. Today's declaration is 0014's statement, character for
+   * character — the planner compares a generated column by name only, so nothing else would see
+   * a fresh install and an upgraded one disagree.
+   */
+  it("restates the expression as it shipped, and 0014 the declaration's today", () => {
     const declared = contacts.resolved.fields.find((f) => f.name === 'phone_key')?.def;
-    expect(declared).toMatchObject({
-      type: 'string',
-      length: 20,
-      generatedAs: "CASE WHEN `status` = 'active' THEN `phone` ELSE NULL END"
-    });
+    expect(declared).toMatchObject({ type: 'string', length: 81 });
+    const today = `\`phone_key\` varchar(${declared?.length}) GENERATED ALWAYS AS (${declared?.generatedAs}) VIRTUAL`;
+    const source = (file: string) =>
+      readFileSync(join(__dirname, '..', 'migrations', file), 'utf8').replace(/['"\s+]+/g, '');
+    expect(source('0014_private_lookups_get_blind_indexes.ts')).toContain(
+      today.replace(/['"\s+]+/g, '')
+    );
+    expect(source('0010_contact_numbers_unique_per_device.ts')).toContain(
+      "`phone_key`varchar(20)GENERATEDALWAYSAS(CASEWHEN`status`='active'THEN`phone`ELSENULLEND)VIRTUAL".replace(
+        /'/g,
+        ''
+      )
+    );
     expect(contacts.resolved.indexes).toContainEqual(
       expect.objectContaining({ name: 'device_phone_unique', columns: ['device_id', 'phone_key'] })
     );

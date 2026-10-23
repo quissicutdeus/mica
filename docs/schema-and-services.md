@@ -213,7 +213,19 @@ DDL.
   column sealed to the character, before it moves a row. `ascii: true` beside
   `encrypted` is for a column that only ever holds ASCII (a base64 photo): it
   sizes the plaintext bound at one byte a character rather than four, and a
-  write with any other character is refused. A scope column may never be
+  write with any other character is refused. A service that is not the
+  character's alone declares `encryptionBinding: 'row'` (MICA-432, Dark Chat
+  channels, Messages threads): every row draws a random `seal_key` when written
+  and never rewrites it, and its values bind to that, so a change of owner does
+  not strand them. A child table declares its own `encryptionScope` and seals
+  with it. A sealed value that is looked up or kept unique declares
+  `blindIndex: { scope, normalize }`, which adds a `<column>_index` holding an
+  HMAC under a key derived from the content key (`<kid>$<hex>`, or
+  `plain:<normalized>` with no key). `scope` is what the value is unique within,
+  bound into the digest; `normalize` is what counts as the same value. The
+  unique key goes on the index, never on the value, and every lookup goes
+  through `blindIndexCandidates`, which tries each loaded key id plus `plain:`.
+  The field is never `clientFilterable`. A scope column may never be
   client-writable, or rewritten by anything once the row exists: the value bound
   to it would no longer open. `Repository` seals on every generic write and
   opens on every generic read; SQL written by hand calls `lib/contentCipher.ts`

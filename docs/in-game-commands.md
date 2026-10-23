@@ -135,22 +135,26 @@ one `status` or `backfill` runs at a time.
   each older key, still plaintext, sealed but unreadable, and plaintext too long
   to seal (a note, say, longer than about 12,276 characters, which `backfill`
   reports and leaves as it is), plus persisted DM notifications that still carry
-  message text.
+  message text. For a blind index (MICA-432) it counts the index rows not on the
+  active key, per index; remove an old key line only when that is zero.
 - **`backfill`** is the dry run of the same walk. **`backfill --apply`** seals
   every plaintext body, re-seals every body under an older key, and blanks the
   old DM notifications, before it seals, so a preview is never kept sealed. It
   walks each table by id, `--batch N` rows at a time (default 500, at most
   5000), one compare-and-set `UPDATE` per row, so no statement locks or rewrites
   a table, and a body a player edits mid-run is left for the next run rather
-  than overwritten. `updated_at` is pinned, so nothing reads as edited. A second
-  run changes nothing. It refuses to start without a usable key. After the
-  bodies it walks the import ledger the same way and keys each qb-phone message
-  entry still holding its body verbatim with an HMAC under the active key
-  (MICA-340). An entry stored as a SHA-1, or keyed under an older key, cannot be
-  re-keyed from the ledger alone and is counted instead; a
-  `micaimport qb-phone --apply` re-run keys those it still has the source row
-  for. `status` and `backfill` warn that entries under an older key match a
-  re-import only while that key stays in the key file.
+  than overwritten. After sealing it re-indexes each blind index to the active
+  key, and reports an index it refused as a duplicate (two contacts with the
+  same number, written in the window between enabling or rotating a key and this
+  run) and one it could not make because the value would not open. `updated_at`
+  is pinned, so nothing reads as edited. A second run changes nothing. It
+  refuses to start without a usable key. After the bodies it walks the import
+  ledger the same way and keys each qb-phone message entry still holding its
+  body verbatim with an HMAC under the active key (MICA-340). An entry stored as
+  a SHA-1, or keyed under an older key, cannot be re-keyed from the ledger alone
+  and is counted instead; a `micaimport qb-phone --apply` re-run keys those it
+  still has the source row for. `status` and `backfill` warn that entries under
+  an older key match a re-import only while that key stays in the key file.
 
 **Rotating the key** starts from the same steps. Write the new key's line with
 step 2 into a scratch file, put it **first** in the live key file with the old

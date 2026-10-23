@@ -412,9 +412,11 @@ describe('one live contact per number on a phone (MICA-335)', () => {
         unique: true
       })
     );
+    // On the number's blind index since MICA-432: the number itself is sealed.
     expect(field('phone_key')?.generatedAs).toBe(
-      "CASE WHEN `status` = 'active' THEN `phone` ELSE NULL END"
+      "CASE WHEN `status` = 'active' THEN `phone_index` ELSE NULL END"
     );
+    expect(field('phone')).toMatchObject({ encrypted: true, blindIndex: expect.any(Object) });
     // A deleted row holds no key, so the soft delete needs no revive.
     expect(contacts.resolved.uniqueAfterDelete).toMatchObject({ optOut: expect.any(String) });
   });
@@ -438,8 +440,12 @@ describe('one live contact per number on a phone (MICA-335)', () => {
     it('answers a fresh contact its new id', async () => {
       dbMock.insert.mockResolvedValue(41);
 
+      dbMock.scalar.mockResolvedValue(null);
+
       await expect(addForPlayer({ firstname: 'Dispatch', phone: '911' })).resolves.toBe(41);
-      expect(dbMock.scalar).not.toHaveBeenCalled();
+      // Asked once, before the write, by every form the number's index takes (MICA-432) — and
+      // not again after it.
+      expect(dbMock.scalar).toHaveBeenCalledTimes(1);
     });
 
     it('answers the contact already there when the phone has the number', async () => {
@@ -455,10 +461,11 @@ describe('one live contact per number on a phone (MICA-335)', () => {
       await expect(addForPlayer({ firstname: 'Dispatch', phone: '911' })).resolves.toBe(17);
       // Looked up as the key looks: by phone and live number, and by no citizen — a live row
       // still naming the phone's previous holder refuses the insert just the same.
+      // By the number's blind index (MICA-432), here its no-key form: no key is loaded.
       const [sql, params] = dbMock.scalar.mock.calls[0];
-      expect(String(sql)).toContain('`device_id` = ? AND `phone_key` = ?');
+      expect(String(sql)).toContain('`device_id` = ? AND `phone_key` IN (?)');
       expect(String(sql)).not.toContain('`citizenid`');
-      expect(params).toEqual([TEST_PHONE_ID, '911']);
+      expect(params).toEqual([TEST_PHONE_ID, 'plain:911']);
     });
 
     it('fails, rather than answer nothing, when the refusing row is gone by the lookup', async () => {
@@ -479,11 +486,13 @@ describe('one live contact per number on a phone (MICA-335)', () => {
         'Lock wait timeout exceeded'
       );
       dbMock.insert.mockRejectedValue(failure);
+      dbMock.scalar.mockResolvedValue(null);
 
       await expect(
         addForPlayer({ firstname: "Duplicate entry '911' for key 'x'", phone: '911' })
       ).rejects.toBe(failure);
-      expect(dbMock.scalar).not.toHaveBeenCalled();
+      // The read before the write, and no lookup after a failure that was not the key's.
+      expect(dbMock.scalar).toHaveBeenCalledTimes(1);
     });
 
     it('takes the errno mysql2 carries in-process as well', async () => {
@@ -501,6 +510,48 @@ describe('one live contact per number on a phone (MICA-335)', () => {
    * words. The lock wait is the positive twin: the same path, any other failure, still the
    * generic answer — so the key is matched on the refusal, not on every throw.
    */
+  /**
+   * MICA-432: a contact deleted while its number's index was `plain:` (or an older key's) comes
+   * back beside a live one indexed under the active key — the unique key compares the two forms
+   * as different, so restore asks first, as create and update do. The twin: the same restore
+   * with nobody live on the number goes through to the write.
+   */
+  describe('restoring a contact whose number another live one now holds', () => {
+    const restore = async () => {
+      const handler = handlers.get('mica:server:contacts:restore');
+      if (!handler) throw new Error('no handler for contacts:restore');
+      await (handler as any)('cb-1', { id: 3 });
+      return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
+    };
+    beforeEach(() => {
+      dbMock.single.mockImplementation(async (sql: string) =>
+        String(sql).startsWith('SELECT `citizenid`, `device_id`, `phone` FROM `mica_contacts`')
+          ? { citizenid: 'CID_A', device_id: TEST_PHONE_ID, phone: '555-0100' }
+          : null
+      );
+    });
+
+    it('is refused as the number taken, before the write', async () => {
+      dbMock.scalar.mockImplementation(async (sql: string, params: unknown[] = []) =>
+        String(sql).includes('`phone_key` IN (') && params.includes('plain:555-0100') ? 9 : null
+      );
+      expect(await restore()).toMatchObject({ key: 'server.contacts.numberTaken' });
+      expect(dbMock.update).not.toHaveBeenCalled();
+      // By the number on the row's own phone, and never matching the row itself.
+      const [sql, params] = dbMock.scalar.mock.calls.find(([text]) =>
+        String(text).includes('`phone_key` IN (')
+      )!;
+      expect(String(sql)).toContain('AND `id` <> ?');
+      expect(params).toEqual([TEST_PHONE_ID, 'plain:555-0100', 3]);
+    });
+
+    it('goes through to the restore when nobody live has the number', async () => {
+      dbMock.scalar.mockResolvedValue(null);
+      await restore();
+      expect(dbMock.update).toHaveBeenCalled();
+    });
+  });
+
   describe('a player saving a number the phone already has', () => {
     const genericCall = async (action: 'create' | 'update', data: unknown) => {
       const handler = handlers.get(`mica:server:contacts:${action}`);
@@ -514,6 +565,14 @@ describe('one live contact per number on a phone (MICA-335)', () => {
       duplicateEntry(`${TEST_PHONE_ID}-555-0100`, 'mica_contacts.device_phone_unique')
     );
     const lockWait = oxmysqlRejection('INSERT INTO `mica_contacts` ...', [], 'Lock wait timeout');
+    // No other live row has the number, so the write is reached; and the row being edited is on
+    // the phone in hand, which the number's blind index is scoped by (MICA-432).
+    beforeEach(() => {
+      dbMock.scalar.mockImplementation(async (sql: string) =>
+        String(sql).startsWith('SELECT `device_id`') ? TEST_PHONE_ID : null
+      );
+      dbMock.single.mockResolvedValue({ citizenid: 'CID_A', device_id: TEST_PHONE_ID });
+    });
 
     it.each([
       ['create', { firstname: 'Ada', phone: '555-0100' }, 'insert'],

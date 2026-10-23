@@ -98,6 +98,22 @@ const AAD_DOMAIN = 'micaOS content v1';
  */
 const AAD_DEVICE_DOMAIN = 'micaOS device content v1';
 
+/**
+ * The domain of a value bound to its **row** (MICA-432): a table whose `citizenid` is not the
+ * value's owner and can change hands — a Dark Chat channel's owner passes to its next member, a
+ * group thread's creator can leave. Bound to `citizenid` such a value would stop opening at the
+ * first move. Bound instead to `seal_key`, a random key drawn for the row when it is written and
+ * never rewritten (`newSealKey`): the row id would do, but it is not known until after the
+ * insert the value has to be sealed for.
+ */
+const AAD_ROW_DOMAIN = 'micaOS row content v1';
+
+/** The column a row-bound value's owner is read from. */
+export const SEAL_KEY_COLUMN = 'seal_key';
+/** A row's seal key: sixteen random bytes, as 32 hex characters. */
+export const SEAL_KEY_LENGTH = 32;
+export const newSealKey = (): string => randomBytes(SEAL_KEY_LENGTH / 2).toString('hex');
+
 /** Worst case for utf8mb4: every character four bytes. */
 const MAX_BYTES_PER_CHAR = 4;
 
@@ -180,9 +196,10 @@ export const sealedKeyId = (value: unknown): string | null => {
 
 /**
  * Who a value belongs to (MICA-431): the character (`citizenid`), or the phone (`device_id`) for
- * a `deviceOwned` table, whose `citizenid` a handover rewrites.
+ * a `deviceOwned` table, whose `citizenid` a handover rewrites, or the row itself (`seal_key`,
+ * MICA-432) for a table whose `citizenid` passes from one owner to the next.
  */
-export type ContentBinding = 'citizen' | 'device';
+export type ContentBinding = 'citizen' | 'device' | 'row';
 
 /** One encrypted column, as its service declared it. */
 export interface EncryptedColumn {
@@ -231,17 +248,18 @@ export const registerEncryptedColumn = (entry: EncryptedColumn): void => {
     throw new Error(`[contentCipher] '${bad}' is not a lower_snake_case identifier.`);
   }
   const binding = entry.binding ?? 'citizen';
-  if (binding !== 'citizen' && binding !== 'device') {
+  if (binding !== 'citizen' && binding !== 'device' && binding !== 'row') {
     throw new Error(`[contentCipher] ${entry.table}.${entry.column}: no binding '${binding}'.`);
   }
   if (
     entry.scope.includes(entry.column) ||
     entry.scope.includes('citizenid') ||
-    entry.scope.includes('device_id')
+    entry.scope.includes('device_id') ||
+    entry.scope.includes(SEAL_KEY_COLUMN)
   ) {
     throw new Error(
       `[contentCipher] ${entry.table}.${entry.column}: the scope names the column itself, ` +
-        "'citizenid' or 'device_id', which the binding already binds."
+        `'citizenid', 'device_id' or '${SEAL_KEY_COLUMN}', which the binding already binds.`
     );
   }
   if (new Set(entry.scope).size !== entry.scope.length) {
@@ -283,8 +301,11 @@ export interface ContentContext {
    * on a phone-bound row with no `device_id`, its `citizenid` (see `ownerOf`).
    */
   readonly owner: string;
-  /** For a phone-bound value: whether `owner` is a device id or the citizenid standing in. */
-  readonly ownerKind: 'citizen' | 'device';
+  /**
+   * For a phone-bound value: whether `owner` is a device id or the citizenid standing in. For a
+   * row-bound one, `row`: `owner` is the row's seal key.
+   */
+  readonly ownerKind: 'citizen' | 'device' | 'row';
   readonly scope: readonly (string | number | null)[];
 }
 
@@ -292,7 +313,9 @@ export interface ContentContext {
 export const contextColumns = (entry: EncryptedColumn): string[] =>
   entry.binding === 'device'
     ? ['device_id', 'citizenid', ...entry.scope]
-    : ['citizenid', ...entry.scope];
+    : entry.binding === 'row'
+      ? [SEAL_KEY_COLUMN, ...entry.scope]
+      : ['citizenid', ...entry.scope];
 
 const contextValue = (
   entry: EncryptedColumn,
@@ -319,6 +342,25 @@ const contextValue = (
 export const contentContext = (entry: EncryptedColumn, row: object): ContentContext => {
   const scope = entry.scope.map((name) => contextValue(entry, row, name));
   const text = (value: string | number | null): string => (value === null ? '' : String(value));
+  if (entry.binding === 'row') {
+    // No seal key, no owner: a row-bound value is never sealed to an empty one, which every
+    // such row would share. A row written before its table had the column has to get one first.
+    const key = contextValue(entry, row, SEAL_KEY_COLUMN);
+    if (key === null || key === '') {
+      throw new Error(
+        `[contentCipher] ${entry.table}.${entry.column}: the row has no ${SEAL_KEY_COLUMN}, ` +
+          'which a row-bound value is sealed to.'
+      );
+    }
+    return {
+      table: entry.table,
+      column: entry.column,
+      binding: 'row',
+      owner: text(key),
+      ownerKind: 'row',
+      scope
+    };
+  }
   if (entry.binding !== 'device') {
     return {
       table: entry.table,
@@ -361,10 +403,14 @@ export const contentContext = (entry: EncryptedColumn, row: object): ContentCont
 const aadOf = (context: ContentContext): Bytes =>
   Buffer.from(
     [
-      context.binding === 'device' ? AAD_DEVICE_DOMAIN : AAD_DOMAIN,
+      context.binding === 'device'
+        ? AAD_DEVICE_DOMAIN
+        : context.binding === 'row'
+          ? AAD_ROW_DOMAIN
+          : AAD_DOMAIN,
       context.table,
       context.column,
-      ...(context.binding === 'device' ? [context.ownerKind] : []),
+      ...(context.binding === 'citizen' ? [] : [context.ownerKind]),
       context.owner,
       ...context.scope.map((value) => (value === null ? '' : String(value)))
     ].join('\0'),
@@ -1031,6 +1077,165 @@ export const tryOpenContent = (context: ContentContext, stored: string): string 
 export const openContent = (context: ContentContext, stored: string, rowId?: unknown): string => {
   const opened = openOrWhy(context, stored);
   return 'text' in opened ? opened.text : unreadable(context, rowId, opened.why);
+};
+
+// ─── blind indexes (MICA-432) ───────────────────────────────────────────────────────────────
+
+/**
+ * A sealed column that something looks up or keeps unique by its value — a contact's number, a
+ * Dark Chat join code, an alias — and the column beside it that holds its **blind index**: a
+ * keyed digest of the value, equal for equal values and nothing else, so the database can match
+ * and refuse duplicates on it without ever holding the value.
+ *
+ * `index` is `<kid>$<64 hex>`: HMAC-SHA-256 under a key derived from the content key for this
+ * purpose alone (`contentDigests`' derivation, so it is neither the AES key nor the log salt),
+ * over the table, the column, the scope's values and the normalized value, NUL-joined. The
+ * scope is whatever the uniqueness is per — a contact's phone, a member's channel — so one
+ * value in two scopes gives two unrelated digests, and nothing correlates across them.
+ *
+ * With no content key on a server that never had one, it is `plain:<normalized value>`: what a
+ * plaintext lookup column held before, and no more than the plaintext beside it. `plain:` cannot
+ * be a key id (`:` is outside the key id pattern), so the two forms never meet.
+ */
+export interface BlindIndex {
+  readonly table: string;
+  /** The sealed column the index is of. */
+  readonly column: string;
+  /** The column the index is stored in. */
+  readonly index: string;
+  /** The row's columns the value is unique within, bound into the digest in this order. */
+  readonly scope: readonly string[];
+  /** What counts as the same value: the comparison the old plaintext key made. */
+  readonly normalize: (value: string) => string;
+}
+
+/** `<kid>$` and 64 hex, or `plain:` and the normalized value. The column is this wide. */
+export const BLIND_INDEX_WIDTH = MAX_KID_LENGTH + 1 + 64;
+export const PLAIN_INDEX_PREFIX = 'plain:';
+const INDEX_PURPOSE = 'blind index v1';
+
+const indexRegistry: BlindIndex[] = [];
+
+/** Add an index to the registry. `defineService` calls this for every `blindIndex` column. */
+export const registerBlindIndex = (entry: BlindIndex): void => {
+  const bad = [entry.table, entry.column, entry.index, ...entry.scope].find(
+    (name) => !IDENTIFIER.test(name)
+  );
+  if (bad !== undefined) {
+    throw new Error(`[contentCipher] '${bad}' is not a lower_snake_case identifier.`);
+  }
+  if (!encryptedColumn(entry.table, entry.column)) {
+    throw new Error(
+      `[contentCipher] ${entry.table}.${entry.column} has a blind index but is not sealed: a ` +
+        'plaintext column is looked up as it is.'
+    );
+  }
+  if (entry.scope.includes(entry.column) || entry.scope.includes(entry.index)) {
+    throw new Error(`[contentCipher] ${entry.table}.${entry.index}: the scope names the value.`);
+  }
+  if (blindIndexOf(entry.table, entry.column)) {
+    throw new Error(`[contentCipher] ${entry.table}.${entry.column} already has a blind index.`);
+  }
+  indexRegistry.push({ ...entry, scope: [...entry.scope] });
+};
+
+export const blindIndexes = (): readonly BlindIndex[] => indexRegistry;
+
+export const blindIndexesOf = (table: string): readonly BlindIndex[] =>
+  indexRegistry.filter((entry) => entry.table === table);
+
+export const blindIndexOf = (table: string, column: string): BlindIndex | null =>
+  indexRegistry.find((entry) => entry.table === table && entry.column === column) ?? null;
+
+/** Tests only: take a hand-registered index back out. */
+export const unregisterBlindIndexForTests = (table: string, column: string): void => {
+  const at = indexRegistry.findIndex((entry) => entry.table === table && entry.column === column);
+  if (at >= 0) indexRegistry.splice(at, 1);
+};
+
+/** The digest's input: the place and the scope, then the value, NUL-joined. */
+const indexInput = (entry: BlindIndex, row: object, value: string): string => {
+  const values = row as Record<string, unknown>;
+  const scope = entry.scope.map((name) => {
+    const found = values[name];
+    if (found === undefined) {
+      throw new Error(
+        `[contentCipher] ${entry.table}.${entry.index}: the row has no '${name}', which the ` +
+          'index is scoped by. Select it alongside the value.'
+      );
+    }
+    return found === null ? '' : String(found);
+  });
+  return [entry.table, entry.column, ...scope, entry.normalize(value)].join('\0');
+};
+
+const plainIndex = (entry: BlindIndex, value: string): string => {
+  const plain = `${PLAIN_INDEX_PREFIX}${entry.normalize(value)}`;
+  if (plain.length > BLIND_INDEX_WIDTH) {
+    throw new Error(
+      `[contentCipher] ${entry.table}.${entry.index}: the value is too long to index.`
+    );
+  }
+  return plain;
+};
+
+const keyedIndex = (kid: string, key: Bytes, entry: BlindIndex, row: object, value: string) =>
+  `${kid}$${createHmac('sha256', digestKey(key, INDEX_PURPOSE))
+    .update(indexInput(entry, row, value))
+    .digest()
+    .toString('hex')}`;
+
+/**
+ * The index to store beside a value being written: under the active key, or `plain:` on a server
+ * that has never had one. **Fails closed** exactly as sealing does — a key file that cannot be
+ * used, or no key over a database that has held ciphertext, throws and nothing is written — and
+ * a keyed index records the enabled marker first, as a sealed value does, so a server that loses
+ * its key afterwards refuses rather than writing `plain:` beside keyed rows.
+ */
+export const blindIndexFor = async (
+  entry: BlindIndex,
+  row: object,
+  value: string
+): Promise<string> => {
+  const ring = await sealingKeyring();
+  if (ring === null) {
+    indexInput(entry, row, value); // the same scope check a keyed write makes
+    return plainIndex(entry, value);
+  }
+  const index = keyedIndex(ring.active, ring.keys.get(ring.active) as Bytes, entry, row, value);
+  await recordEnabled();
+  return index;
+};
+
+/**
+ * Every form a stored index of this value can take, for `WHERE <index> IN (…)`: one per loaded
+ * key, active first, and the `plain:` form a row written before the first key still carries until
+ * `micacrypt backfill --apply` re-indexes it. So a lookup finds the row whichever key indexed it,
+ * mid-rotation included. Fails closed as `blindIndexFor` does: with an unusable key file, or no
+ * key over a database that has held ciphertext, a lookup throws rather than miss.
+ */
+export const blindIndexCandidates = async (
+  entry: BlindIndex,
+  row: object,
+  value: string
+): Promise<string[]> => {
+  const ring = await sealingKeyring();
+  if (ring === null) {
+    indexInput(entry, row, value);
+    return [plainIndex(entry, value)];
+  }
+  return [
+    ...[...ring.keys].map(([kid, key]) => keyedIndex(kid, key, entry, row, value)),
+    plainIndex(entry, value)
+  ];
+};
+
+/** The key id an index was made under, `plain` for the no-key form, null for neither. */
+export const blindIndexKeyId = (stored: unknown): string | null => {
+  if (typeof stored !== 'string') return null;
+  if (stored.startsWith(PLAIN_INDEX_PREFIX)) return 'plain';
+  const end = stored.indexOf('$');
+  return end > 0 && isKeyId(stored.slice(0, end)) ? stored.slice(0, end) : null;
 };
 
 // ─── rows ────────────────────────────────────────────────────────────────────────────────────

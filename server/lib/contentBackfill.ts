@@ -4,11 +4,16 @@
 
 import { Buffer } from 'node:buffer';
 import { Database } from './Database';
+import { isDuplicateKey } from './sqlErrors';
 import {
   activeKeyId,
+  blindIndexFor,
+  blindIndexKeyId,
+  blindIndexes,
   contentContext,
   contentEncryptionEnabled,
   contextColumns,
+  encryptedColumn,
   encryptedColumns,
   isSealed,
   loadedKeyIds,
@@ -17,6 +22,7 @@ import {
   sealedKeyId,
   sealedLength,
   tryOpenContent,
+  type BlindIndex,
   type EncryptedColumn
 } from './contentCipher';
 
@@ -80,6 +86,38 @@ export interface ColumnReport {
   raced: number;
 }
 
+/**
+ * One blind index (MICA-432): its rows by the key their index was made under. `--apply` brings
+ * every one to the active key, read off the value as it stands — a `plain:` index from before
+ * the first key, an older key's after a rotation, or none on a row written before the column.
+ */
+export interface IndexReport {
+  table: string;
+  column: string;
+  index: string;
+  /** The index column is not in the database: `micaschema apply`. */
+  missing: boolean;
+  rows: number;
+  /** No value, so no index. */
+  empty: number;
+  /** Already under the active key. */
+  active: number;
+  /** Under another key, `plain`, or `none`, by that name. */
+  stale: Record<string, number>;
+  /** The value did not open, so its index cannot be made. Left as it is. */
+  unreadable: number;
+  /** Rewritten under the active key (`--apply`). */
+  reindexed: number;
+  /**
+   * Refused by the unique key: another row holds the same value under the active key, which a
+   * write in the window between enabling or rotating a key and this run can leave. Left as it
+   * is, and said, for the owner to resolve.
+   */
+  conflicts: number;
+  /** Changed between the read and the write (`--apply`). */
+  raced: number;
+}
+
 export interface NotificationReport {
   /** Rows whose body is not `''` — after `--apply`, the ones the run did not reach. */
   pending: number;
@@ -101,6 +139,7 @@ export interface ContentReport {
   activeKey: string | null;
   loadedKeys: string[];
   columns: ColumnReport[];
+  indexes: IndexReport[];
   notifications: NotificationReport | null;
 }
 
@@ -229,6 +268,19 @@ type Verdict =
   | { kind: 'tooLong' }
   | { kind: 'seal'; plaintext: string; from: string | null };
 
+/**
+ * The value opened, or null when it will not open — or cannot be placed at all: a row-bound
+ * row with no seal key (MICA-432), which a write never leaves and the migration that adds the
+ * column fills, is unreadable here rather than the end of the walk.
+ */
+const openedOrNull = (entry: EncryptedColumn, row: Row, value: string): string | null => {
+  try {
+    return tryOpenContent(contentContext(entry, row), value);
+  } catch {
+    return null;
+  }
+};
+
 /** What one stored value is, and what bringing it to the active key would take. */
 const judge = (
   entry: EncryptedColumn,
@@ -246,7 +298,7 @@ const judge = (
   }
   // Null only for a value that did not open — never for one whose text is the padlock, which
   // is re-sealed like any other. A value it could not read is never rewritten.
-  const plaintext = tryOpenContent(contentContext(entry, row), value);
+  const plaintext = openedOrNull(entry, row, value);
   const kid = sealedKeyId(value);
   if (plaintext === null || kid === null) return { kind: 'unreadable' };
   if (kid === active) return { kind: 'active' };
@@ -292,12 +344,115 @@ const walkColumn = async (
       else report.older[verdict.from] = (report.older[verdict.from] ?? 0) + 1;
       if (!options.apply) continue;
 
-      const sealed = await sealContent(contentContext(entry, row), verdict.plaintext);
+      let context;
+      try {
+        context = contentContext(entry, row);
+      } catch {
+        report.unreadable += 1;
+        continue;
+      }
+      const sealed = await sealContent(context, verdict.plaintext);
       if (await compareAndSet(entry, row, String(row[entry.column]), sealed)) report.sealed += 1;
       else report.raced += 1;
     }
     after = Number(rows[rows.length - 1].id);
     if (rows.length < options.batch) break;
+    await options.pause();
+  }
+  return report;
+};
+
+const columnExists = async (table: string, column: string): Promise<boolean> => {
+  const rows = await Database.query<{ n: number | string }[]>(
+    'SELECT COUNT(*) AS `n` FROM information_schema.COLUMNS ' +
+      'WHERE `TABLE_SCHEMA` = DATABASE() AND `TABLE_NAME` = ? AND `COLUMN_NAME` = ?',
+    [table, column]
+  );
+  return Number((Array.isArray(rows) ? rows[0]?.n : 0) ?? 0) > 0;
+};
+
+/**
+ * Bring one blind index to the active key (MICA-432), after the values it is of are sealed. A
+ * row is rewritten only if its index is still what was read (`<=>`, so a NULL one too), with
+ * `updated_at` pinned; a unique-key refusal is a conflict, counted and left.
+ */
+const walkIndex = async (
+  entry: BlindIndex,
+  options: Required<Pick<WalkOptions, 'apply' | 'batch' | 'pause'>>,
+  active: string | null
+): Promise<IndexReport> => {
+  const report: IndexReport = {
+    table: entry.table,
+    column: entry.column,
+    index: entry.index,
+    missing: false,
+    rows: 0,
+    empty: 0,
+    active: 0,
+    stale: {},
+    unreadable: 0,
+    reindexed: 0,
+    conflicts: 0,
+    raced: 0
+  };
+  const sealedEntry = encryptedColumn(entry.table, entry.column);
+  if (!sealedEntry || !(await columnExists(entry.table, entry.index))) {
+    report.missing = true;
+    return report;
+  }
+  const columns = [
+    ...new Set(['id', ...contextColumns(sealedEntry), ...entry.scope, entry.column, entry.index])
+  ]
+    .map(q)
+    .join(', ');
+  const pin = sealedEntry.hasUpdatedAt ? ', `updated_at` = `updated_at`' : '';
+
+  let after = 0;
+  for (;;) {
+    const rows = await Database.query<Row[]>(
+      `SELECT ${columns} FROM ${q(entry.table)} WHERE \`id\` > ? ORDER BY \`id\` LIMIT ?`,
+      [after, options.batch]
+    );
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) break;
+    for (const row of list) {
+      report.rows += 1;
+      const stored = row[entry.column];
+      if (stored === null || stored === undefined) {
+        report.empty += 1;
+        continue;
+      }
+      const was = row[entry.index] ?? null;
+      const kid = blindIndexKeyId(was) ?? 'none';
+      if (active !== null && kid === active) {
+        report.active += 1;
+        continue;
+      }
+      report.stale[kid] = (report.stale[kid] ?? 0) + 1;
+      if (!options.apply) continue;
+
+      const text = String(stored);
+      const plaintext = isSealed(text) ? openedOrNull(sealedEntry, row, text) : text;
+      if (plaintext === null) {
+        report.unreadable += 1;
+        continue;
+      }
+      const index = await blindIndexFor(entry, row, plaintext);
+      try {
+        const written = await Database.update(
+          `UPDATE ${q(entry.table)} SET ${q(entry.index)} = ?${pin} ` +
+            `WHERE \`id\` = ? AND ${q(entry.index)} <=> ?`,
+          [index, row.id, was]
+        );
+        if (written) report.reindexed += 1;
+        else report.raced += 1;
+      } catch (error) {
+        if (!isDuplicateKey(error)) throw error;
+        report.conflicts += 1;
+      }
+    }
+    after = Number(list[list.length - 1].id);
+    if (list.length < options.batch) break;
     await options.pause();
   }
   return report;
@@ -386,11 +541,25 @@ export const walkContent = async (options: WalkOptions): Promise<ContentReport> 
     columns.push(await walkColumn(entry, { apply: options.apply, batch, pause }, active));
   }
 
+  // After the values are sealed, so every index is read off the value as it now stands.
+  const indexes: IndexReport[] = [];
+  for (const entry of blindIndexes()) {
+    indexes.push(await walkIndex(entry, { apply: options.apply, batch, pause }, active));
+  }
+
   const notifications: NotificationReport | null = options.notifications
     ? { pending: await countNotifications(options.notifications), blanked }
     : null;
 
-  return { apply: options.apply, key, activeKey: active, loadedKeys, columns, notifications };
+  return {
+    apply: options.apply,
+    key,
+    activeKey: active,
+    loadedKeys,
+    columns,
+    indexes,
+    notifications
+  };
 };
 
 const olderText = (older: Record<string, number>): string => {
@@ -437,12 +606,31 @@ export const formatStatus = (report: ContentReport): string[] => {
         `too long to seal ${c.tooLong}, empty ${c.empty}.`
     );
   }
+  for (const i of report.indexes) {
+    const name = `${i.table}.${i.index}`;
+    if (i.missing) {
+      lines.push(`[micacrypt] ${name}: not in the database; run micaschema apply.`);
+      continue;
+    }
+    lines.push(
+      `[micacrypt] ${name}: ${i.rows} row(s) — on the active key ${i.active}, to re-index ` +
+        `${staleText(i.stale)}, empty ${i.empty}.`
+    );
+  }
   if (report.notifications) {
     lines.push(
       `[micacrypt] DM notifications still holding a body: ${report.notifications.pending}.`
     );
   }
   return lines;
+};
+
+const staleText = (stale: Record<string, number>): string => {
+  const kids = Object.keys(stale).toSorted();
+  const total = kids.reduce((sum, kid) => sum + stale[kid], 0);
+  return kids.length === 0
+    ? '0'
+    : `${total} (${kids.map((kid) => `${kid} ${stale[kid]}`).join(', ')})`;
 };
 
 /** `micacrypt backfill [--apply]`: what was, or would be, written. */
@@ -472,6 +660,23 @@ export const formatBackfill = (report: ContentReport): string[] => {
     ];
     if (report.apply) parts.push(`changed mid-run, left for the next run ${c.raced}`);
     lines.push(`[micacrypt] ${name}: ${c.rows} row(s) — ${parts.join(', ')}.`);
+  }
+  for (const i of report.indexes) {
+    const name = `${i.table}.${i.index}`;
+    if (i.missing) {
+      lines.push(`[micacrypt] ${name}: not in the database; skipped.`);
+      continue;
+    }
+    const parts = report.apply
+      ? [
+          `re-indexed ${i.reindexed} of ${staleText(i.stale)}`,
+          `already on the active key ${i.active}`,
+          `unreadable ${i.unreadable}`,
+          `refused as a duplicate ${i.conflicts}`,
+          `changed mid-run ${i.raced}`
+        ]
+      : [`would re-index ${staleText(i.stale)}`, `already on the active key ${i.active}`];
+    lines.push(`[micacrypt] ${name}: ${i.rows} row(s) — ${parts.join(', ')}.`);
   }
   if (report.notifications) {
     lines.push(

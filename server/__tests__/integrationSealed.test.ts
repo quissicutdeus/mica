@@ -132,6 +132,33 @@ describe('the integration reader of sealed bodies', () => {
     ).toThrow(/does not authenticate/);
   });
 
+  /** MICA-432: a channel's name, sealed to the channel's own `seal_key`, not its owner. */
+  it('opens a value sealed to its row, whoever owns the row now', async () => {
+    const keys = parseKeyFile(keyText);
+    const rowBound = {
+      table: 'mica_darkchat',
+      column: 'name',
+      scope: [] as string[],
+      hasUpdatedAt: true,
+      binding: 'row' as const
+    };
+    const sealed = await sealContent(
+      contentContext(rowBound, { seal_key: 'k'.repeat(32) }),
+      'Docks'
+    );
+    const context = {
+      table: 'mica_darkchat',
+      column: 'name',
+      citizenid: 'WHOEVER_OWNS_IT_NOW',
+      sealKey: 'k'.repeat(32),
+      scope: []
+    };
+    expect(openSealed(sealed, keys, context)).toBe('Docks');
+    expect(() => openSealed(sealed, keys, { ...context, sealKey: 'j'.repeat(32) })).toThrow(
+      /does not authenticate/
+    );
+  });
+
   it('refuses plaintext, a key it lacks, and a malformed value', async () => {
     const keys = parseKeyFile(keyText);
     expect(() => openSealed('plain text', keys, message)).toThrow(/not in the sealed form/);

@@ -4,7 +4,11 @@
 
 import { Repository } from './Repository';
 import {
+  BLIND_INDEX_WIDTH,
+  SEAL_KEY_COLUMN,
+  SEAL_KEY_LENGTH,
   maxPlaintextChars,
+  registerBlindIndex,
   registerEncryptedColumn,
   sealedLength,
   sealedLengthForChars
@@ -12,6 +16,7 @@ import {
 import { registerReportable, type ReportableDefinition } from './moderation';
 import type { ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
+import { registerServerOnlyColumns } from './replyShape';
 import type { ServiceContract } from '@mica/shared/contract';
 import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
 import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@mica/shared/devices';
@@ -257,6 +262,21 @@ export interface ColumnDef {
    * A write with any other character is refused, so the bound cannot be outrun.
    */
   ascii?: boolean;
+  /**
+   * The sealed value is looked up, or kept unique, by its value (MICA-432): a contact's number,
+   * a join code, an alias. Adds a `<column>_index` column holding its blind index
+   * (`lib/contentCipher.ts`, `BlindIndex`), which the generic write fills beside the sealed
+   * value and every lookup matches by `blindIndexCandidates`. A unique key goes on the index
+   * column — through a status-aware `generatedAs`, as before — never on the value.
+   *
+   * `scope` is what the value is unique within (`['device_id']` for a phone's contacts), bound
+   * into the digest; `normalize` is what counts as the same value, the comparison the old
+   * plaintext key's collation made. Only beside `encrypted`.
+   */
+  blindIndex?: {
+    readonly scope?: readonly string[];
+    readonly normalize?: (value: string) => string;
+  };
 }
 
 /**
@@ -298,6 +318,14 @@ export interface ChildTableDefinition {
    * why its own writes cannot wedge — a hard delete frees the key, say.
    */
   uniqueAfterDelete?: { readonly optOut: string };
+  /**
+   * The child table's own `encryptionScope` (MICA-432), required when one of its columns is
+   * `encrypted`, as the primary table's is. A child table has no repository, so its service
+   * seals and opens it by hand (`sealRow`, `openRows`), and the encrypted-column guard holds it
+   * to that. Bound to the row's `citizenid`, which a sealed child table must have and never
+   * rewrite.
+   */
+  encryptionScope?: readonly string[];
 }
 
 /**
@@ -561,6 +589,14 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    * ciphertext.
    */
   encryptionScope?: readonly string[];
+  /**
+   * Bind the encrypted columns to the **row** rather than to `citizenid` (MICA-432), for a table
+   * whose `citizenid` passes to another character — a Dark Chat channel's owner, a thread's
+   * creator. Adds a `seal_key` column, drawn for each row when it is written and never
+   * rewritten, which the values are sealed to. Not on a `deviceOwned` table, which is bound to
+   * its phone.
+   */
+  encryptionBinding?: 'row';
   /** Defaults to `{ read: 'owner', write: 'owner' }`. */
   access?: AccessDefinition;
   /** Keyset paging on the generic read. **Required** when `access.read` is `public`. */
@@ -706,6 +742,12 @@ export interface ResolvedService {
   encryptedColumns: string[];
   /** `ServiceDefinition.encryptionScope`; `[]` when nothing is encrypted. */
   encryptionScope: string[];
+  /** What the encrypted columns are bound to (MICA-431, MICA-432). */
+  encryptionBinding: 'citizen' | 'device' | 'row';
+  /** The sealed columns looked up by value, and their index columns (MICA-432). */
+  blindIndexes: ResolvedBlindIndex[];
+  /** Child tables with sealed columns, which the service seals and opens by hand (MICA-432). */
+  childEncryption: ResolvedChildEncryption[];
   /** `ServiceDefinition.reactable`; null when the declaration did not opt in. */
   reactable: ReactableDefinition | null;
 }
@@ -754,6 +796,135 @@ const assertEncryptedColumn = (id: string, name: string, def: ColumnDef): void =
         "Declare it 'text'."
     );
   }
+};
+
+/** A sealed column's blind index, as `defineService` resolved it (MICA-432). */
+export interface ResolvedBlindIndex {
+  column: string;
+  index: string;
+  scope: readonly string[];
+  normalize: (value: string) => string;
+}
+
+const sameValue = (value: string): string => value;
+
+/**
+ * Add a `<column>_index` field beside every `blindIndex` column, and answer what to register.
+ * The index column is never client-writable and never read back: it is the server's to fill
+ * and to match on, and it says nothing a reader is owed.
+ */
+const addBlindIndexColumns = (
+  id: string,
+  fields: { name: string; def: ColumnDef }[],
+  columns: readonly string[]
+): ResolvedBlindIndex[] => {
+  const out: ResolvedBlindIndex[] = [];
+  // Filtered first: the loop splices an index field in beside each, so it walks this list.
+  const indexed = fields.filter((f) => f.def.blindIndex !== undefined);
+  for (const { name, def } of indexed) {
+    if (!def.blindIndex) continue;
+    if (!def.encrypted) {
+      throw new Error(
+        `defineService('${id}'): '${name}' has a 'blindIndex' but is not 'encrypted': a ` +
+          'plaintext column is looked up as it is.'
+      );
+    }
+    const index = `${name}_index`;
+    if (columns.includes(index)) {
+      throw new Error(`defineService('${id}'): '${index}' is supplied by '${name}'s blindIndex.`);
+    }
+    const scope = [...(def.blindIndex.scope ?? [])];
+    for (const column of scope) {
+      if (!columns.includes(column) || column === name) {
+        throw new Error(
+          `defineService('${id}'): '${name}'s blindIndex is scoped by '${column}', which is ` +
+            'not another column of the table.'
+        );
+      }
+      if (fields.some((f) => f.name === column && f.def.encrypted === true)) {
+        throw new Error(
+          `defineService('${id}'): '${name}'s blindIndex is scoped by '${column}', an ` +
+            'encrypted column: equal scopes would not compare equal.'
+        );
+      }
+    }
+    // Right after the value, so a generated key built on it — `phone_key`, `alias_key`, which
+    // the declarations put later — reads a column defined before it, as MariaDB needs.
+    fields.splice(fields.findIndex((f) => f.name === name) + 1, 0, {
+      name: index,
+      def: { type: 'string', length: BLIND_INDEX_WIDTH, clientWritable: false, private: true }
+    });
+    out.push({ column: name, index, scope, normalize: def.blindIndex.normalize ?? sameValue });
+  }
+  return out;
+};
+
+/**
+ * A child table with sealed columns (MICA-432), resolved: the table as the DDL emits it — each
+ * sealed `string` as wide as its sealed form, a `<column>_index` beside each blind-indexed one
+ * — and what to register.
+ */
+export interface ResolvedChildEncryption {
+  table: string;
+  columns: string[];
+  scope: string[];
+  hasUpdatedAt: boolean;
+  blindIndexes: ResolvedBlindIndex[];
+}
+
+const resolveChildEncryption = (
+  id: string,
+  child: ChildTableDefinition
+): { child: ChildTableDefinition; encryption: ResolvedChildEncryption | null } => {
+  const defs = Object.entries(child.columns).map(([name, spec]) => ({
+    name,
+    def: normalizeColumn(spec)
+  }));
+  const sealed = defs.filter((f) => f.def.encrypted === true).map((f) => f.name);
+  if (sealed.length === 0) {
+    if (child.encryptionScope !== undefined) {
+      throw new Error(
+        `defineService('${id}'): child table '${child.name}' declares 'encryptionScope' but ` +
+          "no column is 'encrypted'."
+      );
+    }
+    return { child, encryption: null };
+  }
+  const where = `defineService('${id}'): child table '${child.name}'`;
+  if (child.encryptionScope === undefined) {
+    throw new Error(
+      `${where} has an 'encrypted' column but no 'encryptionScope'. Name the columns that say ` +
+        'which thread a row is in, or [] when the row is its own.'
+    );
+  }
+  if (!defs.some((f) => f.name === 'citizenid')) {
+    throw new Error(
+      `${where} has an 'encrypted' column and no 'citizenid', which its values are bound to.`
+    );
+  }
+  for (const f of defs) assertEncryptedColumn(id, `${child.name}.${f.name}`, f.def);
+  const names = defs.map((f) => f.name);
+  for (const column of child.encryptionScope) {
+    if (!names.includes(column) || sealed.includes(column) || column === 'citizenid') {
+      throw new Error(`${where}: encryptionScope names '${column}', which it cannot bind.`);
+    }
+  }
+  const fields = defs.map((f) =>
+    f.def.encrypted && f.def.type === 'string'
+      ? { name: f.name, def: { ...f.def, length: storedWidth(f.def) } }
+      : f
+  );
+  const blindIndexes = addBlindIndexColumns(id, fields, names);
+  return {
+    child: { ...child, columns: Object.fromEntries(fields.map((f) => [f.name, f.def])) },
+    encryption: {
+      table: child.name,
+      columns: sealed,
+      scope: [...child.encryptionScope],
+      hasUpdatedAt: names.includes('updated_at'),
+      blindIndexes
+    }
+  };
 };
 
 /** Check `encryptionScope` against the resolved columns. `[]` when nothing is encrypted. */
@@ -1103,6 +1274,35 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     }
     fields.push({ name: 'device_id', def: { type: 'string', length: 32, clientWritable: false } });
   }
+  /**
+   * The row's seal key (MICA-432), for a table bound to its rows: drawn by the write that
+   * creates the row (`Repository.create`, or `newSealKey` in a hand-written insert) and never
+   * rewritten. Nullable for the reason `device_id` is: the migration that introduces it to a
+   * live table fills it afterwards. Never client-writable, never read back.
+   */
+  if (definition.encryptionBinding !== undefined) {
+    if (definition.encryptionBinding !== 'row') {
+      throw new Error(
+        `defineService('${id}'): encryptionBinding '${String(definition.encryptionBinding)}' ` +
+          "is not one. 'row' is the only binding a declaration chooses."
+      );
+    }
+    if (deviceOwned) {
+      throw new Error(
+        `defineService('${id}'): encryptionBinding 'row' on a 'deviceOwned' table, which is ` +
+          'bound to its phone.'
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(schema, SEAL_KEY_COLUMN)) {
+      throw new Error(
+        `defineService('${id}'): '${SEAL_KEY_COLUMN}' is supplied by encryptionBinding 'row'.`
+      );
+    }
+    fields.push({
+      name: SEAL_KEY_COLUMN,
+      def: { type: 'string', length: SEAL_KEY_LENGTH, clientWritable: false, private: true }
+    });
+  }
   for (const [name, spec] of Object.entries(schema)) {
     if ((IMPLICIT_COLUMNS as readonly string[]).includes(name)) {
       throw new Error(
@@ -1161,6 +1361,10 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     assertEncryptedColumn(id, name, def);
     fields.push({ name, def });
   }
+  const blindIndexes = addBlindIndexColumns(id, fields, [
+    ...IMPLICIT_COLUMNS,
+    ...fields.map((f) => f.name)
+  ]);
 
   const columns = [...IMPLICIT_COLUMNS, ...fields.map((f) => f.name)] as string[];
 
@@ -1230,13 +1434,6 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
         `child table '${child.name}' column '${column}'`,
         normalizeColumn(spec)
       );
-      if (normalizeColumn(spec).encrypted) {
-        throw new Error(
-          `defineService('${id}'): child table '${child.name}' column '${column}' is ` +
-            "'encrypted'. Only a primary table's columns can be: a child table has no " +
-            'repository to open them.'
-        );
-      }
     }
     const childIndexNames = (child.indexes ?? []).map((i) => normalizeIndex(i).name);
     const duplicateChildIndex = childIndexNames.find(
@@ -1255,6 +1452,8 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
       );
     }
   }
+
+  const resolvedChildren = childTables.map((child) => resolveChildEncryption(id, child));
 
   const isPrivate = (column: string): boolean =>
     fields.some((f) => f.name === column && f.def.private === true);
@@ -1315,9 +1514,16 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     fields: storedFields,
     indexes,
     uniqueAfterDelete,
-    childTables,
+    childTables: resolvedChildren.map((r) => r.child),
+    childEncryption: resolvedChildren.flatMap((r) => (r.encryption ? [r.encryption] : [])),
     encryptedColumns,
     encryptionScope,
+    encryptionBinding: deviceOwned
+      ? 'device'
+      : definition.encryptionBinding === 'row'
+        ? 'row'
+        : 'citizen',
+    blindIndexes,
     reactable: resolveReactable(id, definition.reactable),
     columns,
     clientWritable: fields.filter((f) => isClientWritable(f.def, access.write)).map((f) => f.name),
@@ -1447,10 +1653,47 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
       table: resolved.table,
       column,
       scope: resolved.encryptionScope,
-      // A phone's rows change hands by `citizenid` (MICA-431): bound to the phone instead.
-      binding: resolved.deviceOwned ? 'device' : 'citizen',
+      // A phone's rows change hands by `citizenid` (MICA-431): bound to the phone instead. A
+      // row whose `citizenid` passes on is bound to the row (MICA-432).
+      binding: resolved.encryptionBinding,
       hasUpdatedAt: resolved.columns.includes('updated_at')
     });
+  }
+  for (const entry of resolved.blindIndexes) {
+    registerBlindIndex({ table: resolved.table, ...entry });
+  }
+  /**
+   * What only the server reads leaves no reply (MICA-432): each index, each generated key built
+   * on one, and the seal key — on the primary table and on its sealed children alike.
+   */
+  const indexColumns = [
+    ...resolved.blindIndexes.map((entry) => entry.index),
+    ...resolved.childEncryption.flatMap((child) => child.blindIndexes.map((entry) => entry.index))
+  ];
+  const generatedOver = [
+    ...resolved.fields,
+    ...resolved.childTables.flatMap((child) =>
+      Object.entries(child.columns).map(([name, spec]) => ({ name, def: normalizeColumn(spec) }))
+    )
+  ]
+    .filter(({ def }) => indexColumns.some((index) => def.generatedAs?.includes(`\`${index}\``)))
+    .map(({ name }) => name);
+  registerServerOnlyColumns([
+    ...indexColumns,
+    ...generatedOver,
+    ...(resolved.encryptionBinding === 'row' ? [SEAL_KEY_COLUMN] : [])
+  ]);
+  for (const child of resolved.childEncryption) {
+    for (const column of child.columns) {
+      registerEncryptedColumn({
+        table: child.table,
+        column,
+        scope: child.scope,
+        binding: 'citizen',
+        hasUpdatedAt: child.hasUpdatedAt
+      });
+    }
+    for (const entry of child.blindIndexes) registerBlindIndex({ table: child.table, ...entry });
   }
 
   /**

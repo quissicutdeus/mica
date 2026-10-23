@@ -220,33 +220,32 @@ const dbMock = vi.hoisted(() => {
     // Contacts. Numbers compare as `utf8mb4_unicode_ci` compares them, near enough: case
     // folded, trailing spaces ignored. `device_phone_unique` (MICA-335) refuses a second live
     // row with one number on one device, whoever it names.
-    const sameNumber = (a: unknown, b: unknown) =>
-      String(a).toLowerCase().trimEnd() === String(b).toLowerCase().trimEnd();
     const liveContact = (c: Row) => (c.status ?? 'active') === 'active';
+    // The number's blind index (MICA-432): what the importer writes beside a number with no key,
+    // and what a fixture row written before it stands for.
+    const indexOfContact = (c: Row) =>
+      c.phone_index ?? `plain:${String(c.phone).toLowerCase().trimEnd()}`;
     if (sql.startsWith('SELECT 1 FROM `mica_contacts` WHERE `device_id` = ?')) {
+      const [device, ...candidates] = params;
       return {
         scalar: db.contacts.some(
-          (c) => liveContact(c) && c.device_id === params[0] && sameNumber(c.phone, params[1])
+          (c) => liveContact(c) && c.device_id === device && candidates.includes(indexOfContact(c))
         )
           ? 1
           : null
       };
     }
-    if (sql.startsWith('SELECT 1 FROM `mica_contacts`')) {
+    if (sql.startsWith('SELECT `citizenid`, `device_id`, `phone` FROM `mica_contacts`')) {
       return {
-        scalar: db.contacts.some(
-          (c) => liveContact(c) && c.citizenid === params[0] && sameNumber(c.phone, params[1])
-        )
-          ? 1
-          : null
+        rows: db.contacts.filter((c) => liveContact(c) && c.citizenid === params[0])
       };
     }
     if (sql.startsWith('INSERT INTO `mica_contacts`')) {
-      const [citizenid, device_id, firstname, lastname, phone, favorite] = params;
+      const [citizenid, device_id, firstname, lastname, phone, phone_index, favorite] = params;
       if (
         device_id !== null &&
         db.contacts.some(
-          (c) => liveContact(c) && c.device_id === device_id && sameNumber(c.phone, phone)
+          (c) => liveContact(c) && c.device_id === device_id && indexOfContact(c) === phone_index
         )
       ) {
         throw new Error(
@@ -254,7 +253,16 @@ const dbMock = vi.hoisted(() => {
         );
       }
       const id = db.nextId++;
-      db.contacts.push({ id, citizenid, device_id, firstname, lastname, phone, favorite });
+      db.contacts.push({
+        id,
+        citizenid,
+        device_id,
+        firstname,
+        lastname,
+        phone,
+        phone_index,
+        favorite
+      });
       return { id };
     }
 
@@ -289,7 +297,7 @@ const dbMock = vi.hoisted(() => {
       return { rows: found ? [{ id: found.id }] : [] };
     }
     if (sql.startsWith('INSERT INTO `mica_messages_conversations`')) {
-      const [citizenid, is_group, name, participant_a, participant_b] = params;
+      const [citizenid, is_group, name, _sealKey, participant_a, participant_b] = params;
       const id = db.nextId++;
       db.conversations.push({ id, citizenid, is_group, name, participant_a, participant_b });
       return { id };
@@ -470,7 +478,9 @@ import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 import {
   contentContext,
   encryptedColumn,
+  blindIndexOf,
   openContent,
+  registerBlindIndex,
   registerEncryptedColumn,
   resetContentCipherForTests,
   sealedKeyId,
@@ -483,8 +493,31 @@ import { SKIP, threadTableUnusable } from '../lib/import/report';
 import { __resetImportTargets, postsTarget, registerImportTarget } from '../lib/import/targets';
 import { runImportCommand } from '../services/Import';
 import { NOMINAL_HOSTED_BYTES } from '../lib/media/quota';
+import { contactNumberKey } from '../lib/contactNumbers';
 // Blabber registers itself as where imported posts go; core never names it.
 import '../services/Blabber';
+
+/**
+ * The contact number's seal and blind index, as `services/Contacts.ts` declares them (MICA-432).
+ * That service reaches `Devices`, which this suite's resolvers stand in for, so the two entries
+ * are registered here instead; the importer refuses to write a contact without them.
+ */
+if (!blindIndexOf('mica_contacts', 'phone')) {
+  registerEncryptedColumn({
+    table: 'mica_contacts',
+    column: 'phone',
+    scope: [],
+    hasUpdatedAt: true,
+    binding: 'device'
+  });
+  registerBlindIndex({
+    table: 'mica_contacts',
+    column: 'phone',
+    index: 'phone_index',
+    scope: ['device_id'],
+    normalize: contactNumberKey
+  });
+}
 
 const blabberTarget = postsTarget();
 

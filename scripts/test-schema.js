@@ -47,7 +47,8 @@ let checksRun = 0;
  * each shape (REVIVE_CHECKS). Plus MICA-426's takedown and restore (MODERATION_CHECKS) and its
  * moderated rows through the purges (PURGE_MODERATED_CHECKS), MICA-433's log-token salt
  * (LOG_SALT_CHECKS), and MICA-431's sealed note and photo through a phone handover
- * (HANDOVER_SEALED_CHECKS), on each shape.
+ * (HANDOVER_SEALED_CHECKS), and MICA-432's blind index, place and thread name
+ * (BLIND_INDEX_CHECKS), on each shape.
  */
 const IMPORT_CHECKS = 16;
 const RETENTION_CHECKS = 22;
@@ -69,6 +70,8 @@ const IMPORT_QB_CHECKS = 1;
 const CRYPT_SEED_CHECKS = 1;
 /** MICA-431: a sealed note and photo through a phone handover, on each shape. */
 const HANDOVER_SEALED_CHECKS = 6;
+/** MICA-432: a contact's number behind its blind index, a place, a thread's name, each shape. */
+const BLIND_INDEX_CHECKS = 7;
 /**
  * MICA-306: a fresh database created by the first-start bootstrap against one built by importing
  * the shipped file (the import's one check and twelve), the bootstrap leaving non-fresh databases
@@ -106,6 +109,7 @@ const MINIMUM_CHECKS =
   CRYPT_CHECKS * 2 +
   CRYPT_SEED_CHECKS +
   HANDOVER_SEALED_CHECKS * 2 +
+  BLIND_INDEX_CHECKS * 2 +
   MEDIA_HOOK_CHECKS * 2 +
   2 +
   HOOK_CHECKS * 2 +
@@ -296,10 +300,13 @@ const loadServerModule = async () => {
     `export { batteryApp } from '${root}/server/services/Battery.ts';`,
     // MICA-431: a phone's own notes, sealed to the phone, through a handover.
     `export { notes } from '${root}/server/services/Notes.ts';`,
+    // MICA-432: a contact's number behind its blind index, and a place's sealed position.
+    `export { contacts } from '${root}/server/services/Contacts.ts';`,
+    `export { places } from '${root}/server/services/Places.ts';`,
     `export { hodlr } from '${root}/server/services/Hodlr.ts';`,
     `export { walkContent } from '${root}/server/lib/contentBackfill.ts';`,
     `export { seedFor } from '${root}/server/lib/seed.ts';`,
-    `export { contentContext, encryptedColumn, openContent, plaintextBytesSql, registerEncryptedColumn, resetContentCipherForTests, sealContent, sealedKeyId, unregisterEncryptedColumnForTests } from '${root}/server/lib/contentCipher.ts';`
+    `export { blindIndexFor, blindIndexOf, contentContext, encryptedColumn, openContent, plaintextBytesSql, registerEncryptedColumn, resetContentCipherForTests, sealContent, sealedKeyId, unregisterEncryptedColumnForTests } from '${root}/server/lib/contentCipher.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-schema-harness.mjs');
@@ -3252,6 +3259,118 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
       `${label}: a note on no phone still opens for its own citizen`,
       legacy?.title,
       'written on no phone'
+    );
+
+    /*
+     * MICA-432: a contact's number, sealed and found by its blind index — through a rotation, in
+     * the form it had before the first key, and by the database's own unique key — and the
+     * backfill bringing it to the active key. A saved place's coordinates as one sealed
+     * position. A thread's name sealed to the thread, so it opens whoever holds the row.
+     */
+    step(`${label} — a contact's number behind its blind index, a place, a thread's name`);
+    const contactsRepo = modules.contacts.repo;
+    const numberIndex = modules.blindIndexOf('mica_contacts', 'phone');
+    const refusal = async (write) => {
+      try {
+        await write();
+        return null;
+      } catch (error) {
+        return error?.key ?? error?.code ?? String(error?.message ?? error);
+      }
+    };
+    useKeys(oldOnly);
+    const ada = await contactsRepo.create({
+      citizenid: A,
+      device_id: PHONE,
+      firstname: 'Ada',
+      phone: '555-0100'
+    });
+    useKeys(rotated);
+    const [adaRow] = await q('SELECT phone, phone_index FROM mica_contacts WHERE id = ?', [ada]);
+    check(
+      `${label}: a contact's number is sealed, and indexed under the key it was written with`,
+      [modules.sealedKeyId(String(adaRow.phone)), String(adaRow.phone_index).split('$')[0]],
+      ['old', 'old']
+    );
+    check(
+      `${label}: after the key rotates, the same number on that phone is still refused`,
+      await refusal(() =>
+        contactsRepo.create({
+          citizenid: A,
+          device_id: PHONE,
+          firstname: 'Again',
+          phone: '555-0100 '
+        })
+      ),
+      'server.contacts.numberTaken'
+    );
+    await q(
+      'INSERT INTO mica_contacts (citizenid, device_id, firstname, phone, phone_index) ' +
+        "VALUES (?, ?, 'Old', '555-0199', 'plain:555-0199')",
+      [A, PHONE]
+    );
+    check(
+      `${label}: and so is a number indexed before the first key, as it was migrated`,
+      await refusal(() =>
+        contactsRepo.create({
+          citizenid: A,
+          device_id: PHONE,
+          firstname: 'Again',
+          phone: '555-0199'
+        })
+      ),
+      'server.contacts.numberTaken'
+    );
+    const twice = await modules.blindIndexFor(numberIndex, { device_id: PHONE }, '555-0300');
+    const raw = () =>
+      q(
+        'INSERT INTO mica_contacts (citizenid, device_id, firstname, phone, phone_index) ' +
+          "VALUES (?, ?, 'X', 'x', ?)",
+        [A, PHONE, twice]
+      );
+    await raw();
+    check(
+      `${label}: the database's own unique key refuses a second live row under one index`,
+      await refusal(raw),
+      'ER_DUP_ENTRY'
+    );
+    await walk(true);
+    const [adaAfter] = await q('SELECT phone_index FROM mica_contacts WHERE id = ?', [ada]);
+    check(
+      `${label}: the backfill re-indexes it under the active key, and it is still found`,
+      [
+        String(adaAfter.phone_index).split('$')[0],
+        await contactsRepo.liveWithNumber(PHONE, '555-0100')
+      ],
+      ['new', ada]
+    );
+
+    const placesRepo = modules.places.repo;
+    const home = await placesRepo.addForPlayer(A, PHONE, { name: 'Home', x: 1.5, y: -2, z: 30 });
+    const [homeRow] = await q('SELECT position FROM mica_places WHERE id = ?', [home]);
+    const homeRead = await placesRepo.findById(home, A, PHONE);
+    check(
+      `${label}: a place's coordinates are one sealed position, read back as x, y and z`,
+      [modules.sealedKeyId(String(homeRow.position)), homeRead?.x, homeRead?.y, homeRead?.z],
+      ['new', 1.5, -2, 30]
+    );
+
+    const threads = modules.conversations.repo;
+    const crew = await threads.createConversation({ citizenid: A, is_group: true, name: 'Crew' });
+    await q('UPDATE mica_messages_conversations SET citizenid = ? WHERE id = ?', [B, crew]);
+    const [crewRow] = await q(
+      'SELECT seal_key, name FROM mica_messages_conversations WHERE id = ?',
+      [crew]
+    );
+    const crewRead = await threads.findById(crew);
+    check(
+      `${label}: a thread's name is sealed to the thread, and opens after its creator changes`,
+      [
+        /^[0-9a-f]{32}$/.test(String(crewRow.seal_key)),
+        modules.sealedKeyId(String(crewRow.name)),
+        crewRead?.name
+      ],
+      [true, 'new', 'Crew']
     );
   } finally {
     beforeUpdates = [];

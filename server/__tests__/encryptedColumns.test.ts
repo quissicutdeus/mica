@@ -62,11 +62,15 @@ import { mail, SendSystemEmail } from '../services/Mail';
 import { reports } from '../services/Reports';
 import { conversations } from '../services/Conversations';
 import { buildExport } from '../services/Privacy';
+import { withoutOwnerKeys } from '../lib/replyShape';
 import { notes } from '../services/Notes';
 import { NOTE_CONTENT_MAX, NOTE_TITLE_MAX } from '../../web/src/apps/notes/limits';
 import { media } from '../services/Media';
 import { blabber } from '../services/Blabber';
 import { getNotificationsRepository } from '../services/Notifications';
+import { places } from '../services/Places';
+import { invoices } from '../services/Invoices';
+import { liveChannelByCode } from '../services/Darkchat';
 import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 import { MAIL_CONTENT_MAX } from '@mica/shared/contracts/mail';
 
@@ -152,7 +156,39 @@ const ALLOWLIST: Record<string, readonly string[]> = {
     'integration/scenarios/addonService.ts',
     'integration/scenarios/dms.ts',
     'integration/scenarios/glimpse.ts'
-  ]
+  ],
+  // MICA-432.
+  'mica_contacts.phone': [
+    'server/lib/import/write.ts',
+    'server/lib/seed.ts',
+    'server/services/Contacts.ts',
+    'integration/scenarios/importer.ts',
+    'integration/scenarios/retention.ts'
+  ],
+  'mica_contacts.avatar': [],
+  'mica_darkchat.name': ['server/services/Darkchat.ts', 'integration/scenarios/darkchat.ts'],
+  'mica_darkchat.code': ['server/services/Darkchat.ts', 'integration/scenarios/darkchat.ts'],
+  'mica_darkchat_members.alias': [
+    'server/services/Darkchat.ts',
+    'server/services/DarkchatMessages.ts',
+    'integration/scenarios/darkchat.ts'
+  ],
+  'mica_darkchat_members.handle': [
+    'server/services/Darkchat.ts',
+    'server/services/DarkchatMessages.ts',
+    'integration/scenarios/darkchat.ts'
+  ],
+  'mica_invoices.from_label': ['integration/scenarios/exports.ts'],
+  'mica_invoices.memo': ['integration/scenarios/exports.ts'],
+  'mica_mail.sender': ['server/services/Mail.ts', 'integration/scenarios/crypto.ts'],
+  'mica_mail.sender_address': ['server/services/Mail.ts'],
+  'mica_mail.subject': ['server/services/Mail.ts', 'integration/scenarios/crypto.ts'],
+  'mica_messages_conversations.name': [
+    'server/repositories/ConversationRepository.ts',
+    'server/lib/seed.ts',
+    'server/lib/import/write.ts'
+  ],
+  'mica_places.position': []
 };
 
 /**
@@ -164,13 +200,14 @@ const ALLOWLIST: Record<string, readonly string[]> = {
  */
 const RAW_ON_PURPOSE: Record<string, readonly string[]> = {
   // A mail body stored before a key: `micacrypt status` must leave it, `backfill` seal it.
-  'integration/scenarios/crypto.ts': ['mica_mail.content'],
+  'integration/scenarios/crypto.ts': ['mica_mail.content', 'mica_mail.sender', 'mica_mail.subject'],
   // Fixture rows for retention and the character purge, written plain and deleted unread.
   'integration/scenarios/retention.ts': [
     'mica_messages.message',
     'mica_notes.title',
     'mica_notes.content',
-    'mica_contacts.firstname'
+    'mica_contacts.firstname',
+    'mica_contacts.phone'
   ]
 };
 
@@ -325,6 +362,15 @@ export const sealedSql = (text: string, file: string): SealedSql[] => {
  * on hoth a content key is loaded, so a scenario asserting on a sealed column raw fails there
  * and nowhere else. It opens through its own reader, `integration/lib/sealed.ts`.
  */
+/**
+ * One `[line, handled]` per statement: a statement naming a table with several sealed columns
+ * (Mail's four since MICA-432) is reported once per column, and the probes ask about the
+ * statement.
+ */
+const byStatement = (found: SealedSql[]): [number, boolean][] => [
+  ...new Map(found.map(({ line, handled }) => [line, handled])).entries()
+];
+
 const scan = (): SealedSql[] =>
   ['server', 'integration'].flatMap((dir) =>
     walk(join(ROOT, dir)).flatMap((full) =>
@@ -358,6 +404,20 @@ describe('the encrypted-column guard (MICA-165)', () => {
       'mica_darkchat_messages.bot_alias': ['channel_id'],
       'mica_mail.content': [],
       'mica_reports.target_preview': ['target_table', 'target_id'],
+      // MICA-432.
+      'mica_contacts.phone': [],
+      'mica_contacts.avatar': [],
+      'mica_darkchat.name': [],
+      'mica_darkchat.code': [],
+      'mica_darkchat_members.alias': ['channel_id'],
+      'mica_darkchat_members.handle': ['channel_id'],
+      'mica_invoices.from_label': [],
+      'mica_invoices.memo': [],
+      'mica_mail.sender': [],
+      'mica_mail.sender_address': [],
+      'mica_mail.subject': [],
+      'mica_messages_conversations.name': [],
+      'mica_places.position': [],
       'mica_reports.note': ['target_table', 'target_id'],
       'mica_notes.title': [],
       'mica_notes.content': [],
@@ -443,7 +503,7 @@ describe('the encrypted-column guard (MICA-165)', () => {
       'export const unseen = async (table: string) =>',
       '  await Database.query(`SELECT * FROM `${table}``);'
     ].join('\n');
-    expect(sealedSql(source, 'probe.ts').map(({ line, handled }) => [line, handled])).toEqual([
+    expect(byStatement(sealedSql(source, 'probe.ts'))).toEqual([
       [3, true],
       [5, false]
     ]);
@@ -459,7 +519,7 @@ describe('the encrypted-column guard (MICA-165)', () => {
       'export const opens = async () =>',
       "  helpers.openRows('mica_mail', await Database.query('SELECT * FROM `mica_mail`'));"
     ].join('\n');
-    expect(sealedSql(source, 'probe.ts').map(({ line, handled }) => [line, handled])).toEqual([
+    expect(byStatement(sealedSql(source, 'probe.ts'))).toEqual([
       [4, false],
       [7, true]
     ]);
@@ -546,7 +606,8 @@ describe('what the declarations mean for size', () => {
   });
 
   it('registers a declared table exactly once', () => {
-    const tables = declaredServices.map((s) => s.table);
+    // A child table's sealed columns (MICA-432) are its service's to declare too.
+    const tables = declaredServices.flatMap((s) => [s.table, ...s.childTables.map((c) => c.name)]);
     for (const entry of encryptedColumns()) expect(tables).toContain(entry.table);
   });
 });
@@ -622,11 +683,142 @@ describe('what an encrypted declaration may say', () => {
     const phoneTables = new Set(declaredServices.filter((d) => d.deviceOwned).map((d) => d.table));
     const sealed = encryptedColumns();
     expect(sealed.some((entry) => phoneTables.has(entry.table))).toBe(true);
+    // And a table whose owner passes on is bound to its rows (MICA-432); a child table to the
+    // member who wrote the row.
+    const rowTables = new Set(
+      declaredServices.filter((d) => d.encryptionBinding === 'row').map((d) => d.table)
+    );
+    expect(sealed.some((entry) => rowTables.has(entry.table))).toBe(true);
     for (const entry of sealed) {
       expect(entry.binding, `${entry.table}.${entry.column}`).toBe(
-        phoneTables.has(entry.table) ? 'device' : 'citizen'
+        phoneTables.has(entry.table) ? 'device' : rowTables.has(entry.table) ? 'row' : 'citizen'
       );
     }
+  });
+
+  it('puts a blind index right after its value, private and never written by a client (MICA-432)', () => {
+    const resolved = resolveAppSchema({
+      id: 'index_probe',
+      deviceOwned: true,
+      schema: {
+        phone: {
+          type: 'string',
+          length: 20,
+          encrypted: true,
+          blindIndex: { scope: ['device_id'] }
+        },
+        label: 'string'
+      },
+      encryptionScope: []
+    } as any);
+    const names = resolved.fields.map((f: any) => f.name);
+    expect(names.slice(names.indexOf('phone'), names.indexOf('phone') + 2)).toEqual([
+      'phone',
+      'phone_index'
+    ]);
+    expect(resolved.fields.find((f: any) => f.name === 'phone_index')!.def).toMatchObject({
+      length: 81,
+      private: true,
+      clientWritable: false
+    });
+    expect(resolved.clientWritable).not.toContain('phone_index');
+    expect(resolved.blindIndexes).toEqual([
+      expect.objectContaining({ column: 'phone', index: 'phone_index', scope: ['device_id'] })
+    ]);
+  });
+
+  it.each([
+    [
+      'a blind index over plaintext',
+      { schema: { code: { type: 'string', length: 8, blindIndex: {} } } },
+      /not 'encrypted'/
+    ],
+    [
+      'a blind index scoped by a column that is not there',
+      {
+        schema: {
+          code: { type: 'string', length: 8, encrypted: true, blindIndex: { scope: ['nope'] } }
+        },
+        encryptionScope: []
+      },
+      /not another column/
+    ],
+    [
+      'a blind index scoped by a sealed column',
+      {
+        schema: {
+          code: { type: 'string', length: 8, encrypted: true, blindIndex: { scope: ['room'] } },
+          room: { type: 'string', length: 8, encrypted: true }
+        },
+        encryptionScope: []
+      },
+      /an encrypted column/
+    ],
+    [
+      'a row binding on a phone',
+      { deviceOwned: true, encryptionBinding: 'row', schema: { name: 'string' } },
+      /deviceOwned/
+    ],
+    [
+      'a binding that is not one',
+      { encryptionBinding: 'owner', schema: { name: 'string' } },
+      /is not one/
+    ],
+    [
+      'a seal key declared by hand',
+      { encryptionBinding: 'row', schema: { seal_key: 'string' } },
+      /supplied by/
+    ]
+  ])('refuses %s (MICA-432)', (_label, over, message) => {
+    expect(() => resolveAppSchema({ id: 'refusal_probe', ...over } as any)).toThrow(message);
+  });
+
+  it('adds the seal key a row-bound table is sealed to (MICA-432)', () => {
+    const resolved = resolveAppSchema({
+      id: 'row_probe',
+      encryptionBinding: 'row',
+      encryptionScope: [],
+      schema: { name: { type: 'string', length: 32, encrypted: true } }
+    } as any);
+    expect(resolved.encryptionBinding).toBe('row');
+    expect(resolved.fields.find((f: any) => f.name === 'seal_key')!.def).toMatchObject({
+      length: 32,
+      private: true,
+      clientWritable: false
+    });
+  });
+
+  it("seals a child table's columns under its own scope, widened, with its indexes (MICA-432)", () => {
+    const child = (over: Record<string, unknown>) => ({
+      name: 'probe_members',
+      columns: {
+        room_id: { type: 'int', notNull: true },
+        citizenid: { type: 'string', citizenId: true, notNull: true },
+        alias: { type: 'string', length: 24, encrypted: true, blindIndex: { scope: ['room_id'] } }
+      },
+      ...over
+    });
+    const declareChild = (over: Record<string, unknown>, columns?: Record<string, unknown>) =>
+      resolveAppSchema({
+        id: 'child_probe',
+        schema: { topic: 'string' },
+        childTables: [columns ? { ...child(over), columns } : child(over)]
+      } as any);
+    const resolved = declareChild({ encryptionScope: ['room_id'] });
+    expect(resolved.childEncryption).toEqual([
+      expect.objectContaining({ table: 'probe_members', columns: ['alias'], scope: ['room_id'] })
+    ]);
+    const columns = resolved.childTables[0].columns as Record<string, any>;
+    expect(columns.alias.length).toBe(sealedLengthForChars(24));
+    expect(columns.alias_index).toMatchObject({ length: 81, clientWritable: false });
+    expect(() => declareChild({})).toThrow(/no 'encryptionScope'/);
+    expect(() =>
+      declareChild(
+        { encryptionScope: [] },
+        { alias: { type: 'string', length: 24, encrypted: true } }
+      )
+    ).toThrow(/no 'citizenid'/);
+    expect(() => declareChild({ encryptionScope: ['alias'] })).toThrow(/cannot bind/);
   });
 
   it('refuses a scope with nothing encrypted', () => {
@@ -1446,6 +1638,138 @@ describe("a phone's own content (MICA-431)", () => {
         : null;
     const summary = await summariseTarget('mica_media' as any, 3);
     expect(summary).toMatchObject({ exists: true, preview: 'data:image/png;base64,QQ' });
+  });
+});
+
+/**
+ * MICA-432: the columns that needed a lookup key or a schema change, through the real paths with
+ * a key loaded. Each opens again under its own binding, and each lookup finds a value by the
+ * blind index in every form a stored one can take.
+ */
+describe('lookups and moved owners (MICA-432)', () => {
+  const opened = (table: string, column: string, row: Record<string, unknown>) =>
+    openContent(contentContext(encryptedColumn(table, column)!, row), String(row[column]));
+
+  it("seals a contact's number to the phone, and indexes it under the key", async () => {
+    dbMock.scalar.mockResolvedValue(null);
+    await call('contacts', 'create', { firstname: 'Ada', phone: '555-0100' });
+    const [row] = insertedInto('mica_contacts');
+    expect(isSealed(row.phone)).toBe(true);
+    expect(opened('mica_contacts', 'phone', row)).toBe('555-0100');
+    expect(String(row.phone_index)).toMatch(/^k1\$[0-9a-f]{64}$/);
+    expect(JSON.stringify(row)).not.toContain('555-0100');
+    // Asked first, by every form the index can take: the key's, then the no-key one.
+    const [, params] = dbMock.scalar.mock.calls.find(([sql]) =>
+      String(sql).includes('`phone_key` IN (')
+    )!;
+    expect(params).toEqual([TEST_PHONE_ID, row.phone_index, 'plain:555-0100']);
+  });
+
+  it('refuses a number the phone holds under an index from before the key', async () => {
+    // A live row written before the first key still carries `plain:`; the unique key cannot see
+    // it is the same number, so the write's own read is what refuses.
+    dbMock.scalar.mockImplementation(async (sql: string, params: unknown[] = []) =>
+      String(sql).includes('`phone_key` IN (') && params.includes('plain:555-0100') ? 7 : null
+    );
+    const reply = await call('contacts', 'create', { firstname: 'Ada', phone: '555-0100' });
+    expect(reply).toMatchObject({ key: 'server.contacts.numberTaken' });
+    expect(insertedInto('mica_contacts')).toHaveLength(0);
+  });
+
+  it("seals a Dark Chat channel to the channel, and finds it by its code's index", async () => {
+    const reply = await call('darkchat', 'create', { name: 'Docks', alias: 'Moth' });
+    const [channel] = insertedInto('mica_darkchat');
+    expect(String(channel.seal_key)).toMatch(/^[0-9a-f]{32}$/);
+    expect(opened('mica_darkchat', 'name', channel)).toBe('Docks');
+    // Bound to the channel, not its owner: the heir opens it.
+    expect(opened('mica_darkchat', 'name', { ...channel, citizenid: 'HEIR' })).toBe('Docks');
+    expect(opened('mica_darkchat', 'code', channel)).toBe(reply.code);
+    expect(String(channel.code_index)).toMatch(/^k1\$/);
+    const [member] = insertedInto('mica_darkchat_members');
+    expect(opened('mica_darkchat_members', 'alias', member)).toBe('Moth');
+    expect(String(member.alias_index)).toMatch(/^k1\$/);
+    expect(JSON.stringify([channel, member])).not.toMatch(/Docks|Moth/);
+
+    answerSingle = (sql, params) =>
+      sql.includes('`code_index` IN (') && params.includes(channel.code_index)
+        ? { id: 77, citizenid: 'CIT_A' }
+        : null;
+    expect(await liveChannelByCode(String(reply.code).toLowerCase())).toEqual({
+      id: 77,
+      citizenid: 'CIT_A'
+    });
+  });
+
+  it("seals a saved place's position to the phone, and hands back x, y and z", async () => {
+    const repo = places.repo as any;
+    await repo.addForPlayer('CIT_A', TEST_PHONE_ID, { name: 'Home', x: 1.5, y: -2, z: 30 });
+    const [row] = insertedInto('mica_places');
+    expect(isSealed(row.position)).toBe(true);
+    expect(JSON.parse(opened('mica_places', 'position', row))).toEqual({ x: 1.5, y: -2, z: 30 });
+    answerSingle = (sql) =>
+      sql.includes('`mica_places`') ? selectedFrom(sql, { id: 5, status: 'active', ...row }) : null;
+    expect(await repo.findById(5, 'CIT_A', TEST_PHONE_ID)).toMatchObject({
+      name: 'Home',
+      x: 1.5,
+      y: -2,
+      z: 30
+    });
+  });
+
+  it("seals a mail's sender and subject, and an invoice's label and memo, to the reader", async () => {
+    await SendSystemEmail('CIT_B', { sender: 'Maze Bank', subject: 'Overdraft', content: 'hi' });
+    const [letter] = insertedInto('mica_mail');
+    expect(opened('mica_mail', 'sender', letter)).toBe('Maze Bank');
+    expect(opened('mica_mail', 'subject', letter)).toBe('Overdraft');
+    expect(JSON.stringify(letter)).not.toMatch(/Maze Bank|Overdraft/);
+
+    const label = await sealContent(
+      contentContext(encryptedColumn('mica_invoices', 'from_label')!, { citizenid: 'CIT_A' }),
+      'LS Customs'
+    );
+    answerQuery = (sql) =>
+      sql.includes('`mica_invoices`')
+        ? [selectedFrom(sql, { id: 3, citizenid: 'CIT_A', from_label: label, memo: null })]
+        : [];
+    const open = await (invoices.repo as any).findOpen('CIT_A', 0);
+    expect(open).toEqual([expect.objectContaining({ id: 3, from_label: 'LS Customs' })]);
+    expect(open[0]).not.toHaveProperty('citizenid');
+  });
+
+  it('lets no reply carry an index, a key generated over one, or a seal key', () => {
+    const reply = withoutOwnerKeys({
+      id: 1,
+      phone: '555-0100',
+      phone_index: 'k1$ab',
+      phone_key: 'k1$ab',
+      seal_key: 'k'.repeat(32),
+      members: [{ alias: 'Moth', alias_index: 'k1$cd', alias_key: 'k1$cd', handle_index: 'k1$ef' }],
+      channel: { name: 'Docks', code_index: 'plain:ABCD2345' },
+      pair_label: 'kept'
+    });
+    // Registered from the declarations, so a custom reply written later is covered too.
+    expect(reply).toEqual({
+      id: 1,
+      phone: '555-0100',
+      members: [{ alias: 'Moth' }],
+      channel: { name: 'Docks' },
+      pair_label: 'kept'
+    });
+  });
+
+  it("seals a thread's name to the thread, so whoever holds it can rename and read it", async () => {
+    dbMock.scalar.mockImplementation(async (sql: string) =>
+      String(sql).startsWith('SELECT seal_key FROM mica_messages_conversations')
+        ? 'k'.repeat(32)
+        : null
+    );
+    await (conversations.repo as any).renameAsAdmin(4, 'Crew', 'CIT_A', TEST_PHONE_ID);
+    const [, params] = dbMock.update.mock.calls.at(-1) as [string, unknown[]];
+    expect(isSealed(params[0])).toBe(true);
+    expect(
+      opened('mica_messages_conversations', 'name', { seal_key: 'k'.repeat(32), name: params[0] })
+    ).toBe('Crew');
+    expect(params[2]).toBe('k'.repeat(32));
   });
 });
 

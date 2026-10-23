@@ -60,6 +60,7 @@ import {
   JOIN_WINDOW_MS,
   __resetDarkchatJoinLimits,
   __setDarkchatClock,
+  aliasKey,
   generateCode,
   normalizeCode
 } from '../services/Darkchat';
@@ -100,8 +101,13 @@ const liveOf = (channel: unknown, citizenid: unknown) =>
 
 const channelById = (id: unknown) => w.channels.find((c) => c.id === id);
 
-/** `alias_key`'s collation: case-blind. */
-const sameAlias = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+/**
+ * The blind indexes the server writes beside a sealed value (MICA-432), in their no-key form —
+ * this suite loads no content key — or the ones a row was written with.
+ */
+const codeIndexOf = (c: Row) => c.code_index ?? `plain:${c.code}`;
+const aliasIndexOf = (m: Row) => m.alias_index ?? `plain:${aliasKey(m.alias)}`;
+const handleIndexOf = (m: Row) => m.handle_index ?? `plain:${m.handle}`;
 
 /** A message is inside the window when it is younger than the bound number of hours. */
 const inside = (m: Row, hours: unknown) => (m.age_hours ?? 0) < Number(hours);
@@ -110,7 +116,9 @@ const install = () => {
   dbMock.single.mockImplementation(async (raw: string, params: unknown[] = []) => {
     const sql = one(raw);
     if (
-      sql.startsWith('SELECT m.`id`, m.`alias`, m.`handle` FROM `mica_darkchat_members` m JOIN')
+      sql.startsWith(
+        'SELECT m.`id`, m.`citizenid`, m.`channel_id`, m.`alias`, m.`handle` FROM `mica_darkchat_members` m JOIN'
+      )
     ) {
       const [channel, citizenid] = params;
       // Honoured, not assumed: a read that drops it reaches a member who has left.
@@ -119,13 +127,19 @@ const install = () => {
         (m) => m.channel_id === channel && m.citizenid === citizenid && (!live || !m.left_at)
       );
       return member && channelById(channel)?.status === 'active'
-        ? { id: member.id, alias: member.alias, handle: member.handle }
+        ? {
+            id: member.id,
+            citizenid: member.citizenid,
+            channel_id: member.channel_id,
+            alias: member.alias,
+            handle: member.handle
+          }
         : null;
     }
-    if (sql.includes('`alias_key` = ?')) {
-      const [channel, alias] = params as [number, string];
+    if (sql.includes('`alias_key` IN (')) {
+      const [channel, ...candidates] = params as [number, ...string[]];
       return w.members.some(
-        (m) => m.channel_id === channel && !m.left_at && sameAlias(m.alias, alias)
+        (m) => m.channel_id === channel && !m.left_at && candidates.includes(aliasIndexOf(m))
       )
         ? { 1: 1 }
         : null;
@@ -149,16 +163,44 @@ const install = () => {
         ? { 1: 1 }
         : null;
     }
-    if (sql.includes('AS is_owner FROM `mica_darkchat` WHERE `code` = ?')) {
-      const [citizenid, code] = params;
-      const found = w.channels.find((c) => c.code === code && c.status === 'active');
+    if (sql.includes('AS is_owner FROM `mica_darkchat` WHERE `code_index` IN (')) {
+      const [citizenid, ...candidates] = params;
+      const found = w.channels.find(
+        (c) => candidates.includes(codeIndexOf(c)) && c.status === 'active'
+      );
       return found
-        ? { id: found.id, name: found.name, is_owner: found.citizenid === citizenid ? 1 : 0 }
+        ? {
+            id: found.id,
+            seal_key: found.seal_key,
+            name: found.name,
+            code: found.code,
+            is_owner: found.citizenid === citizenid ? 1 : 0
+          }
         : null;
     }
-    if (sql.startsWith('SELECT `id`, `citizenid` FROM `mica_darkchat` WHERE `code` = ?')) {
-      const found = w.channels.find((c) => c.code === params[0] && c.status === 'active');
+    if (sql.startsWith('SELECT `id`, `citizenid` FROM `mica_darkchat` WHERE `code_index` IN (')) {
+      const found = w.channels.find(
+        (c) => params.includes(codeIndexOf(c)) && c.status === 'active'
+      );
       return found ? { id: found.id, citizenid: found.citizenid } : null;
+    }
+    if (sql.startsWith('SELECT `seal_key`, `code` FROM `mica_darkchat` WHERE `id` = ?')) {
+      const c = channelById(params[0]);
+      return c && c.citizenid === params[1] && c.status === 'active'
+        ? { seal_key: c.seal_key, code: c.code }
+        : null;
+    }
+    if (
+      sql.startsWith(
+        'SELECT mem.`citizenid`, mem.`channel_id`, mem.`alias` FROM `mica_darkchat_messages` msg'
+      )
+    ) {
+      const [citizenid, id] = params;
+      const m = w.messages.find((x) => x.id === id);
+      const member = m ? liveOf(m.channel_id, citizenid) : undefined;
+      return member
+        ? { citizenid: member.citizenid, channel_id: member.channel_id, alias: member.alias }
+        : null;
     }
     if (sql.startsWith("SELECT 1 FROM `mica_darkchat` WHERE `id` = ? AND `status` = 'active'")) {
       return channelById(params[0])?.status === 'active' ? { 1: 1 } : null;
@@ -200,22 +242,21 @@ const install = () => {
         .sort((a, b) => a.id - b.id)[0];
       return heir ? heir.citizenid : null;
     }
-    if (sql.startsWith('SELECT `code` FROM `mica_darkchat` WHERE `id` = ? AND `citizenid` = ?')) {
+    if (
+      sql.startsWith('SELECT `seal_key` FROM `mica_darkchat` WHERE `id` = ? AND `citizenid` = ?')
+    ) {
       const c = channelById(params[0]);
-      const active = !sql.includes("`status` = 'active'") || c?.status === 'active';
-      return c && c.citizenid === params[1] && active ? c.code : null;
+      return c && c.citizenid === params[1] && c.status === 'active' ? (c.seal_key ?? null) : null;
     }
-    if (sql.startsWith('SELECT `citizenid` FROM `mica_darkchat_members` WHERE `handle` = ?')) {
-      const [handle, channel, notMe] = params;
+    if (
+      sql.startsWith('SELECT `citizenid` FROM `mica_darkchat_members` WHERE `handle_index` IN (')
+    ) {
+      const candidates = params.slice(0, -2);
+      const [channel, notMe] = params.slice(-2);
       const m = w.members.find(
-        (x) => x.handle === handle && x.channel_id === channel && !x.left_at
+        (x) => candidates.includes(handleIndexOf(x)) && x.channel_id === channel && !x.left_at
       );
       return m && m.citizenid !== notMe ? m.citizenid : null;
-    }
-    if (sql.startsWith('SELECT mem.`alias` FROM `mica_darkchat_messages` msg')) {
-      const [citizenid, id] = params;
-      const m = w.messages.find((x) => x.id === id);
-      return (m && liveOf(m.channel_id, citizenid)?.alias) ?? null;
     }
     return null;
   });
@@ -224,18 +265,29 @@ const install = () => {
     const sql = one(raw);
     const id = w.nextId++;
     if (sql.startsWith('INSERT INTO `mica_darkchat` ')) {
-      const [citizenid, name, code] = params;
-      if (w.channels.some((c) => c.code === code)) throw duplicate('mica_darkchat.code');
-      w.channels.push({ id, citizenid, name, code, status: 'active' });
+      const [citizenid, seal_key, name, code, code_index] = params;
+      if (w.channels.some((c) => codeIndexOf(c) === code_index)) {
+        throw duplicate('mica_darkchat.code_index');
+      }
+      w.channels.push({ id, citizenid, seal_key, name, code, code_index, status: 'active' });
       return id;
     }
     if (sql.startsWith('INSERT INTO `mica_darkchat_members`')) {
-      const [channel, citizenid, alias, handle] = params as [number, string, string, string];
+      const [channel, citizenid, alias, handle, alias_index, handle_index] = params as [
+        number,
+        string,
+        string,
+        string,
+        string,
+        string
+      ];
       if (liveOf(channel, citizenid)) throw duplicate('mica_darkchat_members.channel_citizen');
-      if (w.members.some((m) => m.handle === handle))
-        throw duplicate('mica_darkchat_members.handle');
+      if (w.members.some((m) => handleIndexOf(m) === handle_index))
+        throw duplicate('mica_darkchat_members.handle_index');
       if (
-        w.members.some((m) => m.channel_id === channel && !m.left_at && sameAlias(m.alias, alias))
+        w.members.some(
+          (m) => m.channel_id === channel && !m.left_at && aliasIndexOf(m) === alias_index
+        )
       ) {
         throw duplicate('mica_darkchat_members.channel_alias');
       }
@@ -245,6 +297,8 @@ const install = () => {
         citizenid,
         alias,
         handle,
+        alias_index,
+        handle_index,
         status: 'active',
         left_at: null
       });
@@ -300,12 +354,14 @@ const install = () => {
     }
     if (sql.startsWith('UPDATE `mica_darkchat_members` m JOIN `mica_darkchat` c')) {
       // The owner predicate rides the join, and is honoured: no owner, no removal.
-      const [owner, handle, channel, notMe] = params;
+      const [owner, ...rest] = params;
+      const candidates = rest.slice(0, -2);
+      const [channel, notMe] = rest.slice(-2);
       const c = channelById(channel);
       const ownerHeld =
         sql.includes('c.`citizenid` = ?') && c?.citizenid === owner && c?.status === 'active';
       const m = w.members.find(
-        (x) => x.handle === handle && x.channel_id === channel && !x.left_at
+        (x) => candidates.includes(handleIndexOf(x)) && x.channel_id === channel && !x.left_at
       );
       if (!ownerHeld || !m || m.citizenid === notMe) return false;
       Object.assign(m, { status: 'removed', left_at: 'now' });
@@ -325,12 +381,14 @@ const install = () => {
       c.status = 'deleted';
       return true;
     }
-    if (sql.startsWith('UPDATE `mica_darkchat` SET `code` = ?')) {
-      const [code, id, owner] = params;
+    if (sql.startsWith('UPDATE `mica_darkchat` SET `code` = ?, `code_index` = ?')) {
+      const [code, code_index, id, owner] = params;
       const c = channelById(id);
       if (!c || c.citizenid !== owner || c.status !== 'active') return false;
-      if (w.channels.some((x) => x.code === code)) throw duplicate('mica_darkchat.code');
-      c.code = code;
+      if (w.channels.some((x) => codeIndexOf(x) === code_index)) {
+        throw duplicate('mica_darkchat.code_index');
+      }
+      Object.assign(c, { code, code_index });
       return true;
     }
     return false;
@@ -352,7 +410,7 @@ const install = () => {
         )
       ].map((channel_id) => ({ channel_id }));
     }
-    if (sql.includes('AS my_member_id')) {
+    if (sql.includes('FROM `mica_darkchat_members` m JOIN `mica_darkchat` c')) {
       return w.members
         .filter(
           (m) =>
@@ -364,20 +422,30 @@ const install = () => {
           const c = channelById(m.channel_id)!;
           return {
             id: c.id,
+            seal_key: c.seal_key,
             name: c.name,
-            my_member_id: m.handle,
-            my_alias: m.alias,
+            citizenid: m.citizenid,
+            handle: m.handle,
+            alias: m.alias,
             is_owner: c.citizenid === m.citizenid ? 1 : 0
           };
         });
     }
-    if (sql.startsWith('SELECT `handle`, `alias` FROM `mica_darkchat_members`')) {
+    if (
+      sql.startsWith(
+        'SELECT `citizenid`, `channel_id`, `handle`, `alias` FROM `mica_darkchat_members`'
+      )
+    ) {
+      // In join order, as the table hands them back: the alias order is the server's own now.
       return w.members
         .filter((m) => m.channel_id === params[0] && !m.left_at)
-        .sort((a, b) =>
-          sql.includes('ORDER BY `alias`') ? a.alias.localeCompare(b.alias) : a.id - b.id
-        )
-        .map((m) => ({ handle: m.handle, alias: m.alias }));
+        .sort((a, b) => a.id - b.id)
+        .map((m) => ({
+          citizenid: m.citizenid,
+          channel_id: m.channel_id,
+          handle: m.handle,
+          alias: m.alias
+        }));
     }
     if (sql.startsWith('SELECT msg.`id`, msg.`citizenid`')) {
       const withCursor = sql.includes('msg.`id` < ?');
@@ -405,6 +473,9 @@ const install = () => {
           member_alias: w.members.find((x) => x.id === m.author_member_id)?.alias ?? null,
           member_handle: sql.includes('AS member_handle')
             ? (w.members.find((x) => x.id === m.author_member_id)?.handle ?? null)
+            : undefined,
+          member_citizenid: sql.includes('AS member_citizenid')
+            ? (w.members.find((x) => x.id === m.author_member_id)?.citizenid ?? null)
             : undefined
         }));
     }
@@ -513,6 +584,37 @@ describe('create and join', () => {
     const { code } = await open();
     const reply = await call('darkchat:join', { code, alias: 'GHOST' }, 'CIT_B');
     expect(reply.key).toBe('server.darkchat.aliasTaken');
+  });
+
+  /**
+   * MICA-432: sealed, the alias is compared by `aliasKey`, which folds at least as far as the
+   * collation it replaces — so an impersonator gets no new room. The twin: a different alias,
+   * however close it looks to a reader, is still a different alias.
+   */
+  it.each([
+    ['an accent', 'Ghöst'],
+    ['a sharp s for ss', 'GHOSS'],
+    ['a fullwidth form', 'ｇｈｏｓｔ'],
+    ['a zero-width space', 'gh\u200Bost'],
+    ['trailing spaces', 'ghost   ']
+  ])('refuses an alias a live member has, under %s', async (_label, alias) => {
+    const { code } = await open('Docks', alias === 'GHOSS' ? 'ghoß' : 'ghost');
+    const reply = await call('darkchat:join', { code, alias }, 'CIT_B');
+    expect(reply.key).toBe('server.darkchat.aliasTaken');
+  });
+
+  it('folds as widely as the old collation, and no further than letters that differ', () => {
+    for (const [a, b] of [
+      ['Straße', 'STRASSE'],
+      ['Æther', 'aether'],
+      ['Øre', 'ore'],
+      ['Ghöst', 'ghost'],
+      ['ﬁre', 'fire']
+    ]) {
+      expect(aliasKey(a), `${a} / ${b}`).toBe(aliasKey(b));
+    }
+    expect(aliasKey('Ghost')).not.toBe(aliasKey('Host'));
+    expect(aliasKey('Gh0st')).not.toBe(aliasKey('Ghost'));
   });
 
   it('answers a missing code, a deleted channel and a removal the same way', async () => {
@@ -1039,8 +1141,10 @@ describe('member handles, not row ids (review)', () => {
       expect(member.id).toMatch(HANDLE);
       expect(rowIds).not.toContain(member.id);
     }
+    // The alias is sealed (MICA-432), so the order is the server's: the table hands the rows
+    // back in join order — zed, amber, moss — and the reply above is sorted all the same.
     const sql = one(dbMock.query.mock.calls.at(-1)![0]);
-    expect(sql).toContain('ORDER BY `alias`');
+    expect(sql).not.toContain('ORDER BY');
     expect(sql).not.toMatch(/SELECT `id`/);
   });
 

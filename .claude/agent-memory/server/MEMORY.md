@@ -142,3 +142,5 @@ line here.
   — give each party its own `device_id`; MICA-431's re-seal passed broken
 - [Sealing a column applies its rules to server writes](sealing-a-column-applies-its-rules-server-side.md)
   — `accepts` broke `shareLocation`; `mediumtext` exports as a size
+- [Redefine a virtual column by drop and add; pin updated_at](migration-virtual-column-and-fill-traps.md)
+  — MODIFY wrote garbage bytes on MariaDB 11; a fill moves updated_at (MICA-432)

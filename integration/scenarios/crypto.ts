@@ -191,9 +191,20 @@ export const cryptoScenarios: Scenario[] = [
       });
       const id = await eventually(
         async () => {
-          const row = await db.row(
-            'SELECT `id` FROM `mica_mail` WHERE `citizenid` = ? AND `subject` = ?',
-            [recipient.citizenid, subject]
+          // The subject is sealed (MICA-432): the recipient's mail is read and opened, not
+          // compared by SQL.
+          const rows = await db.rows(
+            'SELECT `id`, `citizenid`, `subject` FROM `mica_mail` WHERE `citizenid` = ?',
+            [recipient.citizenid]
+          );
+          const row = rows.find(
+            (mail) =>
+              openSealed(mail.subject, harnessKeys(), {
+                table: 'mica_mail',
+                column: 'subject',
+                citizenid: String(mail.citizenid),
+                scope: []
+              }) === subject
           );
           return row ? Number(row.id) : null;
         },

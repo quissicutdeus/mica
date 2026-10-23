@@ -3,7 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
-import { sealRow, storablePlaintext } from '../contentCipher';
+import {
+  blindIndexCandidates,
+  blindIndexFor,
+  blindIndexOf,
+  newSealKey,
+  openRows,
+  sealRow,
+  storablePlaintext
+} from '../contentCipher';
+import { contactNumberKey } from '../contactNumbers';
 import { Database, type TransactionQuery } from '../Database';
 import {
   hostedUrlPrefixes,
@@ -61,12 +70,35 @@ export interface ContactIn {
 }
 
 /**
- * A number as `mica_contacts.phone`'s collation (`utf8mb4_unicode_ci`) compares it, near enough
- * for an in-memory set: case folded, and trailing spaces ignored (PAD SPACE). Only for this
- * run's own duplicates — the ones not in the database yet. Anything already written is
- * compared by SQL, under the real collation.
+ * A number as a phone's contacts compare it (`contactNumberKey`): case folded, trailing spaces
+ * ignored. Since MICA-432 the stored number is sealed, so this is the comparison for what is
+ * already written too, not only for this run's own duplicates.
  */
-const numberKey = (phone: string): string => phone.toLowerCase().trimEnd();
+const numberKey = contactNumberKey;
+
+/**
+ * The numbers a citizen's live contacts hold, on any phone, opened (MICA-432): the number is
+ * sealed, so the "already re-added by hand after switching phones" check reads the rows rather
+ * than asking SQL to compare. Read once per citizen per run.
+ */
+const liveNumbersOf = async (
+  cache: Map<string, Set<string>>,
+  citizenid: string
+): Promise<Set<string>> => {
+  const known = cache.get(citizenid);
+  if (known) return known;
+  const rows = openRows(
+    'mica_contacts',
+    (await Database.query<{ citizenid: string; device_id: string | null; phone: string }[]>(
+      'SELECT `citizenid`, `device_id`, `phone` FROM `mica_contacts` ' +
+        "WHERE `citizenid` = ? AND `status` = 'active'",
+      [citizenid]
+    )) ?? []
+  );
+  const numbers = new Set(rows.map((row) => numberKey(String(row.phone))));
+  cache.set(citizenid, numbers);
+  return numbers;
+};
 
 export const importContacts = async (
   ctx: ImportContext,
@@ -75,6 +107,13 @@ export const importContacts = async (
 ): Promise<void> => {
   /** What this run has already counted, so a dry run and an apply agree on duplicates. */
   const counted = new Set<string>();
+  const held = new Map<string, Set<string>>();
+  // The number's blind index, as Contacts declares it (MICA-432). Required: without it the
+  // phone-level duplicate check would quietly not run, and every row would be written unindexed.
+  const phoneIndex = blindIndexOf('mica_contacts', 'phone');
+  if (!phoneIndex) {
+    throw new Error('[import] mica_contacts.phone has no blind index: Contacts is not loaded.');
+  }
   for await (const rows of source) {
     for (const row of rows) {
       tally.readRow();
@@ -103,12 +142,7 @@ export const importContacts = async (
         tally.skip(SKIP.duplicateInSource);
         continue;
       }
-      // `phone = ?` is compared under the column's collation, as the key compares it.
-      const existing = await Database.scalar<number | null>(
-        "SELECT 1 FROM `mica_contacts` WHERE `citizenid` = ? AND `phone` = ? AND `status` = 'active' LIMIT 1",
-        [citizenid, phone]
-      );
-      if (existing) {
+      if ((await liveNumbersOf(held, citizenid)).has(numberKey(phone))) {
         tally.skip(SKIP.alreadyInContacts);
         continue;
       }
@@ -135,9 +169,12 @@ export const importContacts = async (
         continue;
       }
       if (deviceId) {
+        // By the number's blind index, in every form a stored one can take (MICA-432).
+        const candidates = await blindIndexCandidates(phoneIndex, { device_id: deviceId }, phone);
         const live = await Database.scalar<number | null>(
-          'SELECT 1 FROM `mica_contacts` WHERE `device_id` = ? AND `phone_key` = ? LIMIT 1',
-          [deviceId, phone]
+          'SELECT 1 FROM `mica_contacts` WHERE `device_id` = ? ' +
+            `AND \`phone_key\` IN (${candidates.map(() => '?').join(', ')}) LIMIT 1`,
+          [deviceId, ...candidates]
         );
         if (live) {
           tally.skip(SKIP.alreadyInContacts);
@@ -156,23 +193,28 @@ export const importContacts = async (
           // Sealed to the phone the contact lands on, as Contacts seals one (MICA-431), or to
           // the citizen when it lands on none. Cut to the column's bound first, which is what
           // fits once sealed; `storablePlaintext` for a name that starts like a sealed value.
+          const place = { citizenid, device_id: deviceId ?? null };
           const sealed = await sealRow('mica_contacts', {
-            citizenid,
-            device_id: deviceId ?? null,
+            ...place,
             firstname: await storablePlaintext(cutText(row.firstname.trim() || phone, 50), 50),
-            lastname: row.lastname ? await storablePlaintext(cutText(row.lastname, 50), 50) : null
+            lastname: row.lastname ? await storablePlaintext(cutText(row.lastname, 50), 50) : null,
+            phone: await storablePlaintext(phone, 20)
           });
+          // The number's blind index beside it (MICA-432), as Contacts writes one.
+          const index = await blindIndexFor(phoneIndex, place, phone);
           return [
             {
               query: `INSERT INTO \`mica_contacts\`
-                 (\`citizenid\`, \`device_id\`, \`firstname\`, \`lastname\`, \`phone\`, \`favorite\`)
-               VALUES (?, ?, ?, ?, ?, ?)`,
+                 (\`citizenid\`, \`device_id\`, \`firstname\`, \`lastname\`, \`phone\`,
+                  \`phone_index\`, \`favorite\`)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
               params: [
                 citizenid,
                 deviceId,
                 sealed.firstname,
                 sealed.lastname,
-                phone,
+                sealed.phone,
+                index,
                 row.favorite ? 1 : 0
               ]
             }
@@ -181,6 +223,7 @@ export const importContacts = async (
         (id, reason) => {
           if (id !== null) {
             tally.written++;
+            held.get(citizenid)?.add(numberKey(phone));
             return;
           }
           counted.delete(natural);
@@ -502,23 +545,34 @@ export class Threads {
       thread.key,
       'mica_messages_conversations',
       members[0].citizenid,
-      async () => [
-        {
-          query: `INSERT INTO \`mica_messages_conversations\`
-             (\`citizenid\`, \`is_group\`, \`name\`, \`participant_a\`, \`participant_b\`)
-           VALUES (?, ?, ?, ?, ?)`,
-          params: [
-            members[0].citizenid,
-            pair ? 0 : 1,
-            // A group keeps the name it had. A 1:1 between two phones keeps none (MICA-339):
-            // each reader labels it from their own contacts and the server never sends it.
-            !pair && thread.name ? cutText(thread.name, 50) : null,
-            pair ? members[0].deviceId : null,
-            pair ? members[1].deviceId : null
-          ]
-        },
-        ...members.map((m, i) => participant(m, i === 0 ? 'admin' : 'member'))
-      ],
+      async () => {
+        // A group keeps the name it had. A 1:1 between two phones keeps none (MICA-339): each
+        // reader labels it from their own contacts and the server never sends it. Sealed to the
+        // thread's own seal key (MICA-432), drawn here as `Repository.create` draws one.
+        const sealKey = newSealKey();
+        const named = !pair && thread.name ? cutText(thread.name, 50) : null;
+        const sealed = await sealRow('mica_messages_conversations', {
+          seal_key: sealKey,
+          name: named === null ? null : await storablePlaintext(named, 50)
+        });
+        return [
+          {
+            query: `INSERT INTO \`mica_messages_conversations\`
+               (\`citizenid\`, \`is_group\`, \`name\`, \`seal_key\`, \`participant_a\`,
+                \`participant_b\`)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            params: [
+              members[0].citizenid,
+              pair ? 0 : 1,
+              sealed.name,
+              sealKey,
+              pair ? members[0].deviceId : null,
+              pair ? members[1].deviceId : null
+            ]
+          },
+          ...members.map((m, i) => participant(m, i === 0 ? 'admin' : 'member'))
+        ];
+      },
       (id, reason) => {
         if (id === null && pair && reason === SKIP.writeFailed) {
           retry.push({ thread, members });

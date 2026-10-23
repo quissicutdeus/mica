@@ -109,9 +109,11 @@ describe('seeding a new phone', () => {
     expect(insertsInto('mica_devices')).toHaveLength(1);
     // Each row says which default it is (MICA-335), so a retry knows it even once renumbered.
     expect(insertsInto('mica_contacts')).toEqual([
+      // With the number's blind index beside it (MICA-432), here its no-key form.
       {
         firstname: 'Dispatch',
         phone: '911',
+        phone_index: 'plain:911',
         default_number: '911',
         citizenid: CID,
         device_id: deviceId
@@ -119,6 +121,7 @@ describe('seeding a new phone', () => {
       {
         firstname: 'Mechanic',
         phone: '555-0100',
+        phone_index: 'plain:555-0100',
         default_number: '555-0100',
         citizenid: CID,
         device_id: deviceId

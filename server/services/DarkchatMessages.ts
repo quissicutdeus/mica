@@ -6,7 +6,7 @@ import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { openRows, storablePlaintext } from '../lib/contentCipher';
+import { openRow, openRows, storablePlaintext } from '../lib/contentCipher';
 import { evidenceHold, RETENTION_BATCH } from '../lib/contentRetention';
 import { whenSchemaReady } from '../lib/schemaReady';
 import { isAppDisabled } from '../lib/ownerConfig';
@@ -20,6 +20,7 @@ import {
   liveCitizensOf,
   deleteInBatches,
   liveMember,
+  liveChannelByCode,
   normalizeCode,
   sweepMembersAndChannels
 } from './Darkchat';
@@ -101,13 +102,20 @@ interface MessageRow {
  * what Admin shows as who reported it, since the alias is the only name the reporter had there.
  */
 const reporterAlias = async (targetId: number, citizenid: string): Promise<string | null> => {
-  const alias = await Database.scalar<string | null>(
-    `SELECT mem.\`alias\` FROM \`${TABLE}\` msg
+  // Sealed to the member and the channel (MICA-432): read with both, and opened.
+  const row = await Database.single<{
+    citizenid: string;
+    channel_id: number;
+    alias: string;
+  } | null>(
+    `SELECT mem.\`citizenid\`, mem.\`channel_id\`, mem.\`alias\` FROM \`${TABLE}\` msg
      JOIN \`mica_darkchat_members\` mem
        ON mem.\`channel_id\` = msg.\`channel_id\` AND mem.\`citizenid\` = ? AND mem.\`left_at\` IS NULL
      WHERE msg.\`id\` = ? LIMIT 1`,
     [citizenid, targetId]
   );
+  if (!row) return null;
+  const alias = openRow('mica_darkchat_members', row).alias;
   return typeof alias === 'string' ? alias : null;
 };
 
@@ -217,11 +225,15 @@ app.registerEvent('list', async (_source, _cbId, data, citizenid) => {
   // literally so `encryptedColumns.test.ts` sees this read and holds it to the `openRows` below.
   const cursorClause = cursor === null ? '' : ' AND msg.`id` < ?';
   const selected = await Database.query<
-    (MessageRow & { member_alias: string | null; member_handle: string | null })[]
+    (MessageRow & {
+      member_alias: string | null;
+      member_handle: string | null;
+      member_citizenid: string | null;
+    })[]
   >(
     `SELECT msg.\`id\`, msg.\`citizenid\`, msg.\`channel_id\`, msg.\`author_member_id\`,
             msg.\`bot_alias\`, msg.\`body\`, msg.\`created_at\`, mem.\`alias\` AS member_alias,
-            mem.\`handle\` AS member_handle
+            mem.\`handle\` AS member_handle, mem.\`citizenid\` AS member_citizenid
      FROM \`mica_darkchat_messages\` msg
      LEFT JOIN \`mica_darkchat_members\` mem ON mem.\`id\` = msg.\`author_member_id\`
      WHERE msg.\`channel_id\` = ? AND msg.\`status\` = 'active'
@@ -230,7 +242,19 @@ app.registerEvent('list', async (_source, _cbId, data, citizenid) => {
      LIMIT ?`,
     params
   );
-  const rows = openRows(TABLE, selected ?? []);
+  // The author's alias and handle are sealed to the author's member row (MICA-432): opened off
+  // its citizenid and the channel, then dropped with it — `toWire` never sees whose they are.
+  const rows = openRows(TABLE, selected ?? []).map((row) => {
+    const { member_citizenid: author, ...rest } = row;
+    if (author === null || author === undefined) return rest;
+    const writer = openRow('mica_darkchat_members', {
+      citizenid: author,
+      channel_id: row.channel_id,
+      alias: row.member_alias,
+      handle: row.member_handle
+    });
+    return { ...rest, member_alias: writer.alias, member_handle: writer.handle };
+  });
   const hasMore = rows.length > limit;
   const shown = hasMore ? rows.slice(0, limit) : rows;
   return {
@@ -344,10 +368,8 @@ const PostToDarkChat = async (
     return fail<Posted>('invalid_args', `A body of 1 to ${BODY_MAX} characters is required.`);
   }
 
-  const found = await Database.single<{ id: number; citizenid: string } | null>(
-    "SELECT `id`, `citizenid` FROM `mica_darkchat` WHERE `code` = ? AND `status` = 'active' LIMIT 1",
-    [normalized]
-  );
+  // By the code's blind index (MICA-432): the code itself is sealed.
+  const found = await liveChannelByCode(normalized);
   if (!found) return fail<Posted>('invalid_args', 'No live channel has that code.');
   const channelId = Number(found.id);
 

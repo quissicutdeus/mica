@@ -19,6 +19,15 @@ import { PlayerFacingError } from '../lib/errors';
 import { isDuplicateKey } from '../lib/sqlErrors';
 import { who } from '../lib/who';
 import { withoutOwnerKeys } from '../lib/replyShape';
+import {
+  BLIND_INDEX_WIDTH,
+  blindIndexCandidates,
+  blindIndexOf,
+  openRow,
+  openRows
+} from '../lib/contentCipher';
+
+import { contactNumberKey } from '../lib/contactNumbers';
 
 /**
  * What a player is told when a write would give their phone a second live contact with one
@@ -36,8 +45,38 @@ const numberTaken = (): PlayerFacingError =>
  * behalf.
  */
 class ContactRepository extends SchemaRepository<Contact> {
+  /**
+   * The live contact on this phone with this number, by its blind index (MICA-432), or null.
+   *
+   * `device_phone_unique` refuses a second live row whose index is the same — which is every
+   * row indexed under the same key. Between a key being enabled or rotated and the backfill, a
+   * row can still carry an older key's index, or the `plain:` one, and the unique key cannot see
+   * that the two are one number. So every write that could add one asks first, over every form
+   * the index can take. A race inside that window is the one gap, and the backfill reports it.
+   */
+  async liveWithNumber(
+    deviceId: unknown,
+    phone: unknown,
+    exceptId?: number | string
+  ): Promise<number | null> {
+    const entry = blindIndexOf(this.tableName, 'phone');
+    if (!entry || typeof deviceId !== 'string' || deviceId === '' || typeof phone !== 'string') {
+      return null;
+    }
+    const candidates = await blindIndexCandidates(entry, { device_id: deviceId }, phone);
+    const found = await Database.scalar<number | string | null>(
+      `SELECT \`id\` FROM \`${this.tableName}\` WHERE \`device_id\` = ? ` +
+        `AND \`phone_key\` IN (${candidates.map(() => '?').join(', ')})` +
+        (exceptId === undefined ? '' : ' AND `id` <> ?') +
+        ' LIMIT 1',
+      [deviceId, ...candidates, ...(exceptId === undefined ? [] : [exceptId])]
+    );
+    return found === null || found === undefined ? null : Number(found);
+  }
+
   /** The generic create. A number the phone already has live is refused as `numberTaken`. */
   override async create(data: Partial<Contact>): Promise<number> {
+    if ((await this.liveWithNumber(data.device_id, data.phone)) !== null) throw numberTaken();
     try {
       return await super.create(data);
     } catch (error) {
@@ -52,6 +91,13 @@ class ContactRepository extends SchemaRepository<Contact> {
     citizenid: string,
     deviceId?: string
   ): Promise<boolean> {
+    if (typeof data.phone === 'string') {
+      const on = await Database.scalar<string | null>(
+        `SELECT \`device_id\` FROM \`${this.tableName}\` WHERE \`id\` = ? AND \`citizenid\` = ?`,
+        [id, citizenid]
+      );
+      if ((await this.liveWithNumber(on, data.phone, id)) !== null) throw numberTaken();
+    }
     try {
       return await super.update(id, data, citizenid, deviceId);
     } catch (error) {
@@ -66,6 +112,27 @@ class ContactRepository extends SchemaRepository<Contact> {
     windowDays: number,
     deviceId?: string
   ): Promise<boolean> {
+    /**
+     * Asked first, as create and update ask (MICA-432): a contact deleted while its index was
+     * `plain:` or an older key's comes back beside a live one under the active key as two live
+     * contacts for one number, which the unique key cannot see. The row's own phone and number,
+     * opened, under the caller's ownership; a row that is not theirs reads as nothing here and
+     * the restore below refuses it as before.
+     */
+    const row = await Database.single<{
+      citizenid: string;
+      device_id: string | null;
+      phone: string;
+    } | null>(
+      'SELECT `citizenid`, `device_id`, `phone` FROM `mica_contacts` WHERE `id` = ? AND `citizenid` = ?',
+      [id, citizenid]
+    );
+    if (row) {
+      const opened = openRow('mica_contacts', row);
+      if ((await this.liveWithNumber(opened.device_id, opened.phone, id)) !== null) {
+        throw numberTaken();
+      }
+    }
     try {
       return await super.restore(id, citizenid, windowDays, deviceId);
     } catch (error) {
@@ -79,6 +146,7 @@ class ContactRepository extends SchemaRepository<Contact> {
    * phone has is not a refusal but the contact already being there.
    */
   async insertUnlessHeld(data: Partial<Contact>): Promise<number | null> {
+    if ((await this.liveWithNumber(data.device_id, data.phone)) !== null) return null;
     try {
       return await super.create(data);
     } catch (error) {
@@ -107,11 +175,9 @@ class ContactRepository extends SchemaRepository<Contact> {
     const device_id = await phoneForCitizen(citizenid);
     const id = await this.insertUnlessHeld({ ...item, citizenid, device_id } as Partial<Contact>);
     if (id !== null) return id;
-    const existing = await Database.scalar<number | string | null>(
-      `SELECT \`id\` FROM \`${this.tableName}\` WHERE \`device_id\` = ? AND \`phone_key\` = ? LIMIT 1`,
-      [device_id, item.phone]
-    );
-    if (existing === null || existing === undefined) {
+    // By the number's blind index (MICA-432), in every form it can take.
+    const existing = await this.liveWithNumber(device_id, item.phone);
+    if (existing === null) {
       // Refused, and gone by the time it was looked for: deleted in between. Not a contact to
       // point the caller at.
       throw new Error(`[contacts] ${this.tableName} refused a number it no longer holds.`);
@@ -134,18 +200,31 @@ export const contacts = defineService<Contact, typeof contactsContract>({
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   /**
-   * The name and email are sealed at rest (MICA-431), bound to the phone the contact is on.
-   * `phone` is not: it is the lookup key — `phone_key`'s unique index, a caller's name by number
-   * — and sealing it needs a keyed digest beside it (MICA-432).
+   * The name, number and email are sealed at rest (MICA-431, MICA-432), bound to the phone the
+   * contact is on. The number is found by its blind index, `phone_index`.
    */
   encryptionScope: [],
   schema: {
     firstname: { type: 'string', length: 50, notNull: true, encrypted: true },
     lastname: { type: 'string', length: 50, encrypted: true },
-    phone: { type: 'string', length: 20, notNull: true, clientFilterable: true },
+    /**
+     * Sealed (MICA-432), and found by its blind index, `phone_index`, scoped to the phone: one
+     * number on two phones gives two unrelated indexes. Not filterable — a client finds a contact
+     * by number in the list it already holds, opened.
+     */
+    phone: {
+      type: 'string',
+      length: 20,
+      notNull: true,
+      encrypted: true,
+      blindIndex: { scope: ['device_id'], normalize: contactNumberKey }
+    },
     email: { type: 'string', length: 100, encrypted: true },
-    // Base64 image data. Blob rather than text to match the existing table.
-    avatar: 'blob',
+    /**
+     * Base64 image data. Retyped from `mediumblob` and sealed (MICA-432): a sealed value is
+     * text. ASCII, so a byte a character, as the photo bound is (MICA-431).
+     */
+    avatar: { type: 'mediumtext', encrypted: true, ascii: true },
     /**
      * Per-contact ringtone override (MICA-142): a built-in id or, since MICA-256, an owner
      * sound's `owner:<stem>`. A varchar as wide as the longest owner id rather than the enum
@@ -169,7 +248,8 @@ export const contacts = defineService<Contact, typeof contactsContract>({
      */
     default_number: { type: 'string', length: 20, clientWritable: false, private: true },
     /**
-     * `phone` while the row is `'active'`, `NULL` otherwise: what `device_phone_unique`
+     * The number's blind index while the row is `'active'`, `NULL` otherwise (`phone` itself
+     * until MICA-432 sealed it): what `device_phone_unique`
      * constrains (MICA-335), so one phone holds at most one live contact per number and a
      * deleted or moderated one holds no slot. The technique, and the reasoning, are
      * `pair_key`'s in `Conversations.ts`: a unique key never collides on `NULL`.
@@ -178,29 +258,27 @@ export const contacts = defineService<Contact, typeof contactsContract>({
      * contact and saving its number again would be a duplicate-key error — and `'revive'`
      * cannot be declared here, since `firstname` is `NOT NULL` with no default.
      *
-     * **`0010_contact_numbers_unique_per_device` restates this expression**, frozen as it
-     * shipped: change it here and a fresh install and an upgraded one disagree, which the
-     * planner cannot see (it compares a generated column by name only). A change is a new
-     * migration.
+     * **`0014_private_lookups_get_blind_indexes` restates this expression**, frozen as it
+     * shipped, as `0010_contact_numbers_unique_per_device` did the one before it: change it here
+     * and a fresh install and an upgraded one disagree, which the planner cannot see (it compares
+     * a generated column by name only). A change is a new migration.
      */
     phone_key: {
       type: 'string',
-      length: 20,
+      length: BLIND_INDEX_WIDTH,
       clientWritable: false,
       private: true,
-      generatedAs: "CASE WHEN `status` = 'active' THEN `phone` ELSE NULL END"
+      generatedAs: "CASE WHEN `status` = 'active' THEN `phone_index` ELSE NULL END"
     }
   },
   indexes: [
-    { name: 'phone', columns: ['phone'] },
-    { name: 'citizenid_phone', columns: ['citizenid', 'phone'] },
     { name: 'citizenid_favorite', columns: ['citizenid', 'favorite', 'status'] },
     /**
      * One live contact per number on a phone (MICA-335). What closes the seed's race with a
      * player saving the same number between the seed's read and its insert: the second insert
-     * is refused rather than written beside the first. Exact text under the column's collation,
-     * not `sameNumberKey`'s digits — `555-0100` and `5550100` are still two rows, as the
-     * player typed them.
+     * is refused rather than written beside the first. The same number as `contactNumberKey`
+     * compares it, not `sameNumberKey`'s digits — `555-0100` and `5550100` are still two rows,
+     * as the player typed them.
      */
     { name: 'device_phone_unique', columns: ['device_id', 'phone_key'], unique: true }
   ],
@@ -276,9 +354,21 @@ onDeviceCreated('defaultContacts', async (deviceId, citizenid, kind) => {
     number: contacts.resolved.columnRules.phone?.maxLength ?? 20
   });
   if (seed.length === 0) return;
-  const present = await Database.query<{ phone: string; default_number?: string | null }[]>(
-    `SELECT \`phone\`, \`default_number\` FROM \`${contacts.resolved.table}\` WHERE \`device_id\` = ?`,
-    [deviceId]
+  // The number is sealed (MICA-432): read with what it is bound to, and opened.
+  const present = openRows(
+    'mica_contacts',
+    (await Database.query<
+      {
+        citizenid: string;
+        device_id: string | null;
+        phone: string;
+        default_number?: string | null;
+      }[]
+    >(
+      'SELECT `citizenid`, `device_id`, `phone`, `default_number` FROM `mica_contacts` ' +
+        'WHERE `device_id` = ?',
+      [deviceId]
+    )) ?? []
   );
   const have = new Set<string>();
   for (const row of Array.isArray(present) ? present : []) {
@@ -332,9 +422,9 @@ const MAX_SHARE_PHONE_LENGTH = 20;
  * `avatar`'s own bound (MICA-155) — the only one of the four card fields that had none,
  * fanned out to every nearby client per share. Read off the declared column rather than a
  * number invented here, so a shared card is never held to a stricter limit than a saved one
- * (`schema.avatar: 'blob'` above) and the two cannot drift apart. `?? Number.MAX_SAFE_INTEGER`
- * only matters if `avatar`'s declaration ever stops being length-checked at all — `blob`
- * always is, per `MAX_LENGTH_BY_TYPE` in `defineService.ts`.
+ * (`schema.avatar` above) and the two cannot drift apart. `?? Number.MAX_SAFE_INTEGER` only
+ * matters if `avatar`'s declaration ever stops being length-checked at all — a sealed
+ * `mediumtext` always is, to what fits sealed (MICA-432).
  */
 const MAX_SHARE_AVATAR_LENGTH =
   contacts.resolved.columnRules.avatar?.maxLength ?? Number.MAX_SAFE_INTEGER;

@@ -11,6 +11,7 @@ import {
   isSealed,
   openContent,
   openRows,
+  sealRow,
   UNREADABLE_CONTENT
 } from '../lib/contentCipher';
 import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
@@ -477,7 +478,9 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * guarantee, and widening `updateUnscoped` to carry one is a change to every repository's
    * core (`lib/Repository.ts`), not this one's. What `applyUpdate` would add is covered here:
    * the column is a literal (no payload key reaches the SQL), `assertWritableValue` applies the
-   * column's own rule, and `name` is not an encrypted column, so there is nothing to seal.
+   * column's own rule, and the name is sealed here (MICA-432) to the thread's `seal_key`, read
+   * first and named in the write's `WHERE` too, so the value lands only on the row it was sealed
+   * for.
    */
   async renameAsAdmin(
     conversationId: number,
@@ -487,17 +490,23 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
   ): Promise<boolean> {
     if (!citizenid || !deviceId) return false;
     this.assertWritableValue('name', name);
+    const sealKey = await Database.scalar<string | null>(
+      'SELECT seal_key FROM mica_messages_conversations WHERE id = ?',
+      [conversationId]
+    );
+    if (typeof sealKey !== 'string' || sealKey === '') return false;
+    const sealed = await sealRow('mica_messages_conversations', { seal_key: sealKey, name });
     return await Database.update(
       `UPDATE mica_messages_conversations c
           SET c.name = ?
-        WHERE c.id = ? AND c.status = 'active'
+        WHERE c.id = ? AND c.seal_key = ? AND c.status = 'active'
           AND EXISTS (
               SELECT 1 FROM mica_messages_participants p
                WHERE p.conversation_id = c.id
                  AND p.citizenid = ? AND p.device_id = ?
                  AND p.role = 'admin' AND p.status = 'active' AND p.left_at IS NULL
           )`,
-      [name, conversationId, citizenid, deviceId]
+      [sealed.name, conversationId, sealKey, citizenid, deviceId]
     );
   }
 
@@ -965,7 +974,12 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     const results = await Database.query<any[]>(query, params);
 
     const hasMore = results.length > page.limit;
-    const kept = hasMore ? results.slice(0, page.limit) : results;
+    // The thread's own name is sealed to the thread (MICA-432): opened off the `seal_key` `c.*`
+    // carries, which `conversationForReader` never hands on.
+    const kept = openRows(
+      'mica_messages_conversations',
+      hasMore ? results.slice(0, page.limit) : results
+    );
 
     // Map flat results to Conversation objects with nested last_message. The last message's
     // text is sealed at rest (MICA-165): opened here off the context the join already carries,
@@ -1122,14 +1136,17 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * `pair_key_unique` is what guarantees there is at most one of them.
    */
   async findExternalThread(deviceId: string, externalKey: string): Promise<ConversationRow | null> {
-    const rows = await Database.query<ConversationRow[]>(
-      `SELECT c.*
-         FROM mica_messages_conversations c
-        WHERE c.is_group = 0 AND c.status = 'active'
-          AND ((c.participant_a = ? AND c.participant_b = ?)
-            OR (c.participant_a = ? AND c.participant_b = ?))
-        LIMIT 1`,
-      [deviceId, externalKey, externalKey, deviceId]
+    const rows = openRows(
+      'mica_messages_conversations',
+      await Database.query<ConversationRow[]>(
+        `SELECT c.*
+           FROM mica_messages_conversations c
+          WHERE c.is_group = 0 AND c.status = 'active'
+            AND ((c.participant_a = ? AND c.participant_b = ?)
+              OR (c.participant_a = ? AND c.participant_b = ?))
+          LIMIT 1`,
+        [deviceId, externalKey, externalKey, deviceId]
+      )
     );
     return rows.length > 0 ? rows[0] : null;
   }
@@ -1223,7 +1240,10 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
             )
             LIMIT 1
         `;
-    const result = await Database.query<ConversationRow[]>(query, [phone1, phone2]);
+    const result = openRows(
+      'mica_messages_conversations',
+      await Database.query<ConversationRow[]>(query, [phone1, phone2])
+    );
     return result.length > 0 ? result[0] : null;
   }
 }

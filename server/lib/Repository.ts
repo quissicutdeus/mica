@@ -6,9 +6,13 @@ import { Database } from './Database';
 import { PlayerFacingError } from './errors';
 import { citizenIdColumnWidth } from './ownerWidth';
 import {
+  SEAL_KEY_COLUMN,
+  blindIndexFor,
+  blindIndexesOf,
   contentContext,
   contextColumns,
   encryptedColumnsOf,
+  newSealKey,
   openRow,
   openRows,
   sealContentWith,
@@ -525,9 +529,41 @@ export abstract class Repository<T> {
     );
     // A phone-bound row written with no phone is stored with `device_id` NULL, so it is sealed
     // as one (MICA-431) — said explicitly, so the value and the row cannot disagree.
-    const unphoned =
-      data.device_id === undefined && entries.some((entry) => entry.binding === 'device');
-    return await sealRow(this.tableName, unphoned ? { ...data, device_id: null } : data);
+    let row =
+      data.device_id === undefined && entries.some((entry) => entry.binding === 'device')
+        ? { ...data, device_id: null }
+        : data;
+    // A row-bound table's row gets its seal key here, once (MICA-432): every value on it is
+    // sealed to it, and nothing rewrites it.
+    if (
+      entries.some((entry) => entry.binding === 'row') &&
+      (row[SEAL_KEY_COLUMN] === undefined || row[SEAL_KEY_COLUMN] === null)
+    ) {
+      row = { ...row, [SEAL_KEY_COLUMN]: newSealKey() };
+    }
+    return await sealRow(this.tableName, await this.withBlindIndexes(row, row));
+  }
+
+  /**
+   * `values` with the blind index of each indexed column it sets (MICA-432), taken from the
+   * plaintext before it is sealed, scoped by `scopeRow`. A NULL value has a NULL index. Throws
+   * where a seal would: an index is written under the same key, or refused for the same reasons.
+   */
+  private async withBlindIndexes(
+    values: Record<string, unknown>,
+    scopeRow: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const indexed = blindIndexesOf(this.tableName).filter(
+      (entry) => values[entry.column] !== undefined
+    );
+    if (indexed.length === 0) return values;
+    const out = { ...values };
+    for (const entry of indexed) {
+      const value = values[entry.column];
+      out[entry.index] =
+        value === null ? null : await blindIndexFor(entry, scopeRow, String(value));
+    }
+    return out;
   }
 
   /**
@@ -548,7 +584,10 @@ export abstract class Repository<T> {
     const entries = encryptedColumnsOf(this.tableName).filter(
       (entry) => data[entry.column] !== undefined && data[entry.column] !== null
     );
-    if (entries.length === 0) return data;
+    const indexed = blindIndexesOf(this.tableName).filter(
+      (entry) => data[entry.column] !== undefined
+    );
+    if (entries.length === 0 && indexed.length === 0) return data;
     this.assertSealablePlaintext(
       data,
       entries.map((entry) => entry.column)
@@ -557,7 +596,9 @@ export abstract class Repository<T> {
     let context: Record<string, unknown> | null | undefined;
     const contextRow = async (): Promise<Record<string, unknown> | null> => {
       if (context !== undefined) return context;
-      const needed = [...new Set(entries.flatMap(contextColumns))];
+      const needed = [
+        ...new Set([...entries.flatMap(contextColumns), ...indexed.flatMap((entry) => entry.scope)])
+      ];
       this.assertColumns(needed, 'update context');
       context =
         (await Database.single<Record<string, unknown>>(
@@ -568,7 +609,14 @@ export abstract class Repository<T> {
       return context;
     };
 
-    const out = { ...data };
+    // The index is read off the plaintext, scoped by the row's own columns — read by id, as
+    // the seal's context is, and needed with a key or without one (MICA-432).
+    let out = { ...data };
+    if (indexed.length > 0) {
+      const row = await contextRow();
+      if (row === null) return null;
+      out = await this.withBlindIndexes(out, row);
+    }
     for (const entry of entries) {
       const value = data[entry.column];
       if (typeof value !== 'string') {

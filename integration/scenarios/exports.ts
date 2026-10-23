@@ -160,8 +160,17 @@ export const exportScenarios: Scenario[] = [
         Number(row.amount) === 1250 && row.society === 'mechanic' && row.payee === null,
         'the bill is not as sent'
       );
+      // Who billed and what for are sealed to the payer (MICA-432): opened with the key the
+      // harness wrote.
+      const opened = (column: 'from_label' | 'memo'): string =>
+        openSealed(row[column], harnessKeys(), {
+          table: 'mica_invoices',
+          column,
+          citizenid: String(row.citizenid),
+          scope: []
+        });
       assert(
-        row.from_label === 'LS Customs' && row.memo === 'Brake job',
+        opened('from_label') === 'LS Customs' && opened('memo') === 'Brake job',
         'the bill text is not as sent'
       );
       assert(

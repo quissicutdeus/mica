@@ -2,7 +2,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { openRows, sealRow } from './contentCipher';
+import {
+  blindIndexCandidates,
+  blindIndexFor,
+  blindIndexOf,
+  newSealKey,
+  openRows,
+  sealRow
+} from './contentCipher';
 import { Database } from './Database';
 
 /**
@@ -95,17 +102,41 @@ const createCharacters = async (): Promise<void> => {
   }
 };
 
+/** The contact number's blind index, as Contacts declares it. Required, never assumed away. */
+const phoneIndex = () => {
+  const entry = blindIndexOf('mica_contacts', 'phone');
+  if (!entry)
+    throw new Error('[seed] mica_contacts.phone has no blind index: Contacts is not loaded.');
+  return entry;
+};
+
+/**
+ * The seed's contacts on a number: written on no phone, so found by the number's blind index
+ * scoped to no phone (MICA-432) — the number is sealed, and SQL cannot compare it.
+ */
+const seededOn = async (phone: string, owner?: string) => {
+  const candidates = await blindIndexCandidates(phoneIndex(), { device_id: null }, phone);
+  return {
+    sql:
+      `device_id IS NULL AND phone_index IN (${candidates.map(() => '?').join(', ')})` +
+      (owner === undefined ? '' : ' AND citizenid = ?'),
+    params: [...candidates, ...(owner === undefined ? [] : [owner])]
+  };
+};
+
 /**
  * Delete the contacts `createContacts` wrote: on a seed number, and named as the seed names them.
  *
  * Matched on the whole seeded contact, not just its number. This was once `WHERE phone IN
  * (...)` alone, which deleted any row on a seed number whoever owned it: a player who had saved
- * 5550101 themselves lost that contact at the next `micaseed clear`. The name is sealed now
- * (MICA-431), so SQL cannot compare it: the rows on the number are read, opened, compared here,
- * and deleted by id. A row that does not open is not the seed's to delete.
+ * 5550101 themselves lost that contact at the next `micaseed clear`. The name and the number
+ * are sealed now (MICA-431, MICA-432): the seed's rows on the number are found by its blind
+ * index, opened, compared by name here, and deleted by id. A row that does not open is not the
+ * seed's to delete.
  */
 const clearSeedContacts = async (): Promise<void> => {
   for (const character of SEED_CHARACTERS) {
+    const on = await seededOn(character.phone);
     const rows = openRows(
       'mica_contacts',
       (await Database.query<
@@ -116,9 +147,10 @@ const clearSeedContacts = async (): Promise<void> => {
           firstname: string;
           lastname: string | null;
         }[]
-      >('SELECT id, citizenid, device_id, firstname, lastname FROM mica_contacts WHERE phone = ?', [
-        character.phone
-      ])) ?? []
+      >(
+        `SELECT id, citizenid, device_id, firstname, lastname FROM mica_contacts WHERE ${on.sql}`,
+        on.params
+      )) ?? []
     );
     const ids = rows
       .filter((row) => row.firstname === character.firstname && row.lastname === character.lastname)
@@ -135,23 +167,27 @@ const clearSeedContacts = async (): Promise<void> => {
 const createContacts = async (owner: string): Promise<number> => {
   let added = 0;
   for (const character of SEED_CHARACTERS) {
+    const on = await seededOn(character.phone, owner);
     const existing = await Database.query<{ id: number }[]>(
-      'SELECT id FROM mica_contacts WHERE citizenid = ? AND phone = ? LIMIT 1',
-      [owner, character.phone]
+      `SELECT id FROM mica_contacts WHERE ${on.sql} LIMIT 1`,
+      on.params
     );
     if (existing?.length) continue;
 
-    // Written on no phone, so sealed to the owner (MICA-431), as a NULL device_id says.
+    // Written on no phone, so sealed to the owner (MICA-431), as a NULL device_id says; the
+    // number too, with its blind index beside it (MICA-432).
+    const place = { citizenid: owner, device_id: null };
     const sealed = await sealRow('mica_contacts', {
-      citizenid: owner,
-      device_id: null,
+      ...place,
       firstname: character.firstname,
-      lastname: character.lastname
+      lastname: character.lastname,
+      phone: character.phone
     });
+    const index = await blindIndexFor(phoneIndex(), place, character.phone);
     await Database.query(
-      `INSERT INTO mica_contacts (citizenid, firstname, lastname, phone, status)
-       VALUES (?, ?, ?, ?, 'active')`,
-      [owner, sealed.firstname, sealed.lastname, character.phone]
+      `INSERT INTO mica_contacts (citizenid, firstname, lastname, phone, phone_index, status)
+       VALUES (?, ?, ?, ?, ?, 'active')`,
+      [owner, sealed.firstname, sealed.lastname, sealed.phone, index]
     );
     added += 1;
   }
@@ -181,10 +217,11 @@ const createConversations = async (owner: string): Promise<number> => {
     );
     if (existing?.length) continue;
 
+    // No name, but a seal key all the same (MICA-432): a later rename seals to it.
     const result = await Database.query<any>(
-      `INSERT INTO mica_messages_conversations (citizenid, is_group, name, status)
-       VALUES (?, 0, NULL, 'active')`,
-      [owner]
+      `INSERT INTO mica_messages_conversations (citizenid, is_group, name, seal_key, status)
+       VALUES (?, 0, NULL, ?, 'active')`,
+      [owner, newSealKey()]
     );
     const conversationId = result?.insertId;
     if (!conversationId) continue;

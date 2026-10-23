@@ -8,6 +8,17 @@ import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
+import {
+  BLIND_INDEX_WIDTH,
+  blindIndexCandidates,
+  blindIndexFor,
+  blindIndexOf,
+  newSealKey,
+  openRow,
+  openRows,
+  sealRow,
+  type BlindIndex
+} from '../lib/contentCipher';
 import { RETENTION_BATCH } from '../lib/contentRetention';
 import { onBeforeSelfServiceDelete } from './Privacy';
 import { defineContract, responseType } from '@mica/shared/contract';
@@ -136,21 +147,38 @@ export const darkchat = defineService<ChannelRow, typeof darkchatContract>({
   app: DARKCHAT_APP,
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted'],
+  /**
+   * Sealed at rest (MICA-432), bound to the **channel** (`seal_key`), not to `citizenid`: the
+   * owner passes to the next member (`settleOwnership`), and a name bound to the first owner
+   * would stop opening for every member the day they left.
+   */
+  encryptionBinding: 'row',
+  encryptionScope: [],
   schema: {
-    name: { type: 'string', length: CHANNEL_NAME_MAX, notNull: true, clientWritable: false },
+    name: {
+      type: 'string',
+      length: CHANNEL_NAME_MAX,
+      notNull: true,
+      clientWritable: false,
+      encrypted: true
+    },
     /**
      * The join code. Private, and never returned except by `create` and `code`/`rotateCode`,
-     * which only the owner reaches. Unique forever, deleted channels included — see below.
+     * which only the owner reaches. Sealed, so the owner can be shown it, and found by its blind
+     * index, `code_index`, which a join matches (MICA-432). Unique forever, deleted channels
+     * included — see below.
      */
     code: {
       type: 'string',
       length: CODE_LENGTH,
       notNull: true,
       clientWritable: false,
-      private: true
+      private: true,
+      encrypted: true,
+      blindIndex: { normalize: (code) => normalizeCode(code) ?? code }
     }
   },
-  indexes: [{ name: 'code', columns: ['code'], unique: true }],
+  indexes: [{ name: 'code_index', columns: ['code_index'], unique: true }],
   uniqueAfterDelete: {
     optOut:
       'a code is generated, never chosen: a create that meets a taken one draws another ' +
@@ -167,9 +195,29 @@ export const darkchat = defineService<ChannelRow, typeof darkchatContract>({
           references: { table: CHANNELS, column: 'id' }
         },
         citizenid: { type: 'string', citizenId: true, notNull: true },
-        alias: { type: 'string', length: ALIAS_MAX, notNull: true },
-        /** The handle readers know this member by (`HANDLE_LENGTH`). Drawn, never chosen. */
-        handle: { type: 'string', length: HANDLE_LENGTH, notNull: true },
+        /**
+         * Sealed (MICA-432), bound to the member and their channel: the alias is the one name a
+         * member has, and the row is the alias-to-character map. Found by `alias_index`, scoped
+         * to the channel, as the alias is unique within one.
+         */
+        alias: {
+          type: 'string',
+          length: ALIAS_MAX,
+          notNull: true,
+          encrypted: true,
+          blindIndex: { scope: ['channel_id'], normalize: (alias) => aliasKey(alias) }
+        },
+        /**
+         * The handle readers know this member by (`HANDLE_LENGTH`). Drawn, never chosen. Sealed,
+         * and found by `handle_index`, unique across every channel (MICA-432).
+         */
+        handle: {
+          type: 'string',
+          length: HANDLE_LENGTH,
+          notNull: true,
+          encrypted: true,
+          blindIndex: {}
+        },
         /**
          * `active` while live; `left` by the member's own leave; `removed` by the owner, which
          * also refuses every later join by the same citizen.
@@ -184,14 +232,16 @@ export const darkchat = defineService<ChannelRow, typeof darkchatContract>({
         left_at: { type: 'timestamp' },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true },
         /**
-         * `alias` while the member is live, NULL after. Carries the unique key that makes an
-         * alias one person's among a channel's live members, collation and all: `Ghost` and
-         * `ghost` are the same alias, which is the point when the alias is the only name.
+         * The alias's blind index while the member is live, NULL after (`alias` itself until
+         * MICA-432 sealed it). Carries the unique key that makes an alias one person's among a
+         * channel's live members, as `aliasKey` compares it: `Ghost` and `ghost` are the same
+         * alias, which is the point when the alias is the only name. Restated, frozen, by
+         * `0014_private_lookups_get_blind_indexes`.
          */
         alias_key: {
           type: 'string',
-          length: ALIAS_MAX,
-          generatedAs: 'CASE WHEN `left_at` IS NULL THEN `alias` ELSE NULL END'
+          length: BLIND_INDEX_WIDTH,
+          generatedAs: 'CASE WHEN `left_at` IS NULL THEN `alias_index` ELSE NULL END'
         },
         /**
          * `citizenid` while the member is live, NULL after: at most one live membership per
@@ -207,11 +257,12 @@ export const darkchat = defineService<ChannelRow, typeof darkchatContract>({
       indexes: [
         { name: 'channel_alias', columns: ['channel_id', 'alias_key'], unique: true },
         { name: 'channel_citizen', columns: ['channel_id', 'live_citizen'], unique: true },
-        { name: 'handle', columns: ['handle'], unique: true },
+        { name: 'handle_index', columns: ['handle_index'], unique: true },
         { name: 'citizenid', columns: ['citizenid'] },
         /** The sweep's walk over rows whose member has gone. */
         { name: 'status_left_at', columns: ['status', 'left_at'] }
       ],
+      encryptionScope: ['channel_id'],
       uniqueAfterDelete: {
         optOut:
           'a member row is never soft-deleted: leaving or removal sets `left_at`, which turns ' +
@@ -238,13 +289,41 @@ export const liveMember = async (
   channelId: number,
   citizenid: string
 ): Promise<{ id: number; alias: string; handle: string } | null> => {
-  const row = await Database.single<{ id: number; alias: string; handle: string } | null>(
-    `SELECT m.\`id\`, m.\`alias\`, m.\`handle\` FROM \`${MEMBERS}\` m
+  // The alias and handle are sealed (MICA-432): selected with what they are bound to, opened.
+  const found = await Database.single<{
+    id: number;
+    citizenid: string;
+    channel_id: number;
+    alias: string;
+    handle: string;
+  } | null>(
+    `SELECT m.\`id\`, m.\`citizenid\`, m.\`channel_id\`, m.\`alias\`, m.\`handle\`
+     FROM \`mica_darkchat_members\` m
      JOIN \`${CHANNELS}\` c ON c.\`id\` = m.\`channel_id\` AND c.\`status\` = 'active'
      WHERE m.\`channel_id\` = ? AND m.\`citizenid\` = ? AND m.\`left_at\` IS NULL LIMIT 1`,
     [channelId, citizenid]
   );
-  return row ? { id: Number(row.id), alias: String(row.alias), handle: String(row.handle) } : null;
+  if (!found) return null;
+  const row = openRow(MEMBERS, found);
+  return { id: Number(row.id), alias: String(row.alias), handle: String(row.handle) };
+};
+
+/** One of this file's declared blind indexes; a missing one is a declaration that changed. */
+const indexOf = (table: string, column: string): BlindIndex => {
+  const entry = blindIndexOf(table, column);
+  if (!entry) throw new Error(`[darkchat] ${table}.${column} has no blind index.`);
+  return entry;
+};
+
+/** `IN (?, …)` for every form a stored index of `value` can take, and the values to bind. */
+const indexMatch = async (
+  table: string,
+  column: string,
+  row: object,
+  value: string
+): Promise<{ sql: string; params: string[] }> => {
+  const candidates = await blindIndexCandidates(indexOf(table, column), row, value);
+  return { sql: `IN (${candidates.map(() => '?').join(', ')})`, params: candidates };
 };
 
 /** Every live member's citizenid, for a push. Never leaves the server. */
@@ -257,13 +336,32 @@ export const liveCitizensOf = async (channelId: number): Promise<string[]> => {
 };
 
 /** Whether `alias` is a live member's in this channel, compared as the unique key compares. */
-export const aliasIsLive = async (channelId: number, candidate: string): Promise<boolean> =>
-  Boolean(
+export const aliasIsLive = async (channelId: number, candidate: string): Promise<boolean> => {
+  // By the alias's blind index (MICA-432), in every form a stored one can take.
+  const match = await indexMatch(MEMBERS, 'alias', { channel_id: channelId }, candidate);
+  return Boolean(
     await Database.single<unknown>(
-      `SELECT 1 FROM \`${MEMBERS}\` WHERE \`channel_id\` = ? AND \`alias_key\` = ? LIMIT 1`,
-      [channelId, candidate]
+      `SELECT 1 FROM \`${MEMBERS}\` WHERE \`channel_id\` = ? AND \`alias_key\` ${match.sql} LIMIT 1`,
+      [channelId, ...match.params]
     )
   );
+};
+
+/**
+ * The live channel a normalized code opens, by the code's blind index (MICA-432), or null. For a
+ * caller that needs the channel and its owner and nothing it shows: `PostToDarkChat`.
+ */
+export const liveChannelByCode = async (
+  code: string
+): Promise<{ id: number; citizenid: string } | null> => {
+  const match = await indexMatch(CHANNELS, 'code', {}, code);
+  const found = await Database.single<{ id: number; citizenid: string } | null>(
+    `SELECT \`id\`, \`citizenid\` FROM \`${CHANNELS}\` WHERE \`code_index\` ${match.sql} ` +
+      "AND `status` = 'active' LIMIT 1",
+    match.params
+  );
+  return found ? { id: Number(found.id), citizenid: String(found.citizenid) } : null;
+};
 
 // ---------------------------------------------------------------------------------------------
 // Codes
@@ -290,6 +388,44 @@ export const generateCode = (): string => drawSymbols(CODE_LENGTH);
 
 /** A member handle (`HANDLE_LENGTH`), the same way. */
 export const generateHandle = (): string => drawSymbols(HANDLE_LENGTH);
+
+/**
+ * Letters `utf8mb4_unicode_ci` reads as two, or as a plain one, that Unicode decomposition alone
+ * does not take apart. Folded so no alias can sit beside one the old key called the same.
+ */
+const LETTER_FOLDS: Readonly<Record<string, string>> = {
+  ß: 'ss',
+  æ: 'ae',
+  œ: 'oe',
+  ø: 'o',
+  đ: 'd',
+  ð: 'd',
+  ł: 'l',
+  ı: 'i',
+  þ: 'th',
+  ħ: 'h',
+  ŧ: 't'
+};
+const FOLDED_LETTER = new RegExp(`[${Object.keys(LETTER_FOLDS).join('')}]`, 'gu');
+
+/**
+ * What counts as the same alias in one channel (MICA-432): **at least** everything
+ * `alias_key`'s `utf8mb4_unicode_ci` held equal before the alias was sealed, so sealing it gives
+ * an impersonator no room the collation did not. Characters the collation ignores dropped
+ * (a zero-width space), compatibility forms decomposed (`ｇｈｏｓｔ`), combining marks dropped
+ * (`Ghöst`), case folded, the letters above spelled out (`Straße`, `STRASSE`), trailing spaces
+ * ignored. Where it folds further than the collation did, two aliases it once let stand side by
+ * side are now one — the safe way to differ.
+ */
+export const aliasKey = (alias: string): string =>
+  alias
+    .replace(/\p{Default_Ignorable_Code_Point}/gu, '')
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toUpperCase()
+    .toLowerCase()
+    .replace(FOLDED_LETTER, (letter) => LETTER_FOLDS[letter] ?? letter)
+    .trimEnd();
 
 /** A code as typed: case-blind, spaces and dashes dropped. Null when it cannot be one. */
 export const normalizeCode = (raw: string): string | null => {
@@ -466,12 +602,26 @@ const insertMember = async (
   citizenid: string,
   wanted: string
 ): Promise<{ id: number; handle: string }> => {
+  // Asked first as well as by the key (MICA-432): the key compares indexes under one key, and a
+  // live alias indexed under an older key or before the first one is the same alias all the same.
+  if (await aliasIsLive(channelId, wanted)) throw aliasTaken();
   for (let attempt = 1; ; attempt += 1) {
     const handle = generateHandle();
     try {
+      // Sealed to the member and the channel, each with its blind index beside it.
+      const place = { channel_id: channelId, citizenid };
+      const sealed = await sealRow(MEMBERS, { ...place, alias: wanted, handle });
       const id = await Database.insert(
-        `INSERT INTO \`${MEMBERS}\` (\`channel_id\`, \`citizenid\`, \`alias\`, \`handle\`) VALUES (?, ?, ?, ?)`,
-        [channelId, citizenid, wanted, handle]
+        'INSERT INTO `mica_darkchat_members` (`channel_id`, `citizenid`, `alias`, `handle`, ' +
+          '`alias_index`, `handle_index`) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          channelId,
+          citizenid,
+          sealed.alias,
+          sealed.handle,
+          await blindIndexFor(indexOf(MEMBERS, 'alias'), place, wanted),
+          await blindIndexFor(indexOf(MEMBERS, 'handle'), place, handle)
+        ]
       );
       return { id, handle };
     } catch (error) {
@@ -495,13 +645,25 @@ app.registerEvent('create', async (_source, _cbId, data, citizenid) => {
   const name = data.name.trim();
   const as = data.alias.trim();
 
-  const created = await withFreshCode(async (code) => ({
-    id: await Database.insert(
-      `INSERT INTO \`${CHANNELS}\` (\`citizenid\`, \`name\`, \`code\`) VALUES (?, ?, ?)`,
-      [citizenid, name, code]
-    ),
-    code
-  }));
+  // Sealed to the channel (`seal_key`, MICA-432), the code found by its blind index.
+  const sealKey = newSealKey();
+  const created = await withFreshCode(async (code) => {
+    const sealed = await sealRow(CHANNELS, { seal_key: sealKey, name, code });
+    return {
+      id: await Database.insert(
+        'INSERT INTO `mica_darkchat` (`citizenid`, `seal_key`, `name`, `code`, `code_index`) ' +
+          'VALUES (?, ?, ?, ?, ?)',
+        [
+          citizenid,
+          sealKey,
+          sealed.name,
+          sealed.code,
+          await blindIndexFor(indexOf(CHANNELS, 'code'), {}, code)
+        ]
+      ),
+      code
+    };
+  });
 
   let member: { id: number; handle: string };
   try {
@@ -533,12 +695,21 @@ app.registerEvent('join', async (_source, _cbId, data, citizenid) => {
   const code = normalizeCode(data.code);
   if (!code) throw badCode();
 
-  const found = await Database.single<{ id: number; name: string; is_owner: unknown } | null>(
-    `SELECT \`id\`, \`name\`, (\`citizenid\` = ?) AS is_owner FROM \`${CHANNELS}\`
-     WHERE \`code\` = ? AND \`status\` = 'active' LIMIT 1`,
-    [citizenid, code]
+  // By the code's blind index (MICA-432), in every form a stored one can take.
+  const match = await indexMatch(CHANNELS, 'code', {}, code);
+  const sealedFound = await Database.single<{
+    id: number;
+    seal_key: string;
+    name: string;
+    code: string;
+    is_owner: unknown;
+  } | null>(
+    `SELECT \`id\`, \`seal_key\`, \`name\`, \`code\`, (\`citizenid\` = ?) AS is_owner
+     FROM \`mica_darkchat\` WHERE \`code_index\` ${match.sql} AND \`status\` = 'active' LIMIT 1`,
+    [citizenid, ...match.params]
   );
-  if (!found) throw badCode();
+  if (!sealedFound) throw badCode();
+  const found = openRow(CHANNELS, sealedFound);
   const id = Number(found.id);
 
   // Removed is for good, and answered as a code that did not work: the owner's decision is not
@@ -588,49 +759,71 @@ app.registerEvent('join', async (_source, _cbId, data, citizenid) => {
       is_owner: isOwner
     }
   };
-  if (isOwner) {
-    const own = await Database.scalar<string | null>(
-      `SELECT \`code\` FROM \`${CHANNELS}\` WHERE \`id\` = ? AND \`citizenid\` = ?`,
-      [id, citizenid]
-    );
-    if (typeof own === 'string') joined.code = own;
-  }
+  if (isOwner) joined.code = String(found.code);
   return joined;
 });
 
 app.registerEvent('list', async (_source, _cbId, _data, citizenid) => {
+  // The name is sealed to the channel, the alias and handle to the member (MICA-432): each
+  // opened off its own row's columns, none of which leaves this function.
   const rows = await Database.query<
-    { id: number; name: string; my_member_id: string; my_alias: string; is_owner: unknown }[]
+    {
+      id: number;
+      seal_key: string;
+      name: string;
+      citizenid: string;
+      handle: string;
+      alias: string;
+      is_owner: unknown;
+    }[]
   >(
-    `SELECT c.\`id\`, c.\`name\`, m.\`handle\` AS my_member_id, m.\`alias\` AS my_alias,
+    `SELECT c.\`id\`, c.\`seal_key\`, c.\`name\`, m.\`citizenid\`, m.\`handle\`, m.\`alias\`,
             (c.\`citizenid\` = m.\`citizenid\`) AS is_owner
-     FROM \`${MEMBERS}\` m
-     JOIN \`${CHANNELS}\` c ON c.\`id\` = m.\`channel_id\` AND c.\`status\` = 'active'
+     FROM \`mica_darkchat_members\` m
+     JOIN \`mica_darkchat\` c ON c.\`id\` = m.\`channel_id\` AND c.\`status\` = 'active'
      WHERE m.\`citizenid\` = ? AND m.\`left_at\` IS NULL
      ORDER BY c.\`id\` DESC`,
     [citizenid]
   );
-  return (rows ?? []).map((row): DarkchatChannel => ({
-    id: Number(row.id),
-    name: String(row.name),
-    my_member_id: String(row.my_member_id),
-    my_alias: String(row.my_alias),
-    is_owner: Boolean(Number(row.is_owner))
-  }));
+  return (rows ?? []).map((row): DarkchatChannel => {
+    const channelRow = openRow(CHANNELS, { seal_key: row.seal_key, name: row.name });
+    const memberRow = openRow(MEMBERS, {
+      citizenid: row.citizenid,
+      channel_id: row.id,
+      alias: row.alias,
+      handle: row.handle
+    });
+    return {
+      id: Number(row.id),
+      name: String(channelRow.name),
+      my_member_id: String(memberRow.handle),
+      my_alias: String(memberRow.alias),
+      is_owner: Boolean(Number(row.is_owner))
+    };
+  });
 });
 
 /** By alias, not by join order: the order members joined in is not something to hand out. */
 app.registerEvent('members', async (_source, _cbId, data, citizenid) => {
   if (!(await liveMember(data.channel_id, citizenid))) throw notMember();
-  const rows = await Database.query<{ handle: string; alias: string }[]>(
-    `SELECT \`handle\`, \`alias\` FROM \`${MEMBERS}\`
-     WHERE \`channel_id\` = ? AND \`left_at\` IS NULL ORDER BY \`alias\``,
-    [data.channel_id]
+  // Sealed (MICA-432), so opened here and put in alias order here, as `aliasKey` compares —
+  // the database can no longer sort what it cannot read. The handle breaks a tie.
+  const rows = openRows(
+    MEMBERS,
+    (await Database.query<
+      { citizenid: string; channel_id: number; handle: string; alias: string }[]
+    >(
+      'SELECT `citizenid`, `channel_id`, `handle`, `alias` FROM `mica_darkchat_members` ' +
+        'WHERE `channel_id` = ? AND `left_at` IS NULL',
+      [data.channel_id]
+    )) ?? []
   );
-  return (rows ?? []).map((row): DarkchatMember => ({
-    id: String(row.handle),
-    alias: String(row.alias)
-  }));
+  return rows
+    .map((row): DarkchatMember => ({ id: String(row.handle), alias: String(row.alias) }))
+    .toSorted((a, b) => {
+      const byAlias = aliasKey(a.alias).localeCompare(aliasKey(b.alias));
+      return byAlias !== 0 ? byAlias : a.id.localeCompare(b.id);
+    });
 });
 
 app.registerEvent('leave', async (_source, _cbId, data, citizenid) => {
@@ -638,19 +831,34 @@ app.registerEvent('leave', async (_source, _cbId, data, citizenid) => {
 });
 
 app.registerEvent('code', async (_source, _cbId, data, citizenid) => {
-  const code = await Database.scalar<string | null>(
-    `SELECT \`code\` FROM \`${CHANNELS}\` WHERE \`id\` = ? AND \`citizenid\` = ? AND \`status\` = 'active'`,
+  const row = await Database.single<{ seal_key: string; code: string } | null>(
+    'SELECT `seal_key`, `code` FROM `mica_darkchat` ' +
+      "WHERE `id` = ? AND `citizenid` = ? AND `status` = 'active'",
     [data.channel_id, citizenid]
   );
-  if (typeof code !== 'string') throw notOwner();
-  return { code };
+  if (!row) throw notOwner();
+  return { code: String(openRow(CHANNELS, row).code) };
 });
 
 app.registerEvent('rotateCode', async (_source, _cbId, data, citizenid) => {
+  // The channel's seal key, to seal the new code to; the owner predicate is the write's.
+  const sealKey = await Database.scalar<string | null>(
+    'SELECT `seal_key` FROM `mica_darkchat` ' +
+      "WHERE `id` = ? AND `citizenid` = ? AND `status` = 'active'",
+    [data.channel_id, citizenid]
+  );
+  if (typeof sealKey !== 'string') throw notOwner();
   return await withFreshCode(async (code) => {
+    const sealed = await sealRow(CHANNELS, { seal_key: sealKey, code });
     const moved = await Database.update(
-      `UPDATE \`${CHANNELS}\` SET \`code\` = ? WHERE \`id\` = ? AND \`citizenid\` = ? AND \`status\` = 'active'`,
-      [code, data.channel_id, citizenid]
+      'UPDATE `mica_darkchat` SET `code` = ?, `code_index` = ? ' +
+        "WHERE `id` = ? AND `citizenid` = ? AND `status` = 'active'",
+      [
+        sealed.code,
+        await blindIndexFor(indexOf(CHANNELS, 'code'), {}, code),
+        data.channel_id,
+        citizenid
+      ]
     );
     if (!moved) throw notOwner();
     return { code };
@@ -667,10 +875,12 @@ app.registerEvent('rotateCode', async (_source, _cbId, data, citizenid) => {
 app.registerEvent('removeMember', async (_source, _cbId, data, citizenid) => {
   if (!(await ownsChannel(data.channel_id, citizenid))) throw notOwner();
 
+  // By the handle's blind index (MICA-432), inside this channel only.
+  const handle = await indexMatch(MEMBERS, 'handle', {}, data.member_id);
   const target = await Database.scalar<string | null>(
     `SELECT \`citizenid\` FROM \`${MEMBERS}\`
-     WHERE \`handle\` = ? AND \`channel_id\` = ? AND \`left_at\` IS NULL AND \`citizenid\` <> ?`,
-    [data.member_id, data.channel_id, citizenid]
+     WHERE \`handle_index\` ${handle.sql} AND \`channel_id\` = ? AND \`left_at\` IS NULL AND \`citizenid\` <> ?`,
+    [...handle.params, data.channel_id, citizenid]
   );
   if (typeof target !== 'string') return false;
 
@@ -678,8 +888,8 @@ app.registerEvent('removeMember', async (_source, _cbId, data, citizenid) => {
     `UPDATE \`${MEMBERS}\` m
      JOIN \`${CHANNELS}\` c ON c.\`id\` = m.\`channel_id\` AND c.\`citizenid\` = ? AND c.\`status\` = 'active'
      SET m.\`status\` = 'removed', m.\`left_at\` = NOW()
-     WHERE m.\`handle\` = ? AND m.\`channel_id\` = ? AND m.\`left_at\` IS NULL AND m.\`citizenid\` <> ?`,
-    [citizenid, data.member_id, data.channel_id, citizenid]
+     WHERE m.\`handle_index\` ${handle.sql} AND m.\`channel_id\` = ? AND m.\`left_at\` IS NULL AND m.\`citizenid\` <> ?`,
+    [citizenid, ...handle.params, data.channel_id, citizenid]
   );
   if (!removed) return false;
   await settleOwnership(data.channel_id);

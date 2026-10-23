@@ -78,12 +78,18 @@ export const conversations = defineService<ConversationRow, typeof conversations
     }
   },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
+  /**
+   * The name is sealed at rest (MICA-432), bound to the **thread** (`seal_key`): every member
+   * reads it, and the row's `citizenid` is only whoever created it, who can leave.
+   */
+  encryptionBinding: 'row',
+  encryptionScope: [],
   schema: {
     // Derived by the custom create from the resolved member count, never client-writable
     // and never read from a payload. See the note on `isGroup` in the create handler.
     is_group: { type: 'bool', notNull: true, default: 0, clientWritable: false },
-    // Written by the custom `update` only (MICA-339), as the thread's admin.
-    name: { type: 'string', length: 50 },
+    // Written by the custom `update` only (MICA-339), as the thread's admin. Sealed (MICA-432).
+    name: { type: 'string', length: 50, encrypted: true },
     /**
      * The two sides of a 1:1 thread, snapshotted at creation (MICA-161's half of
      * MICA-156). Null for a group thread — there is no pair for a generated column to

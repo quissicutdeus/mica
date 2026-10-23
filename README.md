@@ -1248,14 +1248,22 @@ the convar is invisible until the resource restarts.
   Dark Chat lines, and report snapshots and notes are sealed with AES-256-GCM
   before they reach the database, and so is a phone's own content (MICA-431):
   its notes, contacts, call log, saved places, photos with their thumbnails and
-  alt text, and notifications. A phone's content is tied to the phone, not the
-  character, so it survives a handover. Run `micaschema apply` first (migration
-  0013 widens the columns), then `micacrypt backfill --apply` once to seal what
-  was already there. **This defends a leaked dump, not a curious operator** —
-  whoever runs the server has the key — and a backup taken before the backfill
-  stays readable. [`docs/security.md`](docs/security.md#message-bodies-at-rest)
-  has what stays readable and why. Keep the real file out of the database backup
-  and out of git (the server warns at start when it sits inside `mica` or inside
+  alt text, and notifications. MICA-432 adds the names and numbers that identify
+  who and what: a contact's number and picture, a mail's subject and sender, an
+  invoice's memo and sender, a thread's name, a saved place's position, and Dark
+  Chat's channel names, join codes, aliases and handles. A phone's content is
+  tied to the phone, not the character, so it survives a handover. A value that
+  is looked up or kept unique (a contact's number, a join code, an alias) has a
+  keyed blind index beside it; the index key is derived from the content key and
+  is not the sealing key, so rotating the content key means running the backfill
+  to re-index. Run `micaschema apply` first (migrations 0013 and 0014 widen and
+  add columns; 0014 copies several tables, so allow for the time on a large
+  one), then `micacrypt backfill --apply` once to seal what was already there.
+  **This defends a leaked dump, not a curious operator** — whoever runs the
+  server has the key — and a backup taken before the backfill stays readable.
+  [`docs/security.md`](docs/security.md#message-bodies-at-rest) has what stays
+  readable and why. Keep the real file out of the database backup and out of git
+  (the server warns at start when it sits inside `mica` or inside
   `server-data`), and back it up somewhere else: **a lost key is every body
   sealed with it gone**, shown as 🔒. Once anything has been sealed, a missing
   or unreadable key file refuses new messages rather than storing them in
