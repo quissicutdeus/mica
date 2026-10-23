@@ -367,3 +367,15 @@ describe('the integration door is local and convar-gated', () => {
     expect(localEvents.size).toBeGreaterThan(0);
   });
 });
+
+/**
+ * Importing every service must leave no live interval behind (`setup.ts`). Signal polls every
+ * 2 s against `FrameworkBridge.onlineSources`, which the stub above does not have; a timer that
+ * survived import throws inside its callback once a run is slow enough to cross the interval,
+ * and Vitest fails the run on the unhandled error even though every assertion passed.
+ */
+describe('no service timer outlives its import', () => {
+  it('lets the 2 s signal poll interval pass without a tick reaching the stub', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+  });
+});

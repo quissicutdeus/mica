@@ -10,7 +10,7 @@
  * so they have to exist before the module graph loads. Individual suites override
  * `onNet` / `emitNet` / `source` to capture and drive the handlers under test.
  */
-import { beforeEach } from 'vitest';
+import { beforeAll, beforeEach } from 'vitest';
 import { installTestPhone } from './phoneStub';
 
 const noop = () => {};
@@ -59,4 +59,29 @@ for (const [key, value] of Object.entries(fivemGlobals)) {
 installTestPhone();
 beforeEach(() => {
   installTestPhone();
+});
+
+/**
+ * No service interval survives import.
+ *
+ * Signal, Battery, Music, Invoices and HodlrMarket each start a real `setInterval` at module
+ * scope, and a suite that imports them against stubbed bridges (`reachability.test.ts` imports
+ * every service) then has a live timer firing at the stub. On a slow runner a case outlasts the
+ * 2 s poll and the tick throws inside a timer callback — Vitest reports it as an unhandled error
+ * and fails a run in which every assertion passed.
+ *
+ * Collection is when module scope runs, so an interval created before the first `beforeAll` is
+ * dropped: it returns a handle (so a `clearInterval` on it is harmless) and schedules nothing.
+ * Intervals a suite starts itself, or from a re-import inside a test, are real, and fake timers
+ * installed later wrap this function rather than being wrapped by it. Each service exposes its
+ * tick as a test seam (`pollSignal`, `tickBattery`), which is how a suite drives one.
+ */
+const realSetInterval = globalThis.setInterval;
+let collecting = true;
+globalThis.setInterval = ((handler: unknown, ms?: number, ...args: unknown[]) =>
+  collecting
+    ? realSetInterval(() => {}, 2 ** 31 - 1).unref()
+    : (realSetInterval as Function)(handler, ms, ...args)) as typeof setInterval;
+beforeAll(() => {
+  collecting = false;
 });

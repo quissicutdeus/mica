@@ -237,6 +237,13 @@ export default defineConfig({
      * cases crossed 5s with every assertion still to pass. A hang still fails, 15s later.
      */
     testTimeout: 20_000,
+    /**
+     * The same figure for hooks, which default to 10s and are not covered by `testTimeout`.
+     * `beforeEach(async () => { vi.resetModules(); await import(...) })` is the cold re-import
+     * above moved into a hook (nui/mocks/glimpse.test.ts, spark.test.ts), and on the slow
+     * Forgejo runner it crossed 10s with every assertion still to run.
+     */
+    hookTimeout: 20_000,
     server: {
       deps: {
         // `@material/material-color-utilities@0.4.0` ships extensionless relative
