@@ -104,6 +104,13 @@ describe('reading slots through a qb player', () => {
   it('answers an empty list rather than null when the player simply holds none', () => {
     expect(readItemSlots(SRC, qbHolding(null), ITEM)).toEqual([]);
   });
+
+  it('answers null, not an empty list, for an item the core found but cannot place', () => {
+    // A core whose item table has no slot number cannot carry metadata; `[]` would read as
+    // "holds none" and, since MICA-436, close the phone while the count says it is held.
+    expect(readItemSlots(SRC, qbHolding({ name: ITEM, amount: 1 }), ITEM)).toBeNull();
+    expect(readItemSlots(SRC, qbHolding({ slot: 0, info: {} }), ITEM)).toBeNull();
+  });
 });
 
 describe('an inventory that cannot carry metadata at all', () => {

@@ -94,8 +94,13 @@ export const readItemSlots = (src: number, player: any, item: string): ItemSlot[
     const found = player.Functions.GetItemByName(item);
     if (!found) return [];
 
+    // An item the core found but cannot place in a slot is this inventory failing to carry
+    // metadata, not the player holding none: `null`, so the gate falls back to the count and
+    // the resolve degrades to the identity device, as for any inventory that cannot say.
+    // Answering `[]` here closed the phone for everyone on such a core once MICA-436 made the
+    // gate read slots, while the count beside it said the item was held.
     const slot = asSlotNumber(found.slot);
-    return slot === null ? [] : [{ slot, metadata: asMetadata(found.info) }];
+    return slot === null ? null : [{ slot, metadata: asMetadata(found.info) }];
   }
 
   const xPlayer = player?.xPlayer ?? player;

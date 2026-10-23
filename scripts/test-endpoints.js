@@ -205,11 +205,14 @@ const createQbCore = () => {
     return {
       PlayerData,
       Functions: {
-        // What a qb player answers for an item (MICA-264's tablet gate). Nobody holds anything
-        // unless a flow puts it in `items`, so an unset item convar is the only gate in use.
+        // What a qb player answers for an item (MICA-264's tablet gate): qb-core's item table,
+        // which carries the slot it sits in and its `info`, since `itemSlots` reads both
+        // (MICA-436: a found item with no slot number is "cannot say", not "holds none"). Nobody
+        // holds anything unless a flow puts it in `items`, so an unset item convar is the only
+        // gate in use.
         GetItemByName: (name) => {
           const amount = items.get(`${person.citizenid}:${name}`) ?? 0;
-          return amount > 0 ? { name, amount } : null;
+          return amount > 0 ? { name, amount, slot: 1, info: {} } : null;
         },
         GetMoney: (type) => PlayerData.money[type],
         RemoveMoney: (type, amount) => {
