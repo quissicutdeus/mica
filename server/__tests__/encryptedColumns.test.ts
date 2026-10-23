@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll, beforeAll } from 'vitest';
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -371,14 +371,31 @@ const byStatement = (found: SealedSql[]): [number, boolean][] => [
   ...new Map(found.map(({ line, handled }) => [line, handled])).entries()
 ];
 
-const scan = (): SealedSql[] =>
+const scanTree = (): SealedSql[] =>
   ['server', 'integration'].flatMap((dir) =>
     walk(join(ROOT, dir)).flatMap((full) =>
       sealedSql(readFileSync(full, 'utf8'), relative(ROOT, full).split('\\').join('/'))
     )
   );
 
+/**
+ * The tree is parsed once, in `beforeAll`, and every test below reads that one result. Each
+ * test used to walk and parse `server/` and `integration/` itself, a second or more apiece
+ * here and three to six on CI, where the first one met vitest's five-second default. The
+ * timeout is the scan's own, generous, so a slower runner is a slower run and not a failure.
+ */
+const SCAN_TIMEOUT_MS = 60_000;
+let scanned: SealedSql[] | undefined;
+const scan = (): SealedSql[] => {
+  if (!scanned) throw new Error('the tree scan has not run: it is computed in beforeAll');
+  return scanned;
+};
+
 describe('the encrypted-column guard (MICA-165)', () => {
+  beforeAll(() => {
+    scanned = scanTree();
+  }, SCAN_TIMEOUT_MS);
+
   it('finds SQL to check, so the rest of this is not vacuous', () => {
     expect(scan().length).toBeGreaterThanOrEqual(8);
   });

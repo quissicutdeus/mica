@@ -181,7 +181,9 @@ describe('no reason read through instanceof Error', () => {
     expect(instanceofMessageReads(fine, 'fine.ts')).toEqual([]);
   });
 
-  it('holds every file under server/, so a new one cannot come back', () => {
+  // A whole-tree parse: about a second here and three on CI, against vitest's five-second
+  // default, so it gets a timeout of its own.
+  it('holds every file under server/, so a new one cannot come back', { timeout: 30_000 }, () => {
     const files = walk(join(ROOT, 'server'));
     // A walk that found nothing would pass for the wrong reason.
     expect(files.length).toBeGreaterThan(100);

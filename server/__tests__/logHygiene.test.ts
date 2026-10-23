@@ -686,6 +686,9 @@ export const scanLogCalls = (file: string, src: string): Finding[] => {
   return [...unreadable, ...scanModules(modules)];
 };
 
+/** For the tests that walk every server module: generous, so a slow runner is not a failure. */
+const SCAN_TIMEOUT_MS = 30_000;
+
 describe('server log lines name nobody and print no raw error (MICA-433)', () => {
   const files = walk(SERVER).map((path) => ({
     path,
@@ -694,20 +697,26 @@ describe('server log lines name nobody and print no raw error (MICA-433)', () =>
   }));
   const { modules, unreadable } = modulesOf(files);
 
-  it('scans a real set of files', () => {
+  // Whole-tree work: `files` and `modules` are read once, as the suite loads; each test below
+  // walks every module again, under a timeout of its own rather than vitest's five seconds.
+  it('scans a real set of files', { timeout: SCAN_TIMEOUT_MS }, () => {
     // An empty walk asserts nothing; the server has well over a hundred source files.
     expect(files.length).toBeGreaterThan(100);
     expect(unreadable).toEqual([]);
   });
 
-  it('knows every log wrapper, and lists no function that is not one', () => {
-    const relays = findWrappers(modules)
-      .filter((w) => w.relay)
-      .map((w) => `${w.file}:${w.name}`);
-    expect(relays.sort()).toEqual([...WRAPPERS].sort());
-  });
+  it(
+    'knows every log wrapper, and lists no function that is not one',
+    { timeout: SCAN_TIMEOUT_MS },
+    () => {
+      const relays = findWrappers(modules)
+        .filter((w) => w.relay)
+        .map((w) => `${w.file}:${w.name}`);
+      expect(relays.sort()).toEqual([...WRAPPERS].sort());
+    }
+  );
 
-  it('finds nothing in server/', () => {
+  it('finds nothing in server/', { timeout: SCAN_TIMEOUT_MS }, () => {
     const findings = scanModules(modules);
     expect(findings.map((f) => `${f.file}:${f.line} ${f.problem}`)).toEqual([]);
   });
