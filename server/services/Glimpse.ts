@@ -395,7 +395,7 @@ app.registerEvent('feed', async (source, cbId, data, citizenid) => {
       : await ownedAccount(data.account_id, citizenid, GLIMPSE_APP);
 
   const blockClause = viewer
-    ? ' AND `account_id` NOT IN (SELECT `blocked_account_id` FROM `mica_account_blocks` WHERE `blocker_account_id` = ?)'
+    ? " AND `account_id` NOT IN (SELECT `blocked_account_id` FROM `mica_account_blocks` WHERE `blocker_account_id` = ? AND `status` = 'active')"
     : '';
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';
   const params: unknown[] = [];
@@ -433,10 +433,11 @@ app.registerEvent('following', async (source, cbId, data, citizenid) => {
     `SELECT ${repo.projection()} FROM \`mica_glimpse\`
      WHERE \`account_id\` IN (
        SELECT \`followee_account_id\` FROM \`mica_account_follows\`
-       WHERE \`follower_account_id\` = ?
+       WHERE \`follower_account_id\` = ? AND \`status\` = 'active'
      )
      AND \`account_id\` NOT IN (
        SELECT \`blocked_account_id\` FROM \`mica_account_blocks\` WHERE \`blocker_account_id\` = ?
+         AND \`status\` = 'active'
      )
      AND \`status\` = 'active'${cursorClause}
      ORDER BY \`id\` DESC
@@ -499,8 +500,9 @@ app.registerEvent('view', async (source, cbId, data, citizenid) => {
   const list = mine.map(() => '?').join(', ');
   const blocked = await Database.single<unknown>(
     `SELECT 1 FROM \`mica_account_blocks\`
-     WHERE (\`blocker_account_id\` IN (${list}) AND \`blocked_account_id\` = ?)
-        OR (\`blocked_account_id\` IN (${list}) AND \`blocker_account_id\` = ?)
+     WHERE \`status\` = 'active'
+       AND ((\`blocker_account_id\` IN (${list}) AND \`blocked_account_id\` = ?)
+         OR (\`blocked_account_id\` IN (${list}) AND \`blocker_account_id\` = ?))
      LIMIT 1`,
     [...mine, found.account_id, ...mine, found.account_id]
   );

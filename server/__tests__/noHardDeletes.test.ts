@@ -66,95 +66,17 @@ const RULES: readonly { name: string; pattern: RegExp }[] = [
 ];
 
 /**
- * The hard deletes still in runtime code, each named by file and by the text its statement
- * names, with exactly how many statements it covers.
- *
- * **Every one tagged `MICA-429` is temporary**: a table with no `status` column to move yet.
- * `statusLess` names the table, and the test fails the moment it gains a `status` column in
- * `mica.sql`, so when MICA-429 lands its waivers have to go rather than linger. The one
- * untagged waiver deletes no row at all.
+ * The statements in runtime code that the rules match and that delete no row, each named by file
+ * and by the text its statement names, with exactly how many statements it covers. Since
+ * MICA-429 gave the last child tables a status, the one left is a constraint drop; a row's
+ * delete is never waived (MICA-428).
  */
 const WAIVERS: readonly {
   file: string;
   table: string;
   count: number;
   reason: string;
-  ticket?: 'MICA-429';
-  /** For a `MICA-429` waiver: the table the statement deletes from, which has no status. */
-  statusLess?: string;
 }[] = [
-  {
-    file: 'server/services/Accounts.ts',
-    table: 'mica_account_follows',
-    ticket: 'MICA-429',
-    statusLess: 'mica_account_follows',
-    count: 2,
-    reason: 'unfollow, and a block ending a follow: no status column (MICA-429)'
-  },
-  {
-    file: 'server/services/Accounts.ts',
-    table: 'mica_account_blocks',
-    ticket: 'MICA-429',
-    statusLess: 'mica_account_blocks',
-    count: 1,
-    reason: 'unblock: no status column (MICA-429)'
-  },
-  {
-    file: 'server/services/Accounts.ts',
-    table: 'mica_account_reactions',
-    ticket: 'MICA-429',
-    statusLess: 'mica_account_reactions',
-    count: 1,
-    reason: 'unreact: no status column (MICA-429)'
-  },
-  {
-    file: 'server/services/Blabber.ts',
-    table: 'mica_blabber_ears',
-    ticket: 'MICA-429',
-    statusLess: 'mica_blabber_ears',
-    count: 1,
-    reason: 'un-ear a Blab: no status column (MICA-429)'
-  },
-  {
-    file: 'server/services/Messages.ts',
-    table: 'mica_messages_reactions',
-    ticket: 'MICA-429',
-    statusLess: 'mica_messages_reactions',
-    count: 1,
-    reason: 'unreact: no status column (MICA-429)'
-  },
-  {
-    file: 'server/services/Spark.ts',
-    table: 'MATCHES',
-    ticket: 'MICA-429',
-    statusLess: 'mica_spark_matches',
-    count: 1,
-    reason: 'unmatch: mica_spark_matches has no status column (MICA-429)'
-  },
-  {
-    file: 'server/services/Spark.ts',
-    table: 'SWIPES',
-    ticket: 'MICA-429',
-    statusLess: 'mica_spark_swipes',
-    count: 2,
-    reason: "a removed profile's swipes, and the pass sweep: no status column (MICA-429)"
-  },
-  {
-    file: 'server/services/Spark.ts',
-    table: 'PHOTOS',
-    ticket: 'MICA-429',
-    statusLess: 'mica_spark_photos',
-    count: 1,
-    reason: 'a replaced profile photo: mica_spark_photos has no status column (MICA-429)'
-  },
-  {
-    file: 'server/services/HodlrMarket.ts',
-    table: 'PRICE_HISTORY_TABLE',
-    ticket: 'MICA-429',
-    statusLess: 'mica_hodlr_price_history',
-    count: 1,
-    reason: 'the price-history prune: no status column (MICA-429)'
-  },
   {
     file: 'server/lib/ownerForeignKeys.ts',
     table: 'FOREIGN KEY',
@@ -228,14 +150,6 @@ const allHits = (): { files: string[]; hits: Hit[] } => {
   return tree;
 };
 
-/** Whether `table` has a `status` column in the committed `mica.sql`; null when it is not there. */
-const hasStatusColumn = (sql: string, table: string): boolean | null => {
-  const body = new RegExp(
-    `CREATE TABLE IF NOT EXISTS \`${table}\` \\(([\\s\\S]*?)\\n\\) ENGINE`
-  ).exec(sql)?.[1];
-  return body === undefined ? null : /^\s+`status` /m.test(body);
-};
-
 describe('no hard deletes in runtime server code (MICA-428)', () => {
   beforeAll(() => {
     tree = scanTree();
@@ -268,22 +182,14 @@ describe('no hard deletes in runtime server code (MICA-428)', () => {
     }
   });
 
-  it('waives a MICA-429 delete only while its table still has no status column', () => {
-    const sql = readFileSync(join(ROOT, 'mica.sql'), 'utf8');
-    const temporary = WAIVERS.filter((w) => w.ticket === 'MICA-429');
-    expect(temporary).toHaveLength(9);
-    const gained = temporary
-      .filter((w) => hasStatusColumn(sql, w.statusLess!) !== false)
-      .map((w) => `${w.file} ${w.statusLess}: ${hasStatusColumn(sql, w.statusLess!)}`);
-    expect(
-      gained,
-      'MICA-429 gave it a status: make the delete a status change, drop the waiver'
-    ).toEqual([]);
-    // The positive twin: the reader sees a status where there is one.
-    expect(hasStatusColumn(sql, 'mica_notes')).toBe(true);
-    // And every waiver but the constraint drop is MICA-429's.
-    expect(WAIVERS.filter((w) => !w.ticket).map((w) => w.file)).toEqual([
-      'server/lib/ownerForeignKeys.ts'
+  /**
+   * MICA-429 retired the nine waivers on status-less child tables: a follow, a block, a reaction,
+   * an ear, a swipe, a match, a photo and a price point are status changes now. What is left
+   * deletes no row.
+   */
+  it('waives no row delete: the one waiver left is a constraint drop', () => {
+    expect(WAIVERS.map((w) => `${w.file} ${w.table}`)).toEqual([
+      'server/lib/ownerForeignKeys.ts FOREIGN KEY'
     ]);
   });
 

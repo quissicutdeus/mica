@@ -289,16 +289,16 @@ const tickMarket = (): void => {
 };
 
 /**
- * Drop snapshots past the retention window — except the newest row, always.
+ * Expire snapshots past the retention window — except the newest row, always (MICA-429).
  *
  * That row is not a chart point, it is the price: `restorePrice` reads exactly it to reopen
  * the market. A server that has been down longer than `HISTORY_RETENTION_DAYS` has *every*
- * row past the window, so the first hourly sweep after it comes up would delete the price
+ * row past the window, so the first hourly sweep after it comes up would expire the price
  * along with the history, and hand the next restore an empty table — MICA-130's own
  * precondition, reached through MICA-130's own retry path.
  *
- * Two statements rather than one self-referencing delete, because MySQL refuses a
- * subquery against the table being deleted from (error 1093) and the derived-table dodge
+ * Two statements rather than one self-referencing update, because MySQL refuses a
+ * subquery against the table being updated (error 1093) and the derived-table dodge
  * around it is harder to read than a second indexed lookup once an hour. An empty table
  * yields no id and `0` matches no row, since AUTO_INCREMENT starts at 1.
  */
@@ -307,9 +307,11 @@ const pruneHistory = async (): Promise<void> => {
     const newest = await Database.scalar<number | null>(
       `SELECT \`id\` FROM \`${PRICE_HISTORY_TABLE}\` ORDER BY \`id\` DESC LIMIT 1`
     );
+    // Kept, as `expired` (MICA-429): nothing is ever deleted, and no read shows an expired point.
+    // The newest point is never expired, so the restore's read of it needs no status.
     await Database.update(
-      `DELETE FROM \`${PRICE_HISTORY_TABLE}\`
-       WHERE \`recorded_at\` < NOW() - INTERVAL ? DAY AND \`id\` <> ?`,
+      `UPDATE \`${PRICE_HISTORY_TABLE}\` SET \`status\` = 'expired'
+       WHERE \`status\` = 'active' AND \`recorded_at\` < NOW() - INTERVAL ? DAY AND \`id\` <> ?`,
       [HISTORY_RETENTION_DAYS, Number(newest) || 0]
     );
   } catch (e) {
@@ -369,7 +371,7 @@ export const getPriceHistory = async (): Promise<PricePoint[]> => {
   try {
     return await Database.query<PricePoint[]>(
       `SELECT \`price\`, \`recorded_at\` FROM \`${PRICE_HISTORY_TABLE}\`
-       WHERE \`recorded_at\` >= NOW() - INTERVAL ? HOUR
+       WHERE \`status\` = 'active' AND \`recorded_at\` >= NOW() - INTERVAL ? HOUR
        ORDER BY \`recorded_at\` ASC`,
       [CHART_WINDOW_HOURS]
     );

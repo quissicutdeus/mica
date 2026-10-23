@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { EXPIRED } from '../lib/statuses';
+import { ERASED, EXPIRED } from '../lib/statuses';
 import { PlayerFacingError } from '../lib/errors';
 import {
   MessageRepository,
@@ -170,6 +170,12 @@ export const messages = defineService<MessageRow, typeof messagesContract>({
           notNull: true,
           references: { table: 'mica_messages', column: 'id' }
         },
+        /** The message while the reaction stands: what the one-reaction key is over (MICA-429). */
+        live_message: {
+          type: 'int',
+          generatedAs: "CASE WHEN `status` = 'active' THEN `message_id` ELSE NULL END"
+        },
+
         citizenid: {
           type: 'string',
           citizenId: true,
@@ -179,15 +185,23 @@ export const messages = defineService<MessageRow, typeof messagesContract>({
         // palette plus a "+" for any other emoji, so the column has to accept anything the
         // palette does not enumerate.
         emoji: { type: 'string', length: 32, notNull: true },
+        /** `deleted` an unreact, `erased` by a purge of the reactor (MICA-429). */
+        status: {
+          type: 'enum',
+          values: ['active', 'deleted', ERASED],
+          notNull: true,
+          default: 'active'
+        },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
       indexes: [
-        // One reaction per participant per emoji per message — tapping the same emoji
+        // One live reaction per participant per emoji per message — tapping the same emoji
         // twice toggles it off rather than stacking a duplicate row, the same idempotency
-        // shape `mica_account_reactions` uses.
+        // shape `mica_account_reactions` uses. Over `live_message` since MICA-429; the
+        // message's foreign key has `message_id` below.
         {
-          name: 'message_citizen_emoji',
-          columns: ['message_id', 'citizenid', 'emoji'],
+          name: 'live_message_citizen_emoji',
+          columns: ['live_message', 'citizenid', 'emoji'],
           unique: true
         },
         // The batched read's own lookup: every reaction on a page of messages, one query.
@@ -199,9 +213,10 @@ export const messages = defineService<MessageRow, typeof messagesContract>({
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
-          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
-          'the insert idempotent.'
+          'Kept, never deleted (MICA-429): the key is over a live-only copy that an ended row ' +
+          'does not carry, so taking it back keeps the row and doing it again is a new row ' +
+          'beside it. Never revived, which would overwrite the old one; the key only ever ' +
+          'refuses a duplicate of a live row, which is what makes the insert idempotent.'
       }
     }
   ],
@@ -556,9 +571,10 @@ app.registerEvent('react', async (source, cbId, data, citizenid, player) => {
 app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
   const { message_id: messageId, emoji } = data;
 
+  // Kept, as `deleted` (MICA-429): the key is over the live copy, so reacting again is a new row.
   await Database.update(
-    `DELETE FROM \`mica_messages_reactions\`
-     WHERE \`message_id\` = ? AND \`citizenid\` = ? AND \`emoji\` = ?`,
+    `UPDATE \`mica_messages_reactions\` SET \`status\` = 'deleted'
+     WHERE \`message_id\` = ? AND \`citizenid\` = ? AND \`emoji\` = ? AND \`status\` = 'active'`,
     [messageId, citizenid, emoji]
   );
   return true;
@@ -595,13 +611,13 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid, player) 
   const [counts, mine] = await Promise.all([
     Database.query<{ message_id: number; emoji: string; total: number }[]>(
       `SELECT \`message_id\`, \`emoji\`, COUNT(*) AS total FROM \`mica_messages_reactions\`
-       WHERE \`message_id\` IN (${placeholders})
+       WHERE \`message_id\` IN (${placeholders}) AND \`status\` = 'active'
        GROUP BY \`message_id\`, \`emoji\``,
       messageIds
     ),
     Database.query<{ message_id: number; emoji: string }[]>(
       `SELECT \`message_id\`, \`emoji\` FROM \`mica_messages_reactions\`
-       WHERE \`message_id\` IN (${placeholders}) AND \`citizenid\` = ?`,
+       WHERE \`message_id\` IN (${placeholders}) AND \`citizenid\` = ? AND \`status\` = 'active'`,
       [...messageIds, citizenid]
     )
   ]);

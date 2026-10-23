@@ -42,8 +42,8 @@ export class GlimpseCommentRepository extends SchemaRepository<GlimpseComment> {
     if (viewers.length > 0) {
       const list = viewers.map(() => '?').join(', ');
       blockClause =
-        ` AND c.\`account_id\` NOT IN (SELECT \`blocked_account_id\` FROM \`mica_account_blocks\` WHERE \`blocker_account_id\` IN (${list}))` +
-        ` AND c.\`account_id\` NOT IN (SELECT \`blocker_account_id\` FROM \`mica_account_blocks\` WHERE \`blocked_account_id\` IN (${list}))`;
+        ` AND c.\`account_id\` NOT IN (SELECT \`blocked_account_id\` FROM \`mica_account_blocks\` WHERE \`blocker_account_id\` IN (${list}) AND \`status\` = 'active')` +
+        ` AND c.\`account_id\` NOT IN (SELECT \`blocker_account_id\` FROM \`mica_account_blocks\` WHERE \`blocked_account_id\` IN (${list}) AND \`status\` = 'active')`;
       params.push(...viewers, ...viewers);
     }
     if (opts.cursor !== null) params.push(opts.cursor);

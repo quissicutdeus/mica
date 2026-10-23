@@ -448,16 +448,19 @@ describe('reactions on Messages (MICA-143)', () => {
   });
 
   describe('unreact', () => {
-    it("deletes scoped to the caller's own citizenid, with no membership check at all", async () => {
+    it("takes back scoped to the caller's own citizenid, with no membership check at all", async () => {
       dbMock.update.mockResolvedValue(true);
 
       const reply = await call('unreact', 5, 'OTHER', { message_id: 42, emoji: '👍' });
 
       expect(reply).toBe(true);
-      expect(dbMock.update).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM `mica_messages_reactions`'),
-        [42, 'OTHER', '👍']
+      // Kept, as deleted (MICA-429), and only a live reaction is moved.
+      const [sql, params] = dbMock.update.mock.calls[0];
+      expect(String(sql).replace(/\s+/g, ' ')).toContain(
+        "UPDATE `mica_messages_reactions` SET `status` = 'deleted' WHERE `message_id` = ? " +
+          "AND `citizenid` = ? AND `emoji` = ? AND `status` = 'active'"
       );
+      expect(params).toEqual([42, 'OTHER', '👍']);
       // Taking back your own reaction stays possible even after leaving the thread, the
       // same "withdrawing stays possible forever" reasoning `delete` documents for the
       // message itself — so this never even reads the message row to check membership.

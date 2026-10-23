@@ -141,8 +141,9 @@ describe('the declaration', () => {
   it('makes an ear unique per account, in the child table', () => {
     const ears = blabber.resolved.childTables.find((t) => t.name === 'mica_blabber_ears');
     expect(ears).toBeDefined();
-    const unique = (ears?.indexes ?? []).find((i: any) => i.name === 'blab_account');
-    expect(unique).toMatchObject({ unique: true });
+    // Over the live copy since MICA-429, so an un-ear keeps its row.
+    const unique = (ears?.indexes ?? []).find((i: any) => i.name === 'blab_live_account');
+    expect(unique).toMatchObject({ columns: ['blab_id', 'live_account'], unique: true });
   });
 
   it('lets an author edit only the body', () => {
@@ -659,6 +660,11 @@ describe('replies, mouths and ears', () => {
 
     const params = dbMock.update.mock.calls[0][1] as unknown[];
     expect(params).toEqual([9, 1]);
+    // Kept, as deleted (MICA-429), and only a live ear moves.
+    expect(String(dbMock.update.mock.calls[0][0]).replace(/\s+/g, ' ').trim()).toBe(
+      "UPDATE `mica_blabber_ears` SET `status` = 'deleted' " +
+        "WHERE `blab_id` = ? AND `account_id` = ? AND `status` = 'active'"
+    );
   });
 
   it('refuses to ear as an account the caller does not own', async () => {

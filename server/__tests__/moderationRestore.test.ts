@@ -82,6 +82,8 @@ type Parked = 'count' | 'prior' | 'record' | 'owner';
 let hold: ((what: Parked, params: unknown[]) => Promise<void> | void) | null;
 let replies: Map<string, any>;
 let sequence = 0;
+/** Every erase of a dependent row's table the suite saw, as `table.column [params]`. */
+let dependentErases: string[] = [];
 
 const one = (sql: string) => sql.replace(/\s+/g, ' ').trim();
 
@@ -231,7 +233,17 @@ beforeEach(() => {
     if (/mica_audit_logs/.test(sql)) return 1;
     throw new Error(`stand-in: unexpected insert: ${sql}`);
   });
-  dbMock.query.mockImplementation(async (sql: string) => {
+  dependentErases = [];
+  dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+    // What hangs off a parent restored to `erased` (MICA-429 review): recorded, as each erase.
+    const dependent =
+      /^UPDATE `(\w+)` SET `status` = \? WHERE `(\w+)` IN \(([?, ]+)\) AND `status` <> \? LIMIT 500$/.exec(
+        one(sql)
+      );
+    if (dependent) {
+      dependentErases.push(`${dependent[1]}.${dependent[2]} ${JSON.stringify(params)}`);
+      return { affectedRows: 0 };
+    }
     throw new Error(`stand-in: unexpected query: ${one(sql)}`);
   });
 });
@@ -702,6 +714,27 @@ describe("an owner's deletion during a takedown wins the restore (MICA-426)", ()
     expect(reports[0].target_prior_status).toBe('erased');
     await reopen(1);
     expect(statusOf('mica_spark', 40)).toBe('erased');
+    /**
+     * MICA-429 review: put back to erased, the profile takes what hangs off it with it, as the
+     * purge would have — its swipes and its matches, either way round. Nothing else would: the
+     * purge that erased its owner passed it by while it was down.
+     */
+    const ids = JSON.stringify(['erased', 40, 'erased']);
+    expect(dependentErases).toEqual([
+      `mica_spark_swipes.swiper_profile_id ${ids}`,
+      `mica_spark_swipes.target_profile_id ${ids}`,
+      `mica_spark_matches.profile_a ${ids}`,
+      `mica_spark_matches.profile_b ${ids}`
+    ]);
+  });
+
+  it('a row nobody deleted comes back live, and takes nothing with it', async () => {
+    row('mica_spark', 40, 'active');
+    fileReport(1, 'mica_spark', 40);
+    await moderate(1);
+    await reopen(1);
+    expect(statusOf('mica_spark', 40)).toBe('active');
+    expect(dependentErases).toEqual([]);
   });
 
   it('a row nobody deleted still comes back live — the positive twin', async () => {

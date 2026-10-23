@@ -88,7 +88,7 @@ const FLOW_CHECKS = {
   qbMail: { standalone: 10, qb: 10 },
   devices: { standalone: 27, qb: 31 },
   reports: { standalone: 14, qb: 14 },
-  privacy: { standalone: 25, qb: 25 },
+  privacy: { standalone: 30, qb: 30 },
   leftThread: { standalone: 15, qb: 15 },
   characterSwitch: { standalone: 0, qb: 18 }
 };
@@ -2017,6 +2017,85 @@ const runPrivacy = async (shape, live) => {
   check(`${kind}: 1's export has 1's clock setting`, clock(aExport), ['"24h"']);
   check(`${kind}: 2's export does not`, clock(bExport), []);
 
+  /**
+   * MICA-429: a follow and a reaction are kept when taken back, and doing it again is a new row
+   * beside the kept one. Then 1's delete erases 1's account, and every follow and reaction of
+   * 1's with it, either way round: 2's follower count and 2's reaction totals stop counting 1.
+   */
+  step(`${kind}: 1 and 2 follow each other, and 1 reacts to 2's DM`);
+  const blabberAccount = async (src, handle) =>
+    (await shape.call(src, 'accounts', 'mine', { app: 'blabber' }))?.rows?.[0] ??
+    (await shape.call(src, 'accounts', 'create', { app: 'blabber', handle }));
+  const a = await blabberAccount(A, `pa_${kind}`);
+  const b = await blabberAccount(B, `pb_${kind}`);
+  const follow = (src, from, to, action = 'follow') =>
+    shape.call(src, 'accounts', action, {
+      app: 'blabber',
+      follower_account_id: from,
+      followee_account_id: to
+    });
+  await follow(B, b?.id, a?.id);
+  await follow(A, a?.id, b?.id);
+  await follow(A, a?.id, b?.id, 'unfollow');
+  await follow(A, a?.id, b?.id);
+  const followRows = async (from, to) =>
+    (
+      await shape.rows(
+        'SELECT `status` FROM `mica_account_follows` WHERE `follower_account_id` = ? AND `followee_account_id` = ? ORDER BY `id`',
+        [from, to]
+      )
+    ).map((r) => r.status);
+  check(
+    `${kind}: an unfollow keeps its row, and a follow again is a new one beside it`,
+    await followRows(a?.id, b?.id),
+    ['deleted', 'active']
+  );
+  const dm = await shape.call(B, 'dms', 'send', {
+    app: 'blabber',
+    account_id: b?.id,
+    peer_account_id: a?.id,
+    body: 'react to this'
+  });
+  const react = (action) =>
+    shape.call(A, 'accounts', action, {
+      app: 'blabber',
+      account_id: a?.id,
+      target_table: 'mica_blabber_dms',
+      target_id: dm?.id,
+      emoji: '👍'
+    });
+  await react('react');
+  await react('unreact');
+  await react('react');
+  check(
+    `${kind}: an unreact keeps its row, and a react again is a new one beside it`,
+    (
+      await shape.rows(
+        "SELECT `status` FROM `mica_account_reactions` WHERE `account_id` = ? AND `target_table` = 'mica_blabber_dms' AND `target_id` = ? ORDER BY `id`",
+        [a?.id, dm?.id]
+      )
+    ).map((r) => r.status),
+    ['deleted', 'active']
+  );
+  const twoSees = async () => {
+    const graph = await shape.call(B, 'accounts', 'follows', {
+      app: 'blabber',
+      account_id: b?.id,
+      viewer_account_id: b?.id
+    });
+    const totals = await shape.call(B, 'accounts', 'reactionsFor', {
+      app: 'blabber',
+      target_table: 'mica_blabber_dms',
+      target_ids: [dm?.id]
+    });
+    return [graph?.followers, graph?.following, totals?.[dm?.id]?.counts];
+  };
+  check(`${kind}: 2 counts 1's follow, 2's follow of 1, and 1's reaction`, await twoSees(), [
+    1,
+    1,
+    { '👍': 1 }
+  ]);
+
   step(`${kind}: 1 deletes their data`);
   const typo = await shape.call(A, 'privacy', 'delete', { confirm: 'delete' });
   check(
@@ -2041,6 +2120,16 @@ const runPrivacy = async (shape, live) => {
     numberBefore
   );
   check(`${kind}: 2's rows are untouched`, await counts(PEOPLE[2]), bRows);
+  check(
+    `${kind}: 2 counts no follow and no reaction of 1's erased account, either way (MICA-429)`,
+    await twoSees(),
+    [0, 0, {}]
+  );
+  check(
+    `${kind}: and every one of them is kept, erased`,
+    [await followRows(a?.id, b?.id), await followRows(b?.id, a?.id)],
+    [['erased', 'erased'], ['erased']]
+  );
   const shared = (
     await shape.rows(
       'SELECT `conversation_id` FROM `mica_messages` WHERE `citizenid` = ? AND `message` IS NOT NULL AND `external_sender` IS NULL ORDER BY `id` LIMIT 1',

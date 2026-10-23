@@ -46,6 +46,9 @@ import {
 import '../services/DirectMessages';
 import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
 
+/** A statement on one line, as the assertions below spell it. */
+const oneLine = (sql: unknown): string => String(sql).replace(/\s+/g, ' ').trim();
+
 const SRC = 5;
 
 const DUPLICATE = (key: string): string => duplicateEntry(key, key);
@@ -553,6 +556,11 @@ describe('following', () => {
 
     // A row id alone is never authorization to remove somebody else's follow.
     expect(dbMock.update.mock.calls[0][1]).toEqual([MINE.id, 4]);
+    // Kept, as deleted (MICA-429), and only a live follow moves.
+    expect(oneLine(dbMock.update.mock.calls[0][0])).toBe(
+      "UPDATE `mica_account_follows` SET `status` = 'deleted' " +
+        "WHERE `follower_account_id` = ? AND `followee_account_id` = ? AND `status` = 'active'"
+    );
   });
 
   it('refuses an unfollow as an account the caller does not own', async () => {
@@ -581,6 +589,19 @@ describe('following', () => {
     });
 
     expect(reply).toEqual({ followers: 12, following: 4, followedByMe: true, blockedByMe: false });
+    // Counted as the lists show them (MICA-429 review): live follows by live accounts only, so an
+    // erased or taken-down account is in neither the count nor the list.
+    const [followers, following] = dbMock.scalar.mock.calls.map(([sql]) => oneLine(sql));
+    expect(followers).toBe(
+      'SELECT COUNT(*) FROM `mica_account_follows` f JOIN `mica_accounts` a ' +
+        "ON a.`id` = f.`follower_account_id` AND a.`status` = 'active' " +
+        "WHERE f.`followee_account_id` = ? AND f.`status` = 'active'"
+    );
+    expect(following).toBe(
+      'SELECT COUNT(*) FROM `mica_account_follows` f JOIN `mica_accounts` a ' +
+        "ON a.`id` = f.`followee_account_id` AND a.`status` = 'active' " +
+        "WHERE f.`follower_account_id` = ? AND f.`status` = 'active'"
+    );
   });
 
   it('answers followedByMe false for a viewer the caller does not own', async () => {
@@ -674,6 +695,12 @@ describe('blocking', () => {
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(String(sql)).toContain('mica_account_follows');
     expect(params).toEqual([3, 4, 4, 3]);
+    // Ended, not deleted (MICA-429): kept as `blocked`, live ones only.
+    expect(oneLine(sql)).toBe(
+      "UPDATE `mica_account_follows` SET `status` = 'blocked' WHERE `status` = 'active' " +
+        'AND ((`follower_account_id` = ? AND `followee_account_id` = ?) ' +
+        'OR (`follower_account_id` = ? AND `followee_account_id` = ?))'
+    );
   });
 
   it('treats a duplicate block as success, same as follow', async () => {
@@ -700,6 +727,11 @@ describe('blocking', () => {
     });
 
     expect(dbMock.update.mock.calls[0][1]).toEqual([MINE.id, 4]);
+    // Kept, as deleted (MICA-429).
+    expect(oneLine(dbMock.update.mock.calls[0][0])).toBe(
+      "UPDATE `mica_account_blocks` SET `status` = 'deleted' " +
+        "WHERE `blocker_account_id` = ? AND `blocked_account_id` = ? AND `status` = 'active'"
+    );
   });
 
   it('refuses an unblock as an account the caller does not own', async () => {
@@ -1011,6 +1043,11 @@ describe('reactions', () => {
     });
 
     expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'mica_blabber_dms', 4, '👍']);
+    // Kept, as deleted (MICA-429).
+    expect(oneLine(dbMock.update.mock.calls[0][0])).toBe(
+      "UPDATE `mica_account_reactions` SET `status` = 'deleted' WHERE `account_id` = ? " +
+        "AND `target_table` = ? AND `target_id` = ? AND `emoji` = ? AND `status` = 'active'"
+    );
   });
 
   it('refuses reactionsFor on a table that never opted in', async () => {
@@ -1260,6 +1297,8 @@ describe('the follow graph declaration', () => {
     expect(Object.keys(follows!.columns)).toEqual([
       'follower_account_id',
       'followee_account_id',
+      'live_followee',
+      'status',
       'created_at'
     ]);
   });
@@ -1288,8 +1327,9 @@ describe('the follow graph declaration', () => {
     const unique = follows!.indexes?.find((index: any) => index.unique);
 
     // A constraint rather than find-then-insert, which has a race two rapid taps would find.
+    // Over the live copy since MICA-429, so an ended follow keeps its row.
     expect(unique).toMatchObject({
-      columns: ['follower_account_id', 'followee_account_id'],
+      columns: ['follower_account_id', 'live_followee'],
       unique: true
     });
   });

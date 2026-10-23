@@ -720,7 +720,7 @@ export const glimpseScenarios: readonly Scenario[] = [
         assert(done === true, `accounts:block answered ${show(done)}`);
         const held = await db.count(
           'SELECT COUNT(*) FROM `mica_account_blocks` ' +
-            'WHERE `blocker_account_id` = ? AND `blocked_account_id` = ?',
+            "WHERE `blocker_account_id` = ? AND `blocked_account_id` = ? AND `status` = 'active'",
           [blocker.account.id, blocked.account.id]
         );
         assert(held === 1, `the block is ${held} row(s) in mica_account_blocks`);

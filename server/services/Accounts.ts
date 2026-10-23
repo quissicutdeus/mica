@@ -5,6 +5,8 @@
 import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { ERASED } from '../lib/statuses';
+import { registerDependentRows } from '../lib/orphanSweep';
 import { appEventChannel } from '../lib/appEvents';
 import { isReactableTable, reactableRule } from '../lib/reactions';
 import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
@@ -251,17 +253,33 @@ export const accounts = defineService<Account, typeof accountsContract>({
           notNull: true,
           references: { table: 'mica_accounts', column: 'id' }
         },
+        /**
+         * The followee while the follow stands (MICA-429): what the one-follow key is over, so an
+         * ended follow keeps its row and a follow again is a new one beside it.
+         */
+        live_followee: {
+          type: 'int',
+          generatedAs: "CASE WHEN `status` = 'active' THEN `followee_account_id` ELSE NULL END"
+        },
+        /** `deleted` an unfollow, `blocked` ended by a block either way, `erased` by a purge (MICA-429). */
+        status: {
+          type: 'enum',
+          values: ['active', 'deleted', 'blocked', ERASED],
+          notNull: true,
+          default: 'active'
+        },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
       indexes: [
         /**
-         * One row per relation, enforced by the database rather than by find-then-insert —
+         * One live row per relation, enforced by the database rather than by find-then-insert —
          * the same constraint the likes table uses, and for the same reason: two rapid taps
-         * would find the race.
+         * would find the race. Over `live_followee` since MICA-429, so an ended follow is kept.
+         * It still starts with `follower_account_id`, the column its foreign key needs.
          */
         {
-          name: 'follower_followee',
-          columns: ['follower_account_id', 'followee_account_id'],
+          name: 'follower_live_followee',
+          columns: ['follower_account_id', 'live_followee'],
           unique: true
         },
         // The other direction: who follows this account.
@@ -283,9 +301,10 @@ export const accounts = defineService<Account, typeof accountsContract>({
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
-          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
-          'the insert idempotent.'
+          'Kept, never deleted (MICA-429): the key is over a live-only copy that an ended row ' +
+          'does not carry, so taking it back keeps the row and doing it again is a new row ' +
+          'beside it. Never revived, which would overwrite the old one; the key only ever ' +
+          'refuses a duplicate of a live row, which is what makes the insert idempotent.'
       }
     },
     /**
@@ -310,12 +329,26 @@ export const accounts = defineService<Account, typeof accountsContract>({
           notNull: true,
           references: { table: 'mica_accounts', column: 'id' }
         },
+        /** The blocked account while the block stands: what the one-block key is over (MICA-429). */
+        live_blocked: {
+          type: 'int',
+          generatedAs: "CASE WHEN `status` = 'active' THEN `blocked_account_id` ELSE NULL END"
+        },
+        /** `deleted` an unblock, `erased` by a purge of either account (MICA-429). */
+        status: {
+          type: 'enum',
+          values: ['active', 'deleted', ERASED],
+          notNull: true,
+          default: 'active'
+        },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
       indexes: [
+        // Over `live_blocked` since MICA-429, so an unblock keeps its row; it still starts with
+        // `blocker_account_id`, the column its foreign key needs.
         {
-          name: 'blocker_blocked',
-          columns: ['blocker_account_id', 'blocked_account_id'],
+          name: 'blocker_live_blocked',
+          columns: ['blocker_account_id', 'live_blocked'],
           unique: true
         },
         // The reverse lookup every enforcement point needs: "has X blocked me."
@@ -323,9 +356,10 @@ export const accounts = defineService<Account, typeof accountsContract>({
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
-          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
-          'the insert idempotent.'
+          'Kept, never deleted (MICA-429): the key is over a live-only copy that an ended row ' +
+          'does not carry, so taking it back keeps the row and doing it again is a new row ' +
+          'beside it. Never revived, which would overwrite the old one; the key only ever ' +
+          'refuses a duplicate of a live row, which is what makes the insert idempotent.'
       }
     },
     /**
@@ -349,17 +383,30 @@ export const accounts = defineService<Account, typeof accountsContract>({
         },
         target_table: { type: 'string', length: 64, notNull: true },
         target_id: { type: 'int', notNull: true },
+        /** The target while the reaction stands: what the one-reaction key is over (MICA-429). */
+        live_target: {
+          type: 'int',
+          generatedAs: "CASE WHEN `status` = 'active' THEN `target_id` ELSE NULL END"
+        },
         // Free text rather than an enum: the picker offers a fixed palette plus a "+" for any
         // other emoji, so the column has to accept anything the palette does not enumerate.
         emoji: { type: 'string', length: 32, notNull: true },
+        /** `deleted` an unreact, `erased` by a purge of the account (MICA-429). */
+        status: {
+          type: 'enum',
+          values: ['active', 'deleted', ERASED],
+          notNull: true,
+          default: 'active'
+        },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
       indexes: [
-        // One reaction per account per emoji per target — tapping the same emoji twice is one
-        // reaction, not a duplicate row. Taking it off is `unreact`; the client decides which.
+        // One live reaction per account per emoji per target — tapping the same emoji twice is
+        // one reaction, not a duplicate row. Taking it off is `unreact`, which keeps the row
+        // (MICA-429); the client decides which.
         {
-          name: 'account_target_emoji',
-          columns: ['account_id', 'target_table', 'target_id', 'emoji'],
+          name: 'account_live_target_emoji',
+          columns: ['account_id', 'target_table', 'live_target', 'emoji'],
           unique: true
         },
         // The batched read's own lookup: every reaction on a page of targets, one query.
@@ -367,9 +414,10 @@ export const accounts = defineService<Account, typeof accountsContract>({
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
-          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
-          'the insert idempotent.'
+          'Kept, never deleted (MICA-429): the key is over a live-only copy that an ended row ' +
+          'does not carry, so taking it back keeps the row and doing it again is a new row ' +
+          'beside it. Never revived, which would overwrite the old one; the key only ever ' +
+          'refuses a duplicate of a live row, which is what makes the insert idempotent.'
       }
     }
   ],
@@ -396,6 +444,25 @@ export const accounts = defineService<Account, typeof accountsContract>({
 });
 
 const app = accounts.app;
+
+/**
+ * An erased account takes its follows, blocks and reactions with it (MICA-429), either way
+ * round: they carry no citizenid for a purge to find, and nothing cascades since nothing is
+ * deleted. A follow of it stops counting, and a block held against it ends with it.
+ */
+registerDependentRows('mica_accounts', {
+  table: 'mica_account_follows',
+  columns: ['follower_account_id', 'followee_account_id']
+});
+registerDependentRows('mica_accounts', {
+  table: 'mica_account_blocks',
+  columns: ['blocker_account_id', 'blocked_account_id']
+});
+registerDependentRows('mica_accounts', {
+  table: 'mica_account_reactions',
+  columns: ['account_id']
+});
+
 const repo = accounts.repo as AccountRepository;
 
 // `AccountRepository.findAll`'s own statement does not widen a projection for sealed columns.
@@ -747,9 +814,11 @@ app.registerEvent('unfollow', async (source, cbId, data, citizenid) => {
   const followeeId = data.followee_account_id;
 
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
-  // else's follow (§2.9).
+  // else's follow (§2.9). Kept, as `deleted` (MICA-429): the key is over the live copy, so a
+  // follow again is a new row beside it.
   await Database.update(
-    'DELETE FROM `mica_account_follows` WHERE `follower_account_id` = ? AND `followee_account_id` = ?',
+    "UPDATE `mica_account_follows` SET `status` = 'deleted' " +
+      "WHERE `follower_account_id` = ? AND `followee_account_id` = ? AND `status` = 'active'",
     [follower.id, followeeId]
   );
   return true;
@@ -757,8 +826,8 @@ app.registerEvent('unfollow', async (source, cbId, data, citizenid) => {
 
 /**
  * Blocking. Same insert-only-with-unique-index shape as `follow`, plus one side effect
- * `follow` does not have: a block cascade-deletes any existing follow row between the two
- * accounts, in **both** directions. A blocked-but-still-following relationship is a state
+ * `follow` does not have: a block ends any existing follow between the two accounts, in
+ * **both** directions, as `blocked` — kept, never deleted (MICA-429). A blocked-but-still-following relationship is a state
  * nobody reading a follower list should have to make sense of, and leaving it behind would be
  * cheaper to implement than to explain.
  */
@@ -799,9 +868,10 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
   }
 
   await Database.update(
-    `DELETE FROM \`mica_account_follows\`
-     WHERE (\`follower_account_id\` = ? AND \`followee_account_id\` = ?)
-        OR (\`follower_account_id\` = ? AND \`followee_account_id\` = ?)`,
+    `UPDATE \`mica_account_follows\` SET \`status\` = 'blocked'
+     WHERE \`status\` = 'active'
+       AND ((\`follower_account_id\` = ? AND \`followee_account_id\` = ?)
+         OR (\`follower_account_id\` = ? AND \`followee_account_id\` = ?))`,
     [blocker.id, blocked.id, blocked.id, blocker.id]
   );
 
@@ -830,9 +900,11 @@ app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
   const blockedId = data.blocked_account_id;
 
   // Scoped to the caller's own account, so a row id is not authorization to lift somebody
-  // else's block (§2.9). Unblocking does not restore any follow the block cascade removed.
+  // else's block (§2.9). Unblocking does not restore any follow the block ended. Kept, as
+  // `deleted` (MICA-429).
   await Database.update(
-    'DELETE FROM `mica_account_blocks` WHERE `blocker_account_id` = ? AND `blocked_account_id` = ?',
+    "UPDATE `mica_account_blocks` SET `status` = 'deleted' " +
+      "WHERE `blocker_account_id` = ? AND `blocked_account_id` = ? AND `status` = 'active'",
     [blocker.id, blockedId]
   );
   return true;
@@ -913,10 +985,11 @@ app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
   const targetId = data.target_id;
 
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
-  // else's reaction (§2.9).
+  // else's reaction (§2.9). Kept, as `deleted` (MICA-429).
   await Database.update(
-    `DELETE FROM \`mica_account_reactions\`
-     WHERE \`account_id\` = ? AND \`target_table\` = ? AND \`target_id\` = ? AND \`emoji\` = ?`,
+    `UPDATE \`mica_account_reactions\` SET \`status\` = 'deleted'
+     WHERE \`account_id\` = ? AND \`target_table\` = ? AND \`target_id\` = ? AND \`emoji\` = ?
+       AND \`status\` = 'active'`,
     [account.id, targetTable, targetId, data.emoji]
   );
   return true;
@@ -956,7 +1029,7 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
   const [counts, mine] = await Promise.all([
     Database.query<{ target_id: number; emoji: string; total: number }[]>(
       `SELECT \`target_id\`, \`emoji\`, COUNT(*) AS total FROM \`mica_account_reactions\`
-       WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders})
+       WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders}) AND \`status\` = 'active'
        GROUP BY \`target_id\`, \`emoji\``,
       [targetTable, ...visible]
     ),
@@ -969,7 +1042,7 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
       if (myIds.length === 0) return [];
       return await Database.query<{ target_id: number; emoji: string }[]>(
         `SELECT \`target_id\`, \`emoji\` FROM \`mica_account_reactions\`
-         WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders})
+         WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders}) AND \`status\` = 'active'
          AND \`account_id\` IN (${myIds.map(() => '?').join(', ')})`,
         [targetTable, ...visible, ...myIds]
       );
@@ -1021,17 +1094,23 @@ app.registerEvent('follows', async (source, cbId, data, citizenid) => {
 
   const [followers, following, mine, blocked] = await Promise.all([
     Database.scalar<number>(
-      'SELECT COUNT(*) FROM `mica_account_follows` WHERE `followee_account_id` = ?',
+      // Counted as the list shows them (MICA-429 review): live follows, by accounts still live.
+      'SELECT COUNT(*) FROM `mica_account_follows` f ' +
+        "JOIN `mica_accounts` a ON a.`id` = f.`follower_account_id` AND a.`status` = 'active' " +
+        "WHERE f.`followee_account_id` = ? AND f.`status` = 'active'",
       [accountId]
     ),
     Database.scalar<number>(
-      'SELECT COUNT(*) FROM `mica_account_follows` WHERE `follower_account_id` = ?',
+      'SELECT COUNT(*) FROM `mica_account_follows` f ' +
+        "JOIN `mica_accounts` a ON a.`id` = f.`followee_account_id` AND a.`status` = 'active' " +
+        "WHERE f.`follower_account_id` = ? AND f.`status` = 'active'",
       [accountId]
     ),
     viewer
       ? Database.single<{ id: number }>(
           `SELECT \`id\` FROM \`mica_account_follows\`
-           WHERE \`follower_account_id\` = ? AND \`followee_account_id\` = ? LIMIT 1`,
+           WHERE \`follower_account_id\` = ? AND \`followee_account_id\` = ? AND \`status\` = 'active'
+           LIMIT 1`,
           [viewer.id, accountId]
         )
       : Promise.resolve(null),
@@ -1113,7 +1192,7 @@ const followList = async (
     `SELECT ${projection}, f.\`id\` AS \`cursor_id\`
      FROM \`mica_account_follows\` f
      JOIN \`mica_accounts\` a ON a.\`id\` = f.\`${listedColumn}\`
-     WHERE f.\`${subjectColumn}\` = ? AND a.\`app\` = ? AND a.\`status\` = 'active'${cursorClause}
+     WHERE f.\`${subjectColumn}\` = ? AND f.\`status\` = 'active' AND a.\`app\` = ? AND a.\`status\` = 'active'${cursorClause}
      ORDER BY f.\`id\` DESC
      LIMIT ?`,
     params
@@ -1228,7 +1307,7 @@ export async function accountHasBlocked(
 ): Promise<boolean> {
   const row = await Database.single<{ id: number }>(
     `SELECT \`id\` FROM \`mica_account_blocks\`
-     WHERE \`blocker_account_id\` = ? AND \`blocked_account_id\` = ? LIMIT 1`,
+     WHERE \`blocker_account_id\` = ? AND \`blocked_account_id\` = ? AND \`status\` = 'active' LIMIT 1`,
     [blockerAccountId, blockedAccountId]
   );
   return row !== null;

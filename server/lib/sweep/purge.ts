@@ -6,6 +6,7 @@ import { Database } from '../Database';
 import { isReportableTable, recordOwnerDeletion } from '../moderation';
 import { ERASED } from '../statuses';
 import { identifier, type Clause } from './sql';
+import { dependentsOf, eraseDependentsOf } from './dependents';
 import { hasStatus, hasUpdatedAt, type OwnedTable } from './tables';
 import type { OwnerScope } from './scope';
 import { traceOf } from '../sqlErrors';
@@ -198,8 +199,11 @@ const and = (...clauses: (Clause | null | undefined)[]): Clause => {
  * the owner started is where its other members read their own messages. The owner's own
  * membership in it is erased and left (`leaving`).
  *
- * Status-less tables are left alone — a follow, a reaction, a swipe has no status to move yet
- * (MICA-429). There is no cascade to plan: an `UPDATE` reaches no other row.
+ * **A row that hangs off an erased one by id goes with it** (`registerDependentRows`): a
+ * follow or a block off an erased account, a swipe off an erased profile. The database's own
+ * cascade never fires, since nothing is deleted; this is the one that stands in for it.
+ *
+ * A status-less table is left alone: it has nothing to move.
  *
  * A table that fails is a failure for that table, logged where it happened, and every other
  * table still goes — the character purge and the sweep always worked table by table, and one
@@ -305,6 +309,44 @@ export const purgePlanned = async (
     }
     erased += moved;
     if (moved > 0) byTable[owned.table] = moved;
+
+    /**
+     * The rows hanging off this table's by id (`registerDependentRows`): the ids of the rows
+     * this scope has erased, a bounded page at a time, then one statement per dependent column
+     * against literal ids, which each column's own index answers (MICA-429 review). Every
+     * erased row of the scope, not only this run's, so a run that stopped part-way is finished.
+     */
+    if (dependentsOf(owned.table).length > 0) {
+      const name = `\`${owned.table}\``;
+      const failed = new Set<string>();
+      try {
+        const owns = scope.owns(name, owned.column);
+        let after = 0;
+        for (let page = 0; page < MAX_CHUNKS; page++) {
+          const ids = await selectIds(
+            `SELECT ${name}.\`id\` AS \`id\` FROM ${name} WHERE ${owns.sql} ` +
+              `AND ${name}.\`status\` = ? AND ${name}.\`id\` > ? ` +
+              `ORDER BY ${name}.\`id\` LIMIT ${ERASE_CHUNK}`,
+            [...owns.params, ERASED, after]
+          );
+          if (ids.length === 0) break;
+          const result = await eraseDependentsOf(owned.table, ids);
+          for (const [table, n] of Object.entries(result.byTable)) {
+            erased += n;
+            byTable[table] = (byTable[table] ?? 0) + n;
+          }
+          for (const { table, error } of result.failures) {
+            if (!failed.has(table)) fail(table, error);
+            failed.add(table);
+          }
+          after = Math.max(...ids);
+          if (ids.length < ERASE_CHUNK) break;
+          await yieldToServer();
+        }
+      } catch (error) {
+        fail(owned.table, error);
+      }
+    }
   }
 
   return { erased, kept, failures, byTable };

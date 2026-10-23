@@ -604,7 +604,10 @@ describe('HodlrMarket history', () => {
     await __pruneHistory();
 
     const [sql, params] = dbMock.update.mock.calls[0];
-    expect(sql).toMatch(/DELETE FROM/);
+    // Kept, as expired (MICA-429): the prune is a status change, never a delete.
+    expect(sql).toMatch(/^UPDATE `mica_hodlr_price_history` SET `status` = 'expired'/);
+    expect(sql).toMatch(/`status` = 'active' AND `recorded_at` </);
+    expect(sql).not.toMatch(/DELETE/);
     expect(params).toEqual([7, 88]);
   });
 

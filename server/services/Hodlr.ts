@@ -89,9 +89,12 @@ export const hodlr = defineService<HodlrHolding, typeof hodlrContract>({
       name: 'mica_hodlr_price_history',
       columns: {
         price: { type: 'int', notNull: true },
+        /** `expired` by the hourly prune, which keeps the row (MICA-429). No owner, so no erase. */
+        status: { type: 'enum', values: ['active', 'expired'], notNull: true, default: 'active' },
         recorded_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
-      indexes: [{ name: 'recorded_at', columns: ['recorded_at'] }]
+      // Every read asks for live points in time order (MICA-429).
+      indexes: [{ name: 'status_recorded_at', columns: ['status', 'recorded_at'] }]
     }
   ]
 });

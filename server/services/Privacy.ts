@@ -182,6 +182,9 @@ const WITHHELD: Readonly<Record<string, readonly string[]>> = {
   mica_settings: ['live_device'],
   mica_blocklist: ['live_device'],
   mica_messages_participants: ['live_device'],
+  // MICA-429. `live_message` is `message_id` again while the reaction stands, and NULL
+  // otherwise: the unique key's machinery, telling the player nothing the two columns do not.
+  mica_messages_reactions: ['live_message'],
   // MICA-254. A Dark Chat channel's join code: a key to a room other people speak in, which an
   // export copied out of the game would hand to whoever reads the file. The owner reads it in
   // the app. `alias_key` is the alias again while the member is live (`live_citizen`, its twin,

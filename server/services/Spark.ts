@@ -6,6 +6,8 @@ import { randomBytes } from 'node:crypto';
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { ERASED } from '../lib/statuses';
+import { registerDependentRows } from '../lib/orphanSweep';
 import { joinedMedia } from '../lib/media/joined';
 import { openRow } from '../lib/contentCipher';
 import { appEventChannel } from '../lib/appEvents';
@@ -194,7 +196,14 @@ export const spark = defineService<ProfileRow, typeof sparkContract>({
           notNull: true,
           references: { table: 'mica_media', column: 'id' }
         },
-        position: { type: 'int', notNull: true }
+        position: { type: 'int', notNull: true },
+        /** `replaced` by the next save's set, `erased` by a purge (MICA-429). */
+        status: {
+          type: 'enum',
+          values: ['active', 'replaced', ERASED],
+          notNull: true,
+          default: 'active'
+        }
       },
       indexes: [
         { name: 'profile_position', columns: ['profile_id', 'position'] },
@@ -220,23 +229,38 @@ export const spark = defineService<ProfileRow, typeof sparkContract>({
           notNull: true,
           references: { table: PROFILES, column: 'id' }
         },
+        /** The target while the swipe stands: what the one-swipe key, and the upsert, are over. */
+        live_target: {
+          type: 'int',
+          generatedAs: "CASE WHEN `status` = 'active' THEN `target_profile_id` ELSE NULL END"
+        },
         kind: { type: 'enum', values: ['like', 'pass'], notNull: true },
+        /** `expired` an old pass, `deleted` with its removed profile, `erased` by a purge (MICA-429). */
+        status: {
+          type: 'enum',
+          values: ['active', 'expired', 'deleted', ERASED],
+          notNull: true,
+          default: 'active'
+        },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
       indexes: [
+        // Over `live_target` since MICA-429: an expired pass keeps its row, and the next swipe
+        // on that profile is a new one. Starts with the swiper, for its foreign key.
         {
-          name: 'swiper_target',
-          columns: ['swiper_profile_id', 'target_profile_id'],
+          name: 'swiper_live_target',
+          columns: ['swiper_profile_id', 'live_target'],
           unique: true
         },
         { name: 'target_profile_id', columns: ['target_profile_id'] },
-        /** The sweep's walk over old passes. */
-        { name: 'kind_created_at', columns: ['kind', 'created_at'] }
+        /** The sweep's walk over old live passes: expired ones are kept, and never walked again. */
+        { name: 'status_kind_created_at', columns: ['status', 'kind', 'created_at'] }
       ],
       uniqueAfterDelete: {
         optOut:
-          'a swipe is never soft-deleted: a second swipe on the same profile is an upsert onto ' +
-          'the row, and a removal or an expired pass is a hard delete'
+          'a second swipe on the same profile is an upsert onto the live row; an expired pass ' +
+          'or a removed profile keeps its row under a status, and the key is over a live-only ' +
+          'copy it does not carry, so the next swipe is a new row (MICA-429)'
       }
     },
     {
@@ -245,16 +269,31 @@ export const spark = defineService<ProfileRow, typeof sparkContract>({
       columns: {
         profile_a: { type: 'int', notNull: true, references: { table: PROFILES, column: 'id' } },
         profile_b: { type: 'int', notNull: true, references: { table: PROFILES, column: 'id' } },
+        /** The second profile while the match stands: what the one-match key is over (MICA-429). */
+        live_b: {
+          type: 'int',
+          generatedAs: "CASE WHEN `status` = 'active' THEN `profile_b` ELSE NULL END"
+        },
+        /** `ended` an unmatch or a removed profile, `erased` by a purge (MICA-429). */
+        status: {
+          type: 'enum',
+          values: ['active', 'ended', ERASED],
+          notNull: true,
+          default: 'active'
+        },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
       indexes: [
-        { name: 'pair', columns: ['profile_a', 'profile_b'], unique: true },
+        // Over `live_b` since MICA-429: an ended match keeps its row. Starts with `profile_a`,
+        // for its foreign key.
+        { name: 'live_pair', columns: ['profile_a', 'live_b'], unique: true },
         { name: 'profile_b', columns: ['profile_b'] }
       ],
       uniqueAfterDelete: {
         optOut:
-          'a match is hard-deleted by an unmatch, and both like rows stay, so the pair is never ' +
-          'inserted again; a second insert of a live pair is the race `swipe` reads back'
+          'an unmatch keeps the row as ended, which the live-only key does not hold, and both ' +
+          'like rows stay, so the pair is never inserted again; a second insert of a live pair ' +
+          'is the race `swipe` reads back (MICA-429)'
       }
     }
   ],
@@ -262,6 +301,17 @@ export const spark = defineService<ProfileRow, typeof sparkContract>({
 });
 
 const app = spark.app;
+
+/**
+ * An erased profile's swipes and matches go with it (MICA-429), either way round: they hang off
+ * the profile's id, and nothing cascades since nothing is deleted. Its photos carry the owner's
+ * citizenid, so the purge reaches those itself.
+ */
+registerDependentRows(PROFILES, {
+  table: SWIPES,
+  columns: ['swiper_profile_id', 'target_profile_id']
+});
+registerDependentRows(PROFILES, { table: MATCHES, columns: ['profile_a', 'profile_b'] });
 const channel = appEventChannel(SPARK_APP);
 
 // ---------------------------------------------------------------------------------------------
@@ -277,6 +327,12 @@ const needsProfile = (): PlayerFacingError =>
 
 const needsPhoto = (): PlayerFacingError =>
   new PlayerFacingError('Pick at least one photo.', { key: 'server.spark.needsPhoto' });
+
+/** The profile is live but the account behind it is not: taken down, or erased (MICA-429). */
+const accountUnavailable = (): PlayerFacingError =>
+  new PlayerFacingError('Your Spark account is not available.', {
+    key: 'server.spark.accountUnavailable'
+  });
 
 const takenDown = (): PlayerFacingError =>
   new PlayerFacingError('Your Spark profile was taken down.', {
@@ -303,10 +359,21 @@ const liveProfileOf = async (citizenid: string): Promise<ProfileRow | null> =>
     [citizenid]
   );
 
-/** The caller's active profile, or the refusal every action past opt-in answers. */
+/**
+ * The caller's active profile, on an active account, or the refusal every action past opt-in
+ * answers. The account too (MICA-429): erasing an account erases the blocks other players hold
+ * against it, so a profile left live on an erased one — a purge that stopped part-way, before
+ * `mica_spark` — must not swipe its way back to them.
+ */
 const requireActiveProfile = async (citizenid: string): Promise<ProfileRow> => {
   const mine = await liveProfileOf(citizenid);
   if (!mine || mine.status !== 'active') throw needsProfile();
+  const account = await Database.single<unknown>(
+    "SELECT 1 FROM `mica_accounts` WHERE `id` = ? AND `status` = 'active' LIMIT 1",
+    [mine.account_id]
+  );
+  // Refused all the same, but said as what it is: the player has a profile (MICA-429 review).
+  if (!account) throw accountUnavailable();
   return mine;
 };
 
@@ -365,7 +432,7 @@ const photosFor = async (
             m.\`citizenid\` AS media_citizenid, m.\`device_id\` AS media_device_id
      FROM \`${PHOTOS}\` p
      JOIN \`mica_media\` m ON m.\`id\` = p.\`media_id\` AND m.\`status\` = 'active'
-     WHERE p.\`profile_id\` IN (${marks(ids)})
+     WHERE p.\`profile_id\` IN (${marks(ids)}) AND p.\`status\` = 'active'
      ORDER BY p.\`profile_id\`, p.\`position\`, p.\`id\``,
     ids
   );
@@ -471,9 +538,9 @@ const activeProfiles = async (
 /** Bound as `[viewer, viewer]`. The deck's two block clauses, for `activeProfiles`. */
 const NOT_BLOCKED_BY_OR_OF_VIEWER =
   ' AND NOT EXISTS (SELECT 1 FROM `mica_account_blocks` b' +
-  ' WHERE b.`blocker_account_id` = ? AND b.`blocked_account_id` = s.`account_id`)' +
+  " WHERE b.`blocker_account_id` = ? AND b.`blocked_account_id` = s.`account_id` AND b.`status` = 'active')" +
   ' AND NOT EXISTS (SELECT 1 FROM `mica_account_blocks` b' +
-  ' WHERE b.`blocker_account_id` = s.`account_id` AND b.`blocked_account_id` = ?)';
+  " WHERE b.`blocker_account_id` = s.`account_id` AND b.`blocked_account_id` = ? AND b.`status` = 'active')";
 
 // ---------------------------------------------------------------------------------------------
 // The match between two accounts, for the DM policy
@@ -489,8 +556,9 @@ export const accountsMatched = async (a: number, b: number): Promise<boolean> =>
     `SELECT 1 FROM \`${MATCHES}\` m
      JOIN \`${PROFILES}\` pa ON pa.\`id\` = m.\`profile_a\` AND pa.\`status\` = 'active'
      JOIN \`${PROFILES}\` pb ON pb.\`id\` = m.\`profile_b\` AND pb.\`status\` = 'active'
-     WHERE (pa.\`account_id\` = ? AND pb.\`account_id\` = ?)
-        OR (pa.\`account_id\` = ? AND pb.\`account_id\` = ?)
+     WHERE m.\`status\` = 'active'
+       AND ((pa.\`account_id\` = ? AND pb.\`account_id\` = ?)
+         OR (pa.\`account_id\` = ? AND pb.\`account_id\` = ?))
      LIMIT 1`,
     [a, b, b, a]
   );
@@ -610,7 +678,7 @@ interface MatchRow {
 const matchOf = async (a: number, b: number): Promise<MatchRow | null> =>
   await Database.single<MatchRow | null>(
     `SELECT \`id\`, \`profile_a\`, \`profile_b\`, \`created_at\` FROM \`${MATCHES}\`
-     WHERE \`profile_a\` = ? AND \`profile_b\` = ? LIMIT 1`,
+     WHERE \`profile_a\` = ? AND \`profile_b\` = ? AND \`status\` = 'active' LIMIT 1`,
     [Math.min(a, b), Math.max(a, b)]
   );
 
@@ -642,7 +710,9 @@ const endMatch = async (
   );
   if (other) await deleteThread(mine.account_id, Number(other.account_id));
   const removed = await Database.update(
-    `DELETE FROM \`${MATCHES}\` WHERE \`id\` = ? AND (\`profile_a\` = ? OR \`profile_b\` = ?)`,
+    // Kept, as `ended` (MICA-429).
+    `UPDATE \`${MATCHES}\` SET \`status\` = 'ended'
+     WHERE \`id\` = ? AND (\`profile_a\` = ? OR \`profile_b\` = ?) AND \`status\` = 'active'`,
     [match.id, mine.id, mine.id]
   );
   return removed && other ? String(other.citizenid) : null;
@@ -663,7 +733,7 @@ const pairStillOpen = async (mine: ProfileRow, target: ProfileRow): Promise<bool
 const forgetProfile = async (profileId: number, accountId: number): Promise<void> => {
   const matches = await Database.query<MatchRow[]>(
     `SELECT \`id\`, \`profile_a\`, \`profile_b\`, \`created_at\` FROM \`${MATCHES}\`
-     WHERE \`profile_a\` = ? OR \`profile_b\` = ?`,
+     WHERE (\`profile_a\` = ? OR \`profile_b\` = ?) AND \`status\` = 'active'`,
     [profileId, profileId]
   );
   const told: { citizenid: string; matchId: number }[] = [];
@@ -672,7 +742,9 @@ const forgetProfile = async (profileId: number, accountId: number): Promise<void
     if (other) told.push({ citizenid: other, matchId: Number(match.id) });
   }
   await Database.update(
-    `DELETE FROM \`${SWIPES}\` WHERE \`swiper_profile_id\` = ? OR \`target_profile_id\` = ?`,
+    // Kept, as `deleted` with the profile (MICA-429).
+    `UPDATE \`${SWIPES}\` SET \`status\` = 'deleted'
+     WHERE (\`swiper_profile_id\` = ? OR \`target_profile_id\` = ?) AND \`status\` = 'active'`,
     [profileId, profileId]
   );
   for (const { citizenid, matchId } of told) pushUnmatched(citizenid, matchId);
@@ -797,7 +869,9 @@ app.registerEvent('save', async (_source, _cbId, data, citizenid) => {
   // One transaction, so two saves at once cannot leave both photo sets on the profile.
   const replaced = await Database.transaction([
     {
-      query: `DELETE FROM \`${PHOTOS}\` WHERE \`profile_id\` = ? AND \`citizenid\` = ?`,
+      // The set it replaces is kept, as `replaced` (MICA-429).
+      query: `UPDATE \`${PHOTOS}\` SET \`status\` = 'replaced'
+              WHERE \`profile_id\` = ? AND \`citizenid\` = ? AND \`status\` = 'active'`,
       params: [profileId, citizenid]
     },
     {
@@ -841,14 +915,17 @@ app.registerEvent('deck', async (_source, _cbId, data, citizenid) => {
          AND s.\`citizenid\` <> ?
          AND EXISTS (SELECT 1 FROM \`${PHOTOS}\` p
                      JOIN \`mica_media\` m ON m.\`id\` = p.\`media_id\` AND m.\`status\` = 'active'
-                     WHERE p.\`profile_id\` = s.\`id\`)
+                     WHERE p.\`profile_id\` = s.\`id\` AND p.\`status\` = 'active')
          AND NOT EXISTS (SELECT 1 FROM \`${SWIPES}\` w
                          WHERE w.\`swiper_profile_id\` = ? AND w.\`target_profile_id\` = s.\`id\`
+                           AND w.\`status\` = 'active'
                            AND (w.\`kind\` = 'like' OR w.\`created_at\` > NOW() - INTERVAL ? DAY))
          AND NOT EXISTS (SELECT 1 FROM \`mica_account_blocks\` b
-                         WHERE b.\`blocker_account_id\` = ? AND b.\`blocked_account_id\` = s.\`account_id\`)
+                         WHERE b.\`blocker_account_id\` = ? AND b.\`blocked_account_id\` = s.\`account_id\`
+                           AND b.\`status\` = 'active')
          AND NOT EXISTS (SELECT 1 FROM \`mica_account_blocks\` b
-                         WHERE b.\`blocker_account_id\` = s.\`account_id\` AND b.\`blocked_account_id\` = ?)${cursorClause}
+                         WHERE b.\`blocker_account_id\` = s.\`account_id\` AND b.\`blocked_account_id\` = ?
+                           AND b.\`status\` = 'active')${cursorClause}
        ORDER BY s.\`id\` DESC
        LIMIT ?`,
       params
@@ -880,7 +957,8 @@ app.registerEvent('swipe', async (_source, _cbId, data, citizenid) => {
   const targetId = Number(target.id);
 
   const prior = await Database.scalar<string | null>(
-    `SELECT \`kind\` FROM \`${SWIPES}\` WHERE \`swiper_profile_id\` = ? AND \`target_profile_id\` = ?`,
+    `SELECT \`kind\` FROM \`${SWIPES}\`
+     WHERE \`swiper_profile_id\` = ? AND \`target_profile_id\` = ? AND \`status\` = 'active'`,
     [mineId, targetId]
   );
 
@@ -903,7 +981,8 @@ app.registerEvent('swipe', async (_source, _cbId, data, citizenid) => {
 
   const likedBack = await Database.single<unknown>(
     `SELECT 1 FROM \`${SWIPES}\`
-     WHERE \`swiper_profile_id\` = ? AND \`target_profile_id\` = ? AND \`kind\` = 'like' LIMIT 1`,
+     WHERE \`swiper_profile_id\` = ? AND \`target_profile_id\` = ? AND \`kind\` = 'like'
+       AND \`status\` = 'active' LIMIT 1`,
     [targetId, mineId]
   );
   if (!likedBack) return { match: null };
@@ -961,7 +1040,7 @@ app.registerEvent('matches', async (_source, _cbId, _data, citizenid) => {
   const rows =
     (await Database.query<MatchRow[]>(
       `SELECT \`id\`, \`profile_a\`, \`profile_b\`, \`created_at\` FROM \`${MATCHES}\`
-       WHERE \`profile_a\` = ? OR \`profile_b\` = ?
+       WHERE (\`profile_a\` = ? OR \`profile_b\` = ?) AND \`status\` = 'active'
        ORDER BY \`id\` DESC
        LIMIT ?`,
       [mineId, mineId, MATCHES_CAP]
@@ -989,7 +1068,7 @@ app.registerEvent('unmatch', async (_source, _cbId, data, citizenid) => {
   const mineId = Number(mine.id);
   const match = await Database.single<MatchRow | null>(
     `SELECT \`id\`, \`profile_a\`, \`profile_b\`, \`created_at\` FROM \`${MATCHES}\`
-     WHERE \`id\` = ? AND (\`profile_a\` = ? OR \`profile_b\` = ?) LIMIT 1`,
+     WHERE \`id\` = ? AND (\`profile_a\` = ? OR \`profile_b\` = ?) AND \`status\` = 'active' LIMIT 1`,
     [data.match_id, mineId, mineId]
   );
   if (!match) return false;
@@ -1043,8 +1122,9 @@ const endMatchesOnBlock = async (blocker: Account, blocked: Account): Promise<vo
      FROM \`${MATCHES}\` m
      JOIN \`${PROFILES}\` pa ON pa.\`id\` = m.\`profile_a\`
      JOIN \`${PROFILES}\` pb ON pb.\`id\` = m.\`profile_b\`
-     WHERE (pa.\`account_id\` = ? AND pb.\`account_id\` = ?)
-        OR (pa.\`account_id\` = ? AND pb.\`account_id\` = ?)`,
+     WHERE m.\`status\` = 'active'
+       AND ((pa.\`account_id\` = ? AND pb.\`account_id\` = ?)
+         OR (pa.\`account_id\` = ? AND pb.\`account_id\` = ?))`,
     [blocker.id, blocked.id, blocked.id, blocker.id]
   );
   for (const match of rows ?? []) {
@@ -1096,7 +1176,7 @@ export const sweepSparkPasses = async (): Promise<number> => {
     for (let batch = 0; batch < SWEEP_MAX_BATCHES; batch += 1) {
       const rows = await Database.query<{ id: number }[]>(
         `SELECT \`id\` FROM \`${SWIPES}\`
-         WHERE \`kind\` = 'pass' AND \`created_at\` < NOW() - INTERVAL ? DAY
+         WHERE \`status\` = 'active' AND \`kind\` = 'pass' AND \`created_at\` < NOW() - INTERVAL ? DAY
          ORDER BY \`created_at\`, \`id\` LIMIT ${RETENTION_BATCH}`,
         [PASS_DAYS]
       );
@@ -1104,10 +1184,11 @@ export const sweepSparkPasses = async (): Promise<number> => {
         .map((row) => Number(row.id))
         .filter((id) => Number.isSafeInteger(id) && id > 0);
       if (ids.length === 0) break;
-      // Asked again in the delete, so a pass turned into a like meanwhile stays.
+      // Asked again in the write, so a pass turned into a like meanwhile stays. Kept, as
+      // `expired` (MICA-429): the key is over the live copy, so the next swipe is a new row.
       const result = await Database.query<{ affectedRows?: number }>(
-        `DELETE FROM \`${SWIPES}\` WHERE \`id\` IN (${marks(ids)})
-           AND \`kind\` = 'pass' AND \`created_at\` < NOW() - INTERVAL ? DAY`,
+        `UPDATE \`${SWIPES}\` SET \`status\` = 'expired' WHERE \`id\` IN (${marks(ids)})
+           AND \`status\` = 'active' AND \`kind\` = 'pass' AND \`created_at\` < NOW() - INTERVAL ? DAY`,
         [...ids, PASS_DAYS]
       );
       removed += Number(result?.affectedRows ?? 0) || 0;

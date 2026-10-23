@@ -24,6 +24,7 @@
   "spark.needsProfile": "Make your Spark profile first.",
   "spark.needsPhoto": "Pick at least one photo.",
   "spark.takenDown": "Your Spark profile was taken down.",
+  "spark.accountUnavailable": "Your Spark account is not available.",
   "blabberDms.blocked": "You can't message this account.",
   "blabberDms.emptyMessage": "A message needs something in it.",
   "blabberDms.notYours": "That account is not yours.",

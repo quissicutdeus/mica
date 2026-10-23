@@ -13,10 +13,12 @@ import {
   type SweepFailure
 } from './sweep/purge';
 import { traceOf } from './sqlErrors';
+import { eraseStrandedDependents } from './sweep/dependents';
 
 export { ownedTables, type OwnedTable } from './sweep/tables';
 export { OWNER_OVERRIDE_CONVAR, type SkipReason } from './sweep/owner';
 export { orphanScope } from './sweep/scope';
+export { registerDependentRows } from './sweep/dependents';
 export {
   __setPurgeHookForTests,
   registerSharedRows,
@@ -156,6 +158,20 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
     const done = await purgePlanned(orphanScope(owner, match, label), tables, {
       except: options.except
     });
+    /**
+     * And the catch-all (MICA-429 review): any erased account or profile anywhere that still has
+     * a follow, block, reaction, ear, swipe or match not yet erased — one a reopen put back to
+     * `erased`, one a purge stopped part-way through. A whole sweep only: one narrowed by
+     * `only` is about those tables alone.
+     */
+    if (options.only === undefined) {
+      const stranded = await eraseStrandedDependents(label);
+      for (const [table, n] of Object.entries(stranded.byTable)) {
+        done.erased += n;
+        done.byTable[table] = (done.byTable[table] ?? 0) + n;
+      }
+      done.failures.push(...stranded.failures);
+    }
     return { ...done, skipped: null };
   } catch (error) {
     // Only the test seam throws here; a table's own failure is caught per table.

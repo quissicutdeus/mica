@@ -101,9 +101,11 @@ CREATE TABLE IF NOT EXISTS `mica_account_follows` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `follower_account_id` int(11) NOT NULL,
     `followee_account_id` int(11) NOT NULL,
+    `live_followee` int(11) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN `followee_account_id` ELSE NULL END) VIRTUAL,
+    `status` ENUM('active', 'deleted', 'blocked', 'erased') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `follower_followee` (`follower_account_id`, `followee_account_id`),
+    UNIQUE KEY `follower_live_followee` (`follower_account_id`, `live_followee`),
     KEY `followee_account_id` (`followee_account_id`),
     KEY `follower_recent` (`follower_account_id`, `id`),
     CONSTRAINT `fk_mica_account_follows_follower_account_id` FOREIGN KEY (`follower_account_id`)
@@ -116,9 +118,11 @@ CREATE TABLE IF NOT EXISTS `mica_account_blocks` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `blocker_account_id` int(11) NOT NULL,
     `blocked_account_id` int(11) NOT NULL,
+    `live_blocked` int(11) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN `blocked_account_id` ELSE NULL END) VIRTUAL,
+    `status` ENUM('active', 'deleted', 'erased') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `blocker_blocked` (`blocker_account_id`, `blocked_account_id`),
+    UNIQUE KEY `blocker_live_blocked` (`blocker_account_id`, `live_blocked`),
     KEY `blocked_account_id` (`blocked_account_id`),
     CONSTRAINT `fk_mica_account_blocks_blocker_account_id` FOREIGN KEY (`blocker_account_id`)
         REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE,
@@ -131,10 +135,12 @@ CREATE TABLE IF NOT EXISTS `mica_account_reactions` (
     `account_id` int(11) NOT NULL,
     `target_table` varchar(64) NOT NULL,
     `target_id` int(11) NOT NULL,
+    `live_target` int(11) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN `target_id` ELSE NULL END) VIRTUAL,
     `emoji` varchar(32) NOT NULL,
+    `status` ENUM('active', 'deleted', 'erased') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `account_target_emoji` (`account_id`, `target_table`, `target_id`, `emoji`),
+    UNIQUE KEY `account_live_target_emoji` (`account_id`, `target_table`, `live_target`, `emoji`),
     KEY `target` (`target_table`, `target_id`),
     CONSTRAINT `fk_mica_account_reactions_account_id` FOREIGN KEY (`account_id`)
         REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE
@@ -425,9 +431,10 @@ CREATE TABLE IF NOT EXISTS `mica_hodlr` (
 CREATE TABLE IF NOT EXISTS `mica_hodlr_price_history` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `price` int(11) NOT NULL,
+    `status` ENUM('active', 'expired') NOT NULL DEFAULT 'active',
     `recorded_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `recorded_at` (`recorded_at`)
+    KEY `status_recorded_at` (`status`, `recorded_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 -- Generated from the 'importledger' defineService declaration.
@@ -580,9 +587,11 @@ CREATE TABLE IF NOT EXISTS `mica_blabber_ears` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `blab_id` int(11) NOT NULL,
     `account_id` int(11) NOT NULL,
+    `live_account` int(11) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN `account_id` ELSE NULL END) VIRTUAL,
+    `status` ENUM('active', 'deleted', 'erased') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `blab_account` (`blab_id`, `account_id`),
+    UNIQUE KEY `blab_live_account` (`blab_id`, `live_account`),
     KEY `account_id` (`account_id`),
     CONSTRAINT `fk_mica_blabber_ears_blab_id` FOREIGN KEY (`blab_id`)
         REFERENCES `mica_blabber` (`id`) ON DELETE CASCADE,
@@ -749,11 +758,13 @@ CREATE TABLE IF NOT EXISTS `mica_messages_attachments` (
 CREATE TABLE IF NOT EXISTS `mica_messages_reactions` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `message_id` int(11) NOT NULL,
+    `live_message` int(11) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN `message_id` ELSE NULL END) VIRTUAL,
     `citizenid` varchar(50) NOT NULL,
     `emoji` varchar(32) NOT NULL,
+    `status` ENUM('active', 'deleted', 'erased') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `message_citizen_emoji` (`message_id`, `citizenid`, `emoji`),
+    UNIQUE KEY `live_message_citizen_emoji` (`live_message`, `citizenid`, `emoji`),
     KEY `message_id` (`message_id`),
     KEY `citizenid` (`citizenid`),
     CONSTRAINT `fk_mica_messages_reactions_message_id` FOREIGN KEY (`message_id`)
@@ -938,6 +949,7 @@ CREATE TABLE IF NOT EXISTS `mica_spark_photos` (
     `citizenid` varchar(50) NOT NULL,
     `media_id` int(11) NOT NULL,
     `position` int(11) NOT NULL,
+    `status` ENUM('active', 'replaced', 'erased') NOT NULL DEFAULT 'active',
     PRIMARY KEY (`id`),
     KEY `profile_position` (`profile_id`, `position`),
     KEY `citizenid` (`citizenid`),
@@ -952,12 +964,14 @@ CREATE TABLE IF NOT EXISTS `mica_spark_swipes` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `swiper_profile_id` int(11) NOT NULL,
     `target_profile_id` int(11) NOT NULL,
+    `live_target` int(11) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN `target_profile_id` ELSE NULL END) VIRTUAL,
     `kind` ENUM('like', 'pass') NOT NULL,
+    `status` ENUM('active', 'expired', 'deleted', 'erased') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `swiper_target` (`swiper_profile_id`, `target_profile_id`),
+    UNIQUE KEY `swiper_live_target` (`swiper_profile_id`, `live_target`),
     KEY `target_profile_id` (`target_profile_id`),
-    KEY `kind_created_at` (`kind`, `created_at`),
+    KEY `status_kind_created_at` (`status`, `kind`, `created_at`),
     CONSTRAINT `fk_mica_spark_swipes_swiper_profile_id` FOREIGN KEY (`swiper_profile_id`)
         REFERENCES `mica_spark` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_mica_spark_swipes_target_profile_id` FOREIGN KEY (`target_profile_id`)
@@ -968,9 +982,11 @@ CREATE TABLE IF NOT EXISTS `mica_spark_matches` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `profile_a` int(11) NOT NULL,
     `profile_b` int(11) NOT NULL,
+    `live_b` int(11) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN `profile_b` ELSE NULL END) VIRTUAL,
+    `status` ENUM('active', 'ended', 'erased') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `pair` (`profile_a`, `profile_b`),
+    UNIQUE KEY `live_pair` (`profile_a`, `live_b`),
     KEY `profile_b` (`profile_b`),
     CONSTRAINT `fk_mica_spark_matches_profile_a` FOREIGN KEY (`profile_a`)
         REFERENCES `mica_spark` (`id`) ON DELETE CASCADE,
@@ -1002,4 +1018,5 @@ SELECT `id` FROM (
     UNION ALL SELECT '0013_private_content_widens_its_columns'
     UNION ALL SELECT '0014_private_lookups_get_blind_indexes'
     UNION ALL SELECT '0015_hidden_rows_are_kept'
+    UNION ALL SELECT '0016_child_rows_are_kept'
 ) AS `seed` WHERE @mica_fresh_import = 1;

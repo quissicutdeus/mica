@@ -287,7 +287,7 @@ describe('a report is only of something the reporter can see', () => {
     glimpseAttachments?: { post_id: number; media_id: number }[];
     /** `[channel_id, citizenid]` pairs with `left_at` null: live Dark Chat members. */
     darkchatMembers?: [number, string][];
-    sparkPhotos?: { profile_id: number; media_id: number }[];
+    sparkPhotos?: { profile_id: number; media_id: number; status?: string }[];
   }
 
   const activeIn = (sql: string, alias = '') =>
@@ -332,7 +332,11 @@ describe('a report is only of something the reporter can see', () => {
         const profile =
           sql.includes('FROM `mica_spark_photos` a') &&
           (w.sparkPhotos ?? []).some(
-            (a) => a.media_id === id && activeIn(sql, 'p.')(find('mica_spark', a.profile_id))
+            (a) =>
+              a.media_id === id &&
+              // A photo row with no status yet is live, as `DEFAULT 'active'` makes it.
+              activeIn(sql, 'a.')({ id: 0, citizenid: '', status: a.status ?? 'active' }) &&
+              activeIn(sql, 'p.')(find('mica_spark', a.profile_id))
           );
         return own || blab || listing || post || profile ? { 1: 1 } : null;
       }
@@ -666,6 +670,22 @@ describe('a report is only of something the reporter can see', () => {
       });
       const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
       expect(reply.error).toBe(GONE);
+    });
+
+    /**
+     * MICA-429 review: a save replaces the profile's photo set and keeps the old rows, as
+     * `replaced`. A photo that is no longer on the card is not shown to anyone, so it is not
+     * reportable through the profile: only a live photo row counts.
+     */
+    it('refuses a photo the profile replaced, though the profile is live', async () => {
+      const photo: Row = { id: 30, citizenid: 'AUTHOR1', status: 'active', preview: 'data:...' };
+      world({
+        rows: { mica_media: [photo], mica_spark: [profile('active')] },
+        sparkPhotos: [{ profile_id: 70, media_id: 30, status: 'replaced' }]
+      });
+      const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
+      expect(reply.error).toBe(GONE);
+      expect(dbMock.insert).not.toHaveBeenCalled();
     });
   });
 

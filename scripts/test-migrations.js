@@ -85,13 +85,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * to 495, and MICA-388's `runApplyCreatesMissingTables` (9 on each shape, over a current ledger
  * and over an empty one) to 531, and MICA-389's `runApplyFinishesHalfCreated` (11 on each
  * shape) to 553, and MICA-432's `runBlindIndexMigration`s (10 on each shape) to 573, and
- * MICA-428's `runHiddenRowsMigration`s (13 on each shape) to 599 — so the margin here is eight
- * again.
+ * MICA-428's `runHiddenRowsMigration`s (13 on each shape) to 599, and MICA-429's
+ * `runChildRowsMigration`s (12 on each shape) to 623 — so the margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 599;
+const MINIMUM_CHECKS = 623;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -2272,6 +2272,40 @@ const runContactKeyMigration = async ({ connection, schemaFile, hasPlayers, serv
 
 const MOUTH_KEY_MIGRATION = '0012_blabber_mouths_unique_while_live';
 const HIDDEN_ROWS_MIGRATION = '0015_hidden_rows_are_kept';
+const CHILD_ROWS_MIGRATION = '0016_child_rows_are_kept';
+
+/**
+ * Put the child tables back as they were before MICA-429's 0016, by hand from the DDL as it
+ * stood: no status, no live copy, each unique key over its plain columns, the two walks without
+ * `status`. And 0016 pending again. Every scenario for a migration older than 0016 that rebuilds
+ * a status ENUM starts here, so it never meets a status 0016 added.
+ */
+const regressChildRows = async (connection) => {
+  for (const regress of [
+    'ALTER TABLE mica_account_follows DROP KEY follower_live_followee, DROP COLUMN live_followee, ' +
+      'DROP COLUMN status, ADD UNIQUE KEY follower_followee (follower_account_id, followee_account_id)',
+    'ALTER TABLE mica_account_blocks DROP KEY blocker_live_blocked, DROP COLUMN live_blocked, ' +
+      'DROP COLUMN status, ADD UNIQUE KEY blocker_blocked (blocker_account_id, blocked_account_id)',
+    'ALTER TABLE mica_account_reactions DROP KEY account_live_target_emoji, DROP COLUMN live_target, ' +
+      'DROP COLUMN status, ADD UNIQUE KEY account_target_emoji (account_id, target_table, target_id, emoji)',
+    'ALTER TABLE mica_blabber_ears DROP KEY blab_live_account, DROP COLUMN live_account, ' +
+      'DROP COLUMN status, ADD UNIQUE KEY blab_account (blab_id, account_id)',
+    'ALTER TABLE mica_messages_reactions DROP KEY live_message_citizen_emoji, DROP COLUMN live_message, ' +
+      'DROP COLUMN status, ADD UNIQUE KEY message_citizen_emoji (message_id, citizenid, emoji)',
+    'ALTER TABLE mica_spark_photos DROP COLUMN status',
+    'ALTER TABLE mica_spark_swipes DROP KEY swiper_live_target, DROP KEY status_kind_created_at, ' +
+      'DROP COLUMN live_target, DROP COLUMN status, ' +
+      'ADD UNIQUE KEY swiper_target (swiper_profile_id, target_profile_id), ' +
+      'ADD KEY kind_created_at (kind, created_at)',
+    'ALTER TABLE mica_spark_matches DROP KEY live_pair, DROP COLUMN live_b, DROP COLUMN status, ' +
+      'ADD UNIQUE KEY pair (profile_a, profile_b)',
+    'ALTER TABLE mica_hodlr_price_history DROP KEY status_recorded_at, DROP COLUMN status, ' +
+      'ADD KEY recorded_at (recorded_at)'
+  ]) {
+    await connection.query(regress);
+  }
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [CHILD_ROWS_MIGRATION]);
+};
 
 /**
  * MICA-330's 0012, executed rather than read: the current schema put back to the key it had
@@ -2484,6 +2518,8 @@ const runHiddenRowsMigration = async ({ connection, schemaFile, hasPlayers, serv
   };
 
   await fresh(`mica_hidden_rows_${variant}`);
+  // 0016 (MICA-429) gave the child tables their status; they had none before 0015 either.
+  await regressChildRows(connection);
   const [enums] = await connection.query(
     `SELECT table_name AS t, column_type AS type FROM information_schema.COLUMNS
       WHERE table_schema = DATABASE() AND column_name = 'status'
@@ -2691,6 +2727,213 @@ const runHiddenRowsMigration = async ({ connection, schemaFile, hasPlayers, serv
     { schema: await wholeSchema(connection), rows: await rows() },
     settled
   );
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+};
+
+/**
+ * MICA-429's 0016, executed rather than read: the child tables put back to what they were (no
+ * status, keys over the plain columns), a row in each, the real `micaschema apply`, and then
+ * what the live-only keys allow and refuse. Every row that existed is live, since a removal was
+ * a delete until now.
+ */
+const runChildRowsMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} child rows`;
+  step(`${schemaFile} — MICA-429 ${CHILD_ROWS_MIGRATION}, on a ${variant} database`);
+
+  const fresh = async (database) => {
+    await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+    await connection.query(`CREATE DATABASE \`${database}\``);
+    await connection.changeUser({ database });
+    if (hasPlayers) await connection.query(PLAYERS_TABLE);
+    await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  };
+  await fresh(`mica_child_rows_shape_${variant}`);
+  const shape = {
+    columns: (await wholeSchema(connection)).toSorted(),
+    keys: await allIndexes(connection)
+  };
+
+  await fresh(`mica_child_rows_${variant}`);
+  await regressChildRows(connection);
+  const A = hasPlayers ? 'CIT_A' : SWEEP_LIVE;
+  await connection.query(
+    "INSERT INTO mica_accounts (id, citizenid, app, handle) VALUES (1, ?, 'blabber', 'a'), (2, ?, 'blabber', 'b'), (3, ?, 'spark', 'c'), (4, ?, 'spark', 'd')",
+    [A, A, A, A]
+  );
+  // A row in each of the nine tables 0016 gives a status (MICA-429 review), and the parents
+  // they need. Ids fixed, so the re-run below can tell a kept row from a rewritten one.
+  await connection.query(
+    "INSERT INTO mica_blabber (id, citizenid, account_id, body) VALUES (20, ?, 1, 'hi')",
+    [A]
+  );
+  await connection.query('INSERT INTO mica_messages_conversations (id, citizenid) VALUES (30, ?)', [
+    A
+  ]);
+  await connection.query(
+    "INSERT INTO mica_messages (id, citizenid, conversation_id, message) VALUES (31, ?, 30, 'hi')",
+    [A]
+  );
+  await connection.query('INSERT INTO mica_media (id, citizenid) VALUES (40, ?)', [A]);
+  await connection.query(
+    // One live profile per citizen (`live_citizen`): the second is another player's.
+    "INSERT INTO mica_spark (id, citizenid, account_id, age) VALUES (10, ?, 3, 30), (11, 'CIT_B', 4, 30)",
+    [A]
+  );
+  for (const [sql, params] of [
+    [
+      'INSERT INTO mica_account_follows (id, follower_account_id, followee_account_id) VALUES (1, 1, 2)',
+      []
+    ],
+    [
+      'INSERT INTO mica_account_blocks (id, blocker_account_id, blocked_account_id) VALUES (1, 2, 1)',
+      []
+    ],
+    [
+      "INSERT INTO mica_account_reactions (id, account_id, target_table, target_id, emoji) VALUES (1, 1, 'mica_blabber', 20, 'x')",
+      []
+    ],
+    ['INSERT INTO mica_blabber_ears (id, blab_id, account_id) VALUES (1, 20, 2)', []],
+    [
+      "INSERT INTO mica_messages_reactions (id, message_id, citizenid, emoji) VALUES (1, 31, ?, 'x')",
+      [A]
+    ],
+    [
+      'INSERT INTO mica_spark_photos (id, profile_id, citizenid, media_id, position) VALUES (1, 10, ?, 40, 0)',
+      [A]
+    ],
+    [
+      "INSERT INTO mica_spark_swipes (id, swiper_profile_id, target_profile_id, kind) VALUES (1, 10, 11, 'pass')",
+      []
+    ],
+    ['INSERT INTO mica_spark_matches (id, profile_a, profile_b) VALUES (1, 10, 11)', []],
+    ['INSERT INTO mica_hodlr_price_history (id, price) VALUES (1, 100)', []]
+  ]) {
+    await connection.query(sql, params);
+  }
+  const CHILD_TABLES = [
+    'mica_account_follows',
+    'mica_account_blocks',
+    'mica_account_reactions',
+    'mica_blabber_ears',
+    'mica_messages_reactions',
+    'mica_spark_photos',
+    'mica_spark_swipes',
+    'mica_spark_matches',
+    'mica_hodlr_price_history'
+  ];
+  /** Each table's rows as `table: id status`, the evidence a rebuild would have to keep. */
+  const childRows = async () => {
+    const out = [];
+    for (const table of CHILD_TABLES) {
+      const [rows] = await connection.query(`SELECT id, status FROM ${table} ORDER BY id`);
+      out.push(`${table}: ${rows.map((r) => `${r.id} ${r.status}`).join(', ')}`);
+    }
+    return out;
+  };
+  const statusOf = async (table) =>
+    String(
+      await scalar(
+        connection,
+        `SELECT column_type FROM information_schema.COLUMNS
+          WHERE table_schema = DATABASE() AND table_name = ? AND column_name = 'status'`,
+        [table]
+      )
+    );
+  check(
+    `${label}: the regressed child tables have no status`,
+    [await statusOf('mica_account_follows'), await statusOf('mica_spark_swipes')],
+    ['null', 'null']
+  );
+
+  runningFramework(server, hasPlayers);
+  const apply = await captured(() => server.runApply(0));
+  check(
+    `${label}: apply runs 0016, failing nothing`,
+    [
+      apply.lines.includes(`[mica] applied migration ${CHILD_ROWS_MIGRATION}`),
+      apply.lines.filter((line) => /fail/i.test(line))
+    ],
+    [true, []]
+  );
+  check(
+    `${label}: every column a fresh import has, type, nullability and collation`,
+    (await wholeSchema(connection)).toSorted(),
+    shape.columns
+  );
+  check(`${label}: and every key`, await allIndexes(connection), shape.keys);
+  const plans = await server.SchemaMigrator.plan();
+  check(
+    `${label}: the planner finds nothing to add and no drift`,
+    plans.flatMap((p) => [...p.additive, ...p.drift]),
+    []
+  );
+  check(
+    `${label}: every row that was there, in all nine tables, is live`,
+    await childRows(),
+    CHILD_TABLES.map((table) => `${table}: 1 active`)
+  );
+
+  step(`${schemaFile} — what the live-only keys free`);
+  const follow = () =>
+    connection.query(
+      'INSERT INTO mica_account_follows (follower_account_id, followee_account_id) VALUES (1, 2)'
+    );
+  /**
+   * Before what the keys free moves anything: run again, `up()` reads and does nothing. Told
+   * apart from a rebuild, which would leave the same shape and the same rows, by the DDL it
+   * issues — none (MICA-429 review).
+   */
+  const before = { schema: await wholeSchema(connection), rows: await childRows() };
+  const ddl = [];
+  const query = connection.query.bind(connection);
+  connection.query = (sql, ...rest) => {
+    if (/^\s*(ALTER|CREATE|DROP)\b/i.test(String(sql))) ddl.push(String(sql));
+    return query(sql, ...rest);
+  };
+  try {
+    await server.migrations.find((m) => m.id === CHILD_ROWS_MIGRATION).up();
+  } finally {
+    connection.query = query;
+  }
+  check(
+    `${label}: running up() a second time issues no DDL, and every row keeps its id and status`,
+    [ddl, await wholeSchema(connection), await childRows()],
+    [[], before.schema, before.rows]
+  );
+
+  check(`${label}: a second live follow is still refused`, await rejects(follow), 'ER_DUP_ENTRY');
+  await connection.query("UPDATE mica_account_follows SET status = 'deleted'");
+  check(
+    `${label}: an unfollow keeps its row, and frees a follow again beside it`,
+    await rejects(follow),
+    null
+  );
+  const swipe = (kind) =>
+    connection.query(
+      `INSERT INTO mica_spark_swipes (swiper_profile_id, target_profile_id, kind) VALUES (10, 11, ?)
+       ON DUPLICATE KEY UPDATE kind = IF(kind = 'like', 'like', VALUES(kind))`,
+      [kind]
+    );
+  await swipe('like');
+  check(
+    `${label}: a swipe on a live pass lands on that row`,
+    (await connection.query('SELECT kind, status FROM mica_spark_swipes ORDER BY id'))[0].map(
+      (r) => `${r.kind} ${r.status}`
+    ),
+    ['like active']
+  );
+  await connection.query("UPDATE mica_spark_swipes SET status = 'expired'");
+  await swipe('pass');
+  check(
+    `${label}: one on an expired pass is a new row beside it`,
+    (await connection.query('SELECT kind, status FROM mica_spark_swipes ORDER BY id'))[0].map(
+      (r) => `${r.kind} ${r.status}`
+    ),
+    ['like expired', 'pass active']
+  );
+
   const second = await server.runPendingMigrations();
   check(`${label}: a second run applies nothing`, second.applied, []);
 };
@@ -4441,6 +4684,15 @@ const main = async () => {
     // MICA-428. 0015 through `micaschema apply`, on both shapes, then what its keys free.
     await runHiddenRowsMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runHiddenRowsMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-429. 0016 through `micaschema apply`, on both shapes, then what its keys free.
+    await runChildRowsMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runChildRowsMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

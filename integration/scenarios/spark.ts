@@ -213,10 +213,12 @@ const swipe = async (who: Dater, target: Dater, verdict: 'like' | 'pass') => {
   return result;
 };
 
+/** The live swipe and match only: since MICA-429 an expired pass and an ended match are kept. */
 const swipeKind = async (from: Dater, to: Dater): Promise<string[]> =>
   (
     await db.rows(
-      `SELECT \`kind\` FROM \`${SWIPES}\` WHERE \`swiper_profile_id\` = ? AND \`target_profile_id\` = ?`,
+      `SELECT \`kind\` FROM \`${SWIPES}\` WHERE \`swiper_profile_id\` = ? AND \`target_profile_id\` = ?` +
+        " AND `status` = 'active'",
       [from.profileId, to.profileId]
     )
   ).map((row) => String(row.kind));
@@ -224,7 +226,8 @@ const swipeKind = async (from: Dater, to: Dater): Promise<string[]> =>
 const pairMatches = async (a: Dater, b: Dater): Promise<number[]> =>
   (
     await db.rows(
-      `SELECT \`id\` FROM \`${MATCHES}\` WHERE \`profile_a\` = ? AND \`profile_b\` = ?`,
+      `SELECT \`id\` FROM \`${MATCHES}\` WHERE \`profile_a\` = ? AND \`profile_b\` = ?` +
+        " AND `status` = 'active'",
       [Math.min(a.profileId, b.profileId), Math.max(a.profileId, b.profileId)]
     )
   ).map((row) => Number(row.id));
@@ -538,7 +541,7 @@ export const sparkScenarios: readonly Scenario[] = [
         assert(
           (await db.count(
             'SELECT COUNT(*) FROM `mica_account_blocks` ' +
-              'WHERE `blocker_account_id` = ? AND `blocked_account_id` = ?',
+              "WHERE `blocker_account_id` = ? AND `blocked_account_id` = ? AND `status` = 'active'",
             [ada.accountId, ben.accountId]
           )) === 1,
           `mica_account_blocks holds no block from account ${ada.accountId} on ${ben.accountId}`

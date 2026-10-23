@@ -81,12 +81,20 @@ let clock = 1_000_000;
 
 /**
  * Tables a self-service delete erases (MICA-428): every owned table with a status to move, but
- * the ones it keeps whole. A status-less one is MICA-429's, and left as it is.
+ * the ones it keeps whole. A status-less one (an attachment row) has nothing to move.
  */
 const erasable = () =>
   ownedTables()
     .map(({ table }) => table)
     .filter((table) => hasStatus(table) && !WHOLE_KEPT.includes(table));
+
+/**
+ * Every table the self-service erase writes here. The rows hanging off an account or a profile by
+ * id (`registerDependentRows`, MICA-429) are reached through the parent ids the purge reads back
+ * as erased; this stand-in answers that read with none, so they write nothing here. Their erase
+ * is `orphanSweep.test`'s, and test:endpoints' through the real handlers.
+ */
+const reached = () => erasable();
 
 /** The erase of one table, as `purgePlanned` writes it, and the table it names. */
 const ERASE = /^UPDATE `(\w+)` SET `status` = \?.*? WHERE/;
@@ -150,7 +158,9 @@ describe('what an export selects (MICA-168)', () => {
       expect(sql.includes(" AND `status` <> 'erased'"), owned.table).toBe(hasStatus);
     }
     expect(planOf('mica_notes').hidesErased).toBe(true);
-    expect(planOf('mica_messages_reactions').hidesErased).toBe(false);
+    // A reaction has a status since MICA-429; an attachment row still has none.
+    expect(planOf('mica_messages_reactions').hidesErased).toBe(true);
+    expect(planOf('mica_messages_attachments').hidesErased).toBe(false);
   });
 
   it('keeps an expired row in the export: it is still stored, and still the player own', () => {
@@ -367,7 +377,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     withheld: ['live_citizen']
   },
   mica_spark_photos: {
-    plain: ['id', 'profile_id', 'media_id', 'position'],
+    plain: ['id', 'profile_id', 'media_id', 'position', 'status'],
     sized: [],
     withheld: []
   },
@@ -548,9 +558,9 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
   },
   mica_messages_attachments: { plain: ['id', 'message_id', 'photo_id'], sized: [], withheld: [] },
   mica_messages_reactions: {
-    plain: ['id', 'message_id', 'emoji', 'created_at'],
+    plain: ['id', 'message_id', 'emoji', 'status', 'created_at'],
     sized: [],
-    withheld: []
+    withheld: ['live_message']
   },
   mica_notes: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'title', 'content'],
@@ -772,7 +782,7 @@ describe('privacy:delete', () => {
       erases()
         .map((c: any[]) => ERASE.exec(String(c[0]))![1])
         .toSorted()
-    ).toEqual(erasable().toSorted());
+    ).toEqual(reached().toSorted());
     for (const c of erases()) expect(c[1].slice(0, 2)).toEqual(['erased', 'CIT_B']);
     expect(dbMock.query.mock.calls.some((c: any[]) => /\bDELETE\b/.test(String(c[0])))).toBe(false);
   });
@@ -784,7 +794,7 @@ describe('privacy:delete', () => {
 
     const reply = await call('delete', { confirm: 'DELETE' });
 
-    expect(reply).toEqual({ complete: true, removed: erasable().length, kept: 2, failed: [] });
+    expect(reply).toEqual({ complete: true, removed: reached().length, kept: 2, failed: [] });
     const erase = eraseOf('mica_messages')!;
     expect(String(erase[0])).not.toContain('`mica_reports`');
   });
@@ -899,7 +909,7 @@ describe('privacy:delete', () => {
 
     expect(reply.complete).toBe(false);
     expect(reply.failed).toEqual(['notes']);
-    expect(reply.removed).toBe(erasable().length - 1);
+    expect(reply.removed).toBe(reached().length - 1);
   });
 
   it('allows one delete an hour per citizenid', async () => {
@@ -941,7 +951,7 @@ describe('privacy:delete', () => {
     expect(order[0]).toBe('erase');
     expect(JSON.parse(entry[1][6])).toEqual({
       complete: true,
-      removed: erasable().length,
+      removed: reached().length,
       kept: 1,
       failed: [],
       held: true

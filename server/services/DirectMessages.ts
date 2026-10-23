@@ -150,7 +150,7 @@ export const directMessages = defineService<DirectMessage, typeof dmsContract>({
  *
  * A thread here is not a row — it is every DM between two accounts — so a thread whose DMs
  * have all expired simply stops appearing in the inbox; every row is kept (MICA-428), and so are
- * the reactions on them in `mica_account_reactions` (MICA-429). An open report on a DM holds its
+ * the reactions on them in `mica_account_reactions`, as they were. An open report on a DM holds its
  * whole thread, and one on an account holds every DM that account sent or received.
  */
 registerRetention({
@@ -603,7 +603,7 @@ const THREAD_HELD =
 /**
  * Delete every live DM between two accounts, both directions: `active` to `deleted`, kept for
  * staff and hidden from both players (MICA-428; nothing is removed, and the reactions on them
- * stay, MICA-429) — unless an open report names any one of them, in which case **the whole
+ * stay as they were) — unless an open report names any one of them, in which case **the whole
  * thread stays live**, as retention holds it: a reported DM without the messages around it is
  * evidence without its context. Answers how many DMs went, `0` for a held thread.
  *

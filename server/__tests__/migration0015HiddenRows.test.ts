@@ -49,12 +49,26 @@ const statements = () => sent().filter((q) => !q.startsWith('SELECT'));
 const enumType = (values: readonly string[]) => `enum(${values.map((v) => `'${v}'`).join(',')})`;
 
 /** Every declared status list, as `defineService` resolved it: what 0015 must bring a table to. */
+/** The child tables whose `status` 0016 adds (MICA-429): they had none for 0015 to widen. */
+const ADDED_BY_0016 = new Set([
+  'mica_account_follows',
+  'mica_account_blocks',
+  'mica_account_reactions',
+  'mica_blabber_ears',
+  'mica_messages_reactions',
+  'mica_spark_photos',
+  'mica_spark_swipes',
+  'mica_spark_matches',
+  'mica_hodlr_price_history'
+]);
+
 const declared = (): Map<string, readonly string[]> => {
   const out = new Map<string, readonly string[]>();
   for (const service of declaredServices) {
     out.set(service.table, service.statuses);
     for (const child of service.childTables) {
       const spec = child.columns.status;
+      if (ADDED_BY_0016.has(child.name)) continue;
       if (spec && typeof spec !== 'string' && spec.type === 'enum' && spec.values) {
         out.set(child.name, spec.values);
       }

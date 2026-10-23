@@ -173,7 +173,14 @@ DDL.
   declares `expired` too (`server/lib/statuses.ts`), which retention sets and no
   player can restore. Migration 0015 appended both to every existing `status`
   ENUM, in place, with no row rewritten. A purge is an `UPDATE`, so it cascades
-  nowhere, and a table with no `status` is left alone by it.
+  nowhere, and a table with no `status` is left alone by it. A child table that
+  hangs off an owned row by id and carries no citizenid is reached through
+  `registerDependentRows(parent, { table, columns })`, which the owning service
+  calls once per table: Accounts for follows, blocks and reactions, Blabber for
+  ears, Spark for swipes and matches. Migration 0016 gave those tables a
+  `status` (`active`, plus `deleted`, `blocked`, `ended`, `replaced`, `expired`
+  or `erased` as each needs) and moved their unique keys onto a live-only copy
+  of a column, `NULL` once the row is not `active`.
 - `id, citizenid, status, created_at, updated_at` are **supplied by the
   framework**. Declaring any of them in `schema` is an error.
 - **A citizenid is 50 characters on qb and 60 on ESX and standalone
@@ -784,7 +791,9 @@ MICA-300, MICA-428), and **neither deletes anything**: each row moves to
 reports the character filed that staff have not resolved, their rows in the
 audit ledger (never swept), and the device rows (`mica_devices`,
 `mica_phone_numbers`, `mica_battery`, `mica_lockscreen`), which the phone item
-can outlive its character to need. A table with no `status` is skipped.
+can outlive its character to need. A table with no `status` is skipped. The rows
+that hang off an erased account or profile (follows, blocks, reactions, ears,
+swipes, matches) are erased with it, through `registerDependentRows`.
 
 **A shared row stays while others are in it** (`registerSharedRows`, from
 `lib/orphanSweep.ts`). A service whose rows other players share through a

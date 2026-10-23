@@ -152,3 +152,5 @@ line here.
   — a create never names it; `reviveAs` (MICA-428)
 - [A kept row holds every unique key over a plain column](a-kept-row-holds-every-plain-unique-key.md)
   — the purge used to free it; the participants seat took a second review
+- [Rows that hang off an id escape every purge](rows-off-an-id-escape-every-purge.md)
+  — `registerDependentRows`; check the actor's account too (MICA-429)

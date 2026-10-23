@@ -354,7 +354,8 @@ const canSeeMedia: CanSee = async (id, citizenid) => {
                   WHERE a.\`media_id\` = x.\`id\` AND l.\`status\` = 'active')
        OR EXISTS (SELECT 1 FROM \`mica_spark_photos\` a
                   JOIN \`mica_spark\` p ON p.\`id\` = a.\`profile_id\`
-                  WHERE a.\`media_id\` = x.\`id\` AND p.\`status\` = 'active'))
+                  WHERE a.\`media_id\` = x.\`id\` AND a.\`status\` = 'active'
+                    AND p.\`status\` = 'active'))
      LIMIT 1`,
     [id, citizenid]
   );

@@ -531,7 +531,7 @@ export const dmsScenarios: Scenario[] = [
         assert(blocked === true, `accounts:block answered ${show(blocked)}`);
         const held = await db.count(
           'SELECT COUNT(*) FROM `mica_account_blocks` ' +
-            'WHERE `blocker_account_id` = ? AND `blocked_account_id` = ?',
+            "WHERE `blocker_account_id` = ? AND `blocked_account_id` = ? AND `status` = 'active'",
           [b.id, a.id]
         );
         assert(held === 1, `${held} block rows from ${b.id} on ${a.id} after accounts:block`);

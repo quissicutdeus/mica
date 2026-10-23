@@ -37,8 +37,9 @@ const asColumnDef = (spec: ColumnType | ColumnDef): ColumnDef =>
  *
  * Further child tables hang off micaOS's *own* tables rather than off the owner
  * (`mica_account_follows` → `mica_accounts(id)`, and friends). They are deliberately not
- * here: they carry no citizenid to key on, and they stay as they are when the row they hang off
- * is erased (MICA-428) — nothing is deleted, so nothing cascades.
+ * here: they carry no citizenid to key on. Nothing is deleted, so nothing cascades (MICA-428);
+ * the purge erases them with the row they hang off instead (`registerDependentRows`,
+ * MICA-429).
  *
  * Computed on call, never at module scope: `declaredServices` is filled as a side effect of
  * each `defineService`, so a value captured at import time holds only the services that
@@ -70,8 +71,9 @@ export const ownedTables = (): OwnedTable[] => {
 
 /**
  * Whether `table` has a `status` column a purge can move (MICA-428). Every declared primary
- * table does; a child table only when it declares one. A table without one is left alone by
- * every purge until it gets one (MICA-429), and so is the audit ledger, which has none.
+ * table does; a child table only when it declares one (MICA-429 gave the last ones that a
+ * player removes from one). A table without one — an attachment row — is left alone by every
+ * purge, and so is the audit ledger, which has none.
  */
 export const hasStatus = (table: string): boolean => {
   for (const service of declaredServices) {

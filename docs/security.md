@@ -1007,13 +1007,40 @@ What a purge leaves as it is:
   owner's own membership and messages are erased, but the thread or channel
   stays live while another member is `active`, and the next orphan sweep erases
   it once the last has gone. Messages and Dark Chat register theirs.
-- **Tables with no `status`**, such as a follow, a reaction or a swipe. A purge
-  skips them until they get one.
+- **A table with no `status`.** A purge skips it, since there is nothing to
+  move. The rows below used to be this case and no longer are.
 
 Nothing cascades, because an `UPDATE` reaches no other row, and the cascade-safe
-plan that kept a parent while another player's row hung off it is gone. A purge
-is also no longer held back by an open report on the player's own rows: it
-erases them like any other, and the row and the report's snapshot stay.
+plan that kept a parent while another player's row hung off it is gone. What a
+cascade used to take is now named instead (below). A purge is also no longer
+held back by an open report on the player's own rows: it erases them like any
+other, and the row and the report's snapshot stay.
+
+**The child rows are kept too** (MICA-429, migration 0016). Follows, blocks,
+account reactions, Blabber ears, message reactions, Spark swipes, matches and
+photos, and Hodlr's price history used to be deleted outright. Each now has a
+`status`, and a change is a status change:
+
+- an unfollow, an unblock, an un-react and an un-ear move the row to `deleted`,
+  and a follow ended by a block to `blocked`, so following again is a new live
+  row, not a collision with the old one. The unique keys sit on a live-only copy
+  of the column (`NULL` once the row is not `active`), as Blabber's mouth key
+  does;
+- a Spark unmatch or a removed profile moves the match to `ended`, a new photo
+  set moves the old one to `replaced`, and the sweep over old passes moves a
+  swipe to `expired`, so the pair that was unmatched or passed on stays
+  recorded;
+- Hodlr's hourly prune moves a price older than seven days to `expired`. It has
+  no owner, so nothing erases it.
+
+**A purge reaches these through their parent** (`registerDependentRows` in
+`server/lib/sweep/purge.ts`). They carry no citizenid, so a purge cannot find
+them by owner. The service that owns the parent registers the columns that name
+it: an erased account's follows, blocks, reactions and ears, an erased Spark
+profile's swipes and matches. They move to `erased` in chunks with the parent,
+and a run that stops part-way is finished by the next, because the parent is
+still erased and its rows still match. Spark's photos carry the owner's
+citizenid, so the purge finds those itself.
 
 **A hosted file is never deleted.** Nothing deletes a `mica_media` row, so a
 file on the image host is kept for as long as its row is, which is for good.

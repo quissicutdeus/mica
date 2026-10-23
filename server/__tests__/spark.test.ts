@@ -126,10 +126,23 @@ const onActiveAccount = (sql: string, p: Row) =>
   !sql.includes("a.`status` = 'active'") || accountById(p.account_id)?.status === 'active';
 const activeIf = (sql: string, alias: string, row?: Row) =>
   !sql.includes(`${alias}\`status\` = 'active'`) || row?.status === 'active';
-const hasActivePhoto = (profileId: number) =>
+/** A child row with no status yet is live: what a test pushes by hand, as `DEFAULT 'active'`. */
+const rowLive = (row: Row) => (row.status ?? 'active') === 'active';
+/**
+ * A kept child row (MICA-429) counts only as live, and only where the statement asks: `alias`
+ * is `m.` and the like, or `''` for an unaliased `` `status` `` (preceded by a space, so another
+ * alias's `pa.`status`` is not read as it).
+ */
+const liveIf = (sql: string, alias: string, row: Row) =>
+  !sql.includes(`${alias === '' ? ' ' : alias}\`status\` = 'active'`) || rowLive(row);
+/** The rows a removal has not touched: since MICA-429 a removal keeps its row under a status. */
+const live = (rows: Row[]) => rows.filter(rowLive);
+const hasActivePhoto = (profileId: number, sql: string) =>
   w.photos.some(
     (ph) =>
-      ph.profile_id === profileId && w.media.find((m) => m.id === ph.media_id)?.status === 'active'
+      ph.profile_id === profileId &&
+      liveIf(sql, 'p.', ph) &&
+      w.media.find((m) => m.id === ph.media_id)?.status === 'active'
   );
 
 const install = () => {
@@ -161,6 +174,7 @@ const install = () => {
         const pa = profileById(m.profile_a);
         const pb = profileById(m.profile_b);
         if (!pa || !pb || !activeIf(sql, 'pa.', pa) || !activeIf(sql, 'pb.', pb)) return false;
+        if (!liveIf(sql, 'm.', m)) return false;
         return (
           (pa.account_id === a && pb.account_id === b) ||
           (pa.account_id === b && pb.account_id === a)
@@ -169,12 +183,16 @@ const install = () => {
       return hit ? { 1: 1 } : null;
     }
     if (sql.includes('FROM `mica_spark_matches` WHERE `profile_a` = ? AND `profile_b` = ?')) {
-      const m = w.matches.find((x) => x.profile_a === params[0] && x.profile_b === params[1]);
+      const m = w.matches.find(
+        (x) => x.profile_a === params[0] && x.profile_b === params[1] && liveIf(sql, '', x)
+      );
       return m ? { ...m } : null;
     }
     if (sql.includes('FROM `mica_spark_matches` WHERE `id` = ? AND (')) {
       const [id, p1, p2] = params;
-      const m = w.matches.find((x) => x.id === id && (x.profile_a === p1 || x.profile_b === p2));
+      const m = w.matches.find(
+        (x) => x.id === id && (x.profile_a === p1 || x.profile_b === p2) && liveIf(sql, '', x)
+      );
       return m ? { ...m } : null;
     }
     if (sql.includes('FROM `mica_spark_swipes` WHERE `swiper_profile_id` = ?')) {
@@ -182,6 +200,7 @@ const install = () => {
         (x) =>
           x.swiper_profile_id === params[0] &&
           x.target_profile_id === params[1] &&
+          liveIf(sql, '', x) &&
           (!sql.includes("`kind` = 'like'") || x.kind === 'like')
       );
       return s ? { 1: 1 } : null;
@@ -200,6 +219,9 @@ const install = () => {
       );
       return a ? { ...a } : null;
     }
+    if (sql === "SELECT 1 FROM `mica_accounts` WHERE `id` = ? AND `status` = 'active' LIMIT 1") {
+      return accountById(params[0])?.status === 'active' ? { 1: 1 } : null;
+    }
     if (sql.includes("FROM `mica_accounts` WHERE `id` = ? AND `app` = ? AND `status` = 'active'")) {
       const a = w.accounts.find(
         (x) => x.id === params[0] && x.app === params[1] && x.status === 'active'
@@ -213,7 +235,10 @@ const install = () => {
     const sql = one(raw);
     if (sql.startsWith('SELECT `kind` FROM `mica_spark_swipes`')) {
       const s = w.swipes.find(
-        (x) => x.swiper_profile_id === params[0] && x.target_profile_id === params[1]
+        (x) =>
+          x.swiper_profile_id === params[0] &&
+          x.target_profile_id === params[1] &&
+          liveIf(sql, '', x)
       );
       return s ? s.kind : null;
     }
@@ -237,7 +262,7 @@ const install = () => {
       sql.includes('FROM `mica_spark_photos` p JOIN `mica_media` m')
     ) {
       return w.photos
-        .filter((ph) => params.includes(ph.profile_id))
+        .filter((ph) => params.includes(ph.profile_id) && liveIf(sql, 'p.', ph))
         .map((ph) => ({ ph, m: w.media.find((x) => x.id === ph.media_id) }))
         .filter(({ m }) => m && (!sql.includes("m.`status` = 'active'") || m.status === 'active'))
         .sort((x, y) => x.ph.profile_id - y.ph.profile_id || x.ph.position - y.ph.position)
@@ -291,7 +316,7 @@ const install = () => {
         "JOIN `mica_media` m ON m.`id` = p.`media_id` AND m.`status` = 'active' WHERE p.`profile_id` = s.`id`"
       );
       const swipeRule = has(
-        "w.`swiper_profile_id` = ? AND w.`target_profile_id` = s.`id` AND (w.`kind` = 'like' OR w.`created_at` > NOW() - INTERVAL ? DAY)"
+        "w.`swiper_profile_id` = ? AND w.`target_profile_id` = s.`id` AND w.`status` = 'active' AND (w.`kind` = 'like' OR w.`created_at` > NOW() - INTERVAL ? DAY)"
       );
       const mineBlocks = has(
         'b.`blocker_account_id` = ? AND b.`blocked_account_id` = s.`account_id`'
@@ -305,13 +330,14 @@ const install = () => {
             p.status === 'active' &&
             onActiveAccount(sql, p) &&
             p.citizenid !== citizenid &&
-            (!photoRule || hasActivePhoto(p.id)) &&
+            (!photoRule || hasActivePhoto(p.id, sql)) &&
             !(
               swipeRule &&
               w.swipes.some(
                 (s) =>
                   s.swiper_profile_id === mineId &&
                   s.target_profile_id === p.id &&
+                  rowLive(s) &&
                   (s.kind === 'like' || (s.age_days ?? 0) < days)
               )
             ) &&
@@ -332,6 +358,7 @@ const install = () => {
           return (
             pa &&
             pb &&
+            liveIf(sql, 'm.', m) &&
             ((pa.account_id === a && pb.account_id === b) ||
               (pa.account_id === b && pb.account_id === a))
           );
@@ -340,8 +367,9 @@ const install = () => {
     }
     if (sql.startsWith('INSERT INTO `mica_spark_swipes`')) {
       const [swiper, target, kind] = params;
+      // The upsert's key is over the live copy (MICA-429): only a live swipe is updated in place.
       const existing = w.swipes.find(
-        (s) => s.swiper_profile_id === swiper && s.target_profile_id === target
+        (s) => s.swiper_profile_id === swiper && s.target_profile_id === target && rowLive(s)
       );
       if (!existing) {
         w.swipes.push({
@@ -349,6 +377,7 @@ const install = () => {
           swiper_profile_id: swiper,
           target_profile_id: target,
           kind,
+          status: 'active',
           age_days: 0
         });
       } else if (existing.kind !== 'like') {
@@ -357,9 +386,11 @@ const install = () => {
       }
       return { affectedRows: 1 };
     }
-    if (sql.includes('FROM `mica_spark_matches` WHERE `profile_a` = ? OR `profile_b` = ?')) {
+    if (sql.includes('FROM `mica_spark_matches` WHERE (`profile_a` = ? OR `profile_b` = ?)')) {
       const rows = w.matches
-        .filter((m) => m.profile_a === params[0] || m.profile_b === params[1])
+        .filter(
+          (m) => (m.profile_a === params[0] || m.profile_b === params[1]) && liveIf(sql, '', m)
+        )
         .sort((a, b) => b.id - a.id)
         .map((m) => ({ ...m }));
       return sql.includes('LIMIT ?') ? rows.slice(0, params[2]) : rows;
@@ -371,19 +402,24 @@ const install = () => {
         .filter((p) => p.citizenid === params[0])
         .map((p) => ({ id: p.id, account_id: p.account_id, status: p.status }));
     }
-    if (sql.includes("FROM `mica_spark_swipes` WHERE `kind` = 'pass' AND `created_at` <")) {
+    if (
+      sql.includes(
+        "FROM `mica_spark_swipes` WHERE `status` = 'active' AND `kind` = 'pass' AND `created_at` <"
+      )
+    ) {
       return w.swipes
-        .filter((s) => s.kind === 'pass' && (s.age_days ?? 0) > params[0])
+        .filter((s) => rowLive(s) && s.kind === 'pass' && (s.age_days ?? 0) > params[0])
         .map((s) => ({ id: s.id }));
     }
-    if (sql.startsWith('DELETE FROM `mica_spark_swipes` WHERE `id` IN')) {
+    if (sql.startsWith("UPDATE `mica_spark_swipes` SET `status` = 'expired' WHERE `id` IN")) {
       const days = params[params.length - 1];
       const ids = params.slice(0, -1);
-      const before = w.swipes.length;
-      w.swipes = w.swipes.filter(
-        (s) => !(ids.includes(s.id) && s.kind === 'pass' && (s.age_days ?? 0) > days)
+      const moved = w.swipes.filter(
+        (s) =>
+          ids.includes(s.id) && liveIf(sql, '', s) && s.kind === 'pass' && (s.age_days ?? 0) > days
       );
-      return { affectedRows: before - w.swipes.length };
+      for (const s of moved) s.status = 'expired';
+      return { affectedRows: moved.length };
     }
     return [];
   });
@@ -426,26 +462,34 @@ const install = () => {
       p.status = 'deleted';
       return true;
     }
+    // MICA-429: every removal keeps its row, under a status.
     if (
-      sql.startsWith('DELETE FROM `mica_spark_photos` WHERE `profile_id` = ? AND `citizenid` = ?')
+      sql.startsWith("UPDATE `mica_spark_photos` SET `status` = 'replaced' WHERE `profile_id` = ?")
     ) {
-      const before = w.photos.length;
-      w.photos = w.photos.filter((x) => !(x.profile_id === params[0] && x.citizenid === params[1]));
-      return before !== w.photos.length;
-    }
-    if (sql.startsWith('DELETE FROM `mica_spark_matches` WHERE `id` = ? AND')) {
-      const before = w.matches.length;
-      w.matches = w.matches.filter(
-        (m) => !(m.id === params[0] && (m.profile_a === params[1] || m.profile_b === params[2]))
+      const moved = w.photos.filter(
+        (x) => x.profile_id === params[0] && x.citizenid === params[1] && liveIf(sql, '', x)
       );
-      return before !== w.matches.length;
+      for (const x of moved) x.status = 'replaced';
+      return moved.length > 0;
     }
-    if (sql.startsWith('DELETE FROM `mica_spark_swipes` WHERE `swiper_profile_id` = ? OR')) {
-      const before = w.swipes.length;
-      w.swipes = w.swipes.filter(
-        (s) => s.swiper_profile_id !== params[0] && s.target_profile_id !== params[1]
+    if (sql.startsWith("UPDATE `mica_spark_matches` SET `status` = 'ended' WHERE `id` = ? AND")) {
+      const moved = w.matches.filter(
+        (m) =>
+          m.id === params[0] &&
+          (m.profile_a === params[1] || m.profile_b === params[2]) &&
+          liveIf(sql, '', m)
       );
-      return before !== w.swipes.length;
+      for (const m of moved) m.status = 'ended';
+      return moved.length > 0;
+    }
+    if (sql.startsWith("UPDATE `mica_spark_swipes` SET `status` = 'deleted' WHERE (")) {
+      const moved = w.swipes.filter(
+        (s) =>
+          (s.swiper_profile_id === params[0] || s.target_profile_id === params[1]) &&
+          liveIf(sql, '', s)
+      );
+      for (const s of moved) s.status = 'deleted';
+      return moved.length > 0;
     }
     return false;
   });
@@ -500,24 +544,34 @@ const install = () => {
           profile_id: params[i],
           citizenid: params[i + 1],
           media_id: params[i + 2],
-          position: params[i + 3]
+          position: params[i + 3],
+          status: 'active'
         });
       }
       return w.nextId;
     }
     if (sql.startsWith('INSERT INTO `mica_spark_matches`')) {
-      if (w.matches.some((m) => m.profile_a === params[0] && m.profile_b === params[1])) {
-        throw duplicate('pair');
+      // The key is over the live copy (MICA-429): an ended match holds no pair.
+      if (
+        w.matches.some((m) => m.profile_a === params[0] && m.profile_b === params[1] && rowLive(m))
+      ) {
+        throw duplicate('live_pair');
       }
       const id = nextId();
-      w.matches.push({ id, profile_a: params[0], profile_b: params[1], created_at: 'now' });
+      w.matches.push({
+        id,
+        profile_a: params[0],
+        profile_b: params[1],
+        status: 'active',
+        created_at: 'now'
+      });
       const during = w.duringMatchInsert;
       w.duringMatchInsert = undefined;
       during?.();
       return id;
     }
     if (sql.startsWith('INSERT INTO `mica_account_blocks`')) {
-      if (blocked(params[0], params[1])) throw duplicate('blocker_blocked');
+      if (blocked(params[0], params[1])) throw duplicate('blocker_live_blocked');
       w.blocks.push([params[0], params[1]]);
       return nextId();
     }
@@ -859,7 +913,7 @@ describe('swipe and match', () => {
   it('makes no match and no push on a first like', async () => {
     seed([ME, BEA]);
     expect(await like(20)).toEqual({ match: null });
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
     expect(pushes).toEqual([]);
   });
 
@@ -886,7 +940,7 @@ describe('swipe and match', () => {
     expect(await call('spark:swipe', { profile_id: 10, verdict: 'pass' }, 'CIT_B')).toEqual({
       match: null
     });
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
   });
 
   it('turns a pass into a like, and never a like into a pass', async () => {
@@ -960,7 +1014,9 @@ describe('unmatch, block, remove', () => {
   it('unmatch deletes the match and the thread, tells the other side silently, and never re-matches', async () => {
     matched();
     expect(await call('spark:unmatch', { match_id: 7 })).toBe(true);
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
+    // Kept, as ended (MICA-429): an unmatch was a delete.
+    expect(w.matches).toEqual([expect.objectContaining({ id: 7, status: 'ended' })]);
     expect(deleteThreadSpy).toHaveBeenCalledWith(1, 2);
     expect(pushes).toEqual([
       { to: 'CIT_B', event: 'unmatched', payload: { match_id: 7 }, options: { persist: false } }
@@ -971,7 +1027,7 @@ describe('unmatch, block, remove', () => {
     expect(await call('spark:swipe', { profile_id: 10, verdict: 'like' }, 'CIT_B')).toEqual({
       match: null
     });
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
     expect(pushes).toEqual([]);
   });
 
@@ -988,7 +1044,7 @@ describe('unmatch, block, remove', () => {
     seed([{ cid: 'CIT_C', account: 3, profile: 30 }]);
     expect(await call('spark:block', { profile_id: 20 })).toBe(true);
     expect(w.blocks).toEqual([[1, 2]]);
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
     expect(deleteThreadSpy).toHaveBeenCalledWith(1, 2);
     expect(pushes).toEqual([
       { to: 'CIT_B', event: 'unmatched', payload: { match_id: 7 }, options: { persist: false } }
@@ -1004,8 +1060,15 @@ describe('unmatch, block, remove', () => {
     w.swipes.push({ id: 3, swiper_profile_id: 30, target_profile_id: 20, kind: 'like' });
     expect(await call('spark:remove', {})).toBe(true);
     expect(profileById(10)!.status).toBe('deleted');
-    expect(w.swipes.map((s) => s.id)).toEqual([3]);
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.swipes).map((s) => s.id)).toEqual([3]);
+    // Kept (MICA-429): the profile's swipes deleted with it, its match ended.
+    expect(w.swipes.map((s) => `${s.id} ${s.status ?? 'active'}`)).toEqual([
+      '1 deleted',
+      '2 deleted',
+      '3 active'
+    ]);
+    expect(w.matches.map((m) => `${m.id} ${m.status}`)).toEqual(['7 ended']);
+    expect(live(w.matches)).toHaveLength(0);
     expect(deleteThreadSpy).toHaveBeenCalledWith(1, 2);
     expect(pushes).toEqual([
       { to: 'CIT_B', event: 'unmatched', payload: { match_id: 7 }, options: { persist: false } }
@@ -1043,7 +1106,7 @@ describe('unmatch, block, remove', () => {
     expect(await call('spark:remove', {})).toBe(true);
     expect(profileById(10)!.status).toBe('moderated');
     expect(w.ownerDeletions).toEqual([['mica_spark', 10]]);
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
   });
 
   it('remove records nothing over a live profile it can delete — the positive twin', async () => {
@@ -1080,7 +1143,7 @@ describe('unmatch, block, remove', () => {
     // The profile went first, so the retry has to find its matches on a deleted profile.
     expect(profileById(10)!.status).toBe('deleted');
     await call('spark:remove', {});
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
     expect(deleteThreadSpy).toHaveBeenLastCalledWith(1, 2);
   });
 
@@ -1133,7 +1196,7 @@ describe('blocks and removals racing a match (review)', () => {
     w.duringMatchInsert = () => w.blocks.push([2, 1]);
     const reply = await call('spark:swipe', { profile_id: 20, verdict: 'like' });
     expect(reply).toEqual({ match: null });
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
     expect(deleteThreadSpy).toHaveBeenCalledWith(1, 2);
     expect(pushes).toEqual([]);
   });
@@ -1145,7 +1208,7 @@ describe('blocks and removals racing a match (review)', () => {
     };
     const reply = await call('spark:swipe', { profile_id: 20, verdict: 'like' });
     expect(reply).toEqual({ match: null });
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
     expect(pushes).toEqual([]);
   });
 
@@ -1176,7 +1239,7 @@ describe('blocks and removals racing a match (review)', () => {
     );
     expect(blockAt).toBeGreaterThanOrEqual(0);
     expect(matchAt).toBeGreaterThan(blockAt);
-    expect(w.matches).toHaveLength(0);
+    expect(live(w.matches)).toHaveLength(0);
   });
 });
 
@@ -1200,7 +1263,7 @@ describe('a block made through accounts:block', () => {
     matched();
     expect(await accountsBlock(1, 2, 'CIT_A')).toBe(true);
     expect(w.blocks).toEqual([[1, 2]]);
-    expect(w.matches.map((m) => m.id)).toEqual([8]);
+    expect(live(w.matches).map((m) => m.id)).toEqual([8]);
     expect(deleteThreadSpy).toHaveBeenCalledTimes(1);
     expect(deleteThreadSpy).toHaveBeenCalledWith(1, 2);
     expect(pushes).toEqual([
@@ -1211,7 +1274,7 @@ describe('a block made through accounts:block', () => {
   it('ends it from the other side too: the blocker holds the higher profile id', async () => {
     matched();
     expect(await accountsBlock(2, 1, 'CIT_B')).toBe(true);
-    expect(w.matches.map((m) => m.id)).toEqual([8]);
+    expect(live(w.matches).map((m) => m.id)).toEqual([8]);
     expect(deleteThreadSpy).toHaveBeenCalledWith(2, 1);
     expect(pushes).toEqual([
       { to: 'CIT_A', event: 'unmatched', payload: { match_id: 7 }, options: { persist: false } }
@@ -1225,7 +1288,7 @@ describe('a block made through accounts:block', () => {
     pushes.length = 0;
     expect(await accountsBlock(1, 2, 'CIT_A')).toBe(true);
     expect(w.blocks).toEqual([[1, 2]]);
-    expect(w.matches.map((m) => m.id)).toEqual([8]);
+    expect(live(w.matches).map((m) => m.id)).toEqual([8]);
     expect(deleteThreadSpy).not.toHaveBeenCalled();
     expect(pushes).toEqual([]);
   });
@@ -1284,10 +1347,14 @@ describe('the account and the photo set (review)', () => {
     expect(dbMock.transaction).toHaveBeenCalledTimes(1);
     const [queries] = dbMock.transaction.mock.calls[0];
     expect(queries.map((q: any) => one(q.query).split(' ').slice(0, 3).join(' '))).toEqual([
-      'DELETE FROM `mica_spark_photos`',
+      'UPDATE `mica_spark_photos` SET',
       'INSERT INTO `mica_spark_photos`'
     ]);
-    expect(w.photos.filter((p) => p.profile_id === 10).map((p) => p.media_id)).toEqual([902]);
+    expect(live(w.photos.filter((p) => p.profile_id === 10)).map((p) => p.media_id)).toEqual([902]);
+    // The set it replaced is kept (MICA-429).
+    expect(
+      w.photos.filter((p) => p.profile_id === 10 && p.status === 'replaced').length
+    ).toBeGreaterThan(0);
   });
 
   it('shows at most four photos on a card, whatever the table holds', async () => {
@@ -1304,6 +1371,46 @@ describe('the account and the photo set (review)', () => {
     }
     const reply = await call('spark:deck', {});
     expect(reply.rows[0].photos).toHaveLength(4);
+  });
+});
+
+/**
+ * MICA-429, the lead's check: erasing an account erases the blocks other players hold against
+ * it, with it. Nothing may then let it reach them. Worst case here: Bea's account is erased, the
+ * block Bea was under is gone, and Bea's profile and match were left live (a purge that failed on
+ * `mica_spark` part-way). Every path still needs an active account on both sides.
+ */
+describe('an erased account, once the blocks against it are erased', () => {
+  const erasedBea = () => {
+    seed([ME, { ...BEA, acct: 'erased' }]);
+    w.matches.push({ id: 7, profile_a: 10, profile_b: 20, created_at: 'then' });
+  };
+
+  it('cannot act: it sends nothing and swipes nothing', async () => {
+    erasedBea();
+    const sent = await call(
+      'dms:send',
+      { app: 'spark', account_id: 2, peer_account_id: 1, body: 'hey' },
+      'CIT_B'
+    );
+    expect(sent.error).toBeTruthy();
+    expect(w.dms).toHaveLength(0);
+    const swiped = await call('spark:swipe', { profile_id: 10, verdict: 'like' }, 'CIT_B');
+    // Refused, and said as what it is: Bea has a profile; her account is gone (MICA-429 review).
+    expect(swiped).toMatchObject({ key: 'server.spark.accountUnavailable' });
+    expect(w.swipes).toHaveLength(0);
+  });
+
+  it('is not shown to the player it was blocked by: not in the deck, the matches or a swipe', async () => {
+    erasedBea();
+    seed([{ cid: 'CIT_C', account: 3, profile: 30 }]);
+    const deck = await call('spark:deck', {});
+    // The positive twin: a live profile is in the same deck.
+    expect(deck.rows.map((r: Row) => r.id)).toEqual([30]);
+    expect((await call('spark:matches', {}))?.rows ?? []).toEqual([]);
+    expect(await call('spark:swipe', { profile_id: 20, verdict: 'like' })).toMatchObject({
+      key: 'server.spark.gone'
+    });
   });
 });
 
@@ -1376,6 +1483,9 @@ describe('the sweep', () => {
       { id: 3, swiper_profile_id: 10, target_profile_id: 40, kind: 'like', age_days: 400 }
     );
     expect(await sweepSparkPasses()).toBe(1);
-    expect(w.swipes.map((s) => s.id)).toEqual([2, 3]);
+    expect(live(w.swipes).map((s) => s.id)).toEqual([2, 3]);
+    // The old pass is kept, as expired (MICA-429), and a second sweep walks past it.
+    expect(w.swipes.find((s) => s.id === 1)?.status).toBe('expired');
+    expect(await sweepSparkPasses()).toBe(0);
   });
 });

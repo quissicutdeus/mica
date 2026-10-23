@@ -176,7 +176,11 @@ beforeEach(() => {
         raw
       );
     }
-    if (sql.includes('FROM `mica_account_blocks` WHERE (`blocker_account_id` IN')) {
+    if (
+      sql.includes(
+        "FROM `mica_account_blocks` WHERE `status` = 'active' AND ((`blocker_account_id` IN"
+      )
+    ) {
       // `view`: [...mine, author, ...mine, author].
       const half = params.length / 2;
       const mine = params.slice(0, half - 1) as number[];

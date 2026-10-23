@@ -37,7 +37,7 @@ let checksRun = 0;
  * (MICA-299). Plus MICA-275's line membership, eleven checks on each shape. Plus MICA-293's
  * hosted quota and drop race, fourteen checks and the seeded schema's one on each shape. Plus
  * MICA-168's player export and delete, twelve checks and the seeded schema's one on each
- * shape, and its erase over shared rows, twelve and the seeded schema's one on each shape. Plus
+ * shape, and its erase over shared rows, fourteen and the seeded schema's one on each shape. Plus
  * MICA-300's deleted character, cleaned up by the hook (ten and the seeded schema's one) and by
  * the sweep (twelve and the seeded schema's one), on each shape, and two that `mica.sql`
  * refuses an es_extended database. Since MICA-428 every one of those reads a status where it
@@ -57,7 +57,7 @@ const EVIDENCE_CHECKS = 13;
 const LINE_CHECKS = 11;
 const HOSTED_CHECKS = 15;
 const PRIVACY_CHECKS = 13;
-const CASCADE_CHECKS = 13;
+const CASCADE_CHECKS = 15;
 /** MICA-300: the seeded schema's one and ten, on each shape; the sweep adds two more. */
 const HOOK_CHECKS = 11;
 const SWEEP_CHECKS = 13;
@@ -333,6 +333,8 @@ const loadPrivacyModule = async () => {
   const entry = [
     `import '${root}/server/services/index.ts';`,
     `export { buildExport, EXPORT_EXCLUDED, ROW_CAP, SELF_SERVICE_EXCEPT, selfServicePurge } from '${root}/server/services/Privacy.ts';`,
+    // MICA-429 review: the orphan sweep's catch-all for rows hanging off an erased parent.
+    `export { eraseStrandedDependents } from '${root}/server/lib/sweep/dependents.ts';`,
     // MICA-426: the reopen's restore, in the same bundle as the purge whose record it reads.
     `export { moderateTarget, restoreTarget } from '${root}/server/lib/moderation.ts';`,
     `export { __setPurgeHookForTests, ownedTables, purgeOwnedRows } from '${root}/server/lib/orphanSweep.ts';`,
@@ -1235,7 +1237,7 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
       [[1, 2, 3, 5, 6], 'expired']
     );
     check(
-      `${label}: an expired message keeps its reactions (MICA-429)`,
+      `${label}: an expired message keeps its reactions, as they were`,
       (await q('SELECT id FROM mica_messages_reactions')).length,
       1
     );
@@ -2233,6 +2235,48 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
             (91, 81, ?, 'a2', 'h2', 'active', NULL)`,
     [A, A]
   );
+  /**
+   * MICA-429: what hangs off A's account and Spark profile by id, either way round, and a twin of
+   * each between B and a third player C that must stay live. A follow, a block, a reaction, an
+   * ear; a swipe and a match. None carries a citizenid for a purge to find.
+   */
+  await q(
+    `INSERT INTO mica_accounts (id, citizenid, app, handle) VALUES
+       (72, 'CIT_C', 'blabber', 'carol'), (73, ?, 'spark', 'a_s'), (74, ?, 'spark', 'b_s'),
+       (75, 'CIT_C', 'spark', 'c_s')`,
+    [A, B]
+  );
+  // Review: 76 is A's, under a takedown when A deletes; 77 was erased before any of this, and
+  // still holds a live follow. Neither is the purge's to reach.
+  await q(
+    `INSERT INTO mica_accounts (id, citizenid, app, handle, status) VALUES
+       (76, ?, 'blabber', 'a_down', 'moderated'), (77, 'CIT_C', 'blabber', 'c_gone', 'erased')`,
+    [A]
+  );
+  await q(
+    'INSERT INTO mica_account_follows (id, follower_account_id, followee_account_id) VALUES (40, 70, 71), (41, 71, 70), (42, 71, 72), (43, 72, 76), (44, 77, 71)'
+  );
+  await q(
+    'INSERT INTO mica_account_blocks (id, blocker_account_id, blocked_account_id) VALUES (40, 71, 70), (41, 71, 72)'
+  );
+  await q(
+    `INSERT INTO mica_account_reactions (id, account_id, target_table, target_id, emoji) VALUES
+       (40, 70, 'mica_blabber', 710, 'x'), (41, 72, 'mica_blabber', 710, 'x')`
+  );
+  await q(
+    'INSERT INTO mica_blabber_ears (id, blab_id, account_id) VALUES (40, 710, 70), (41, 710, 72)'
+  );
+  await q(
+    "INSERT INTO mica_spark (id, citizenid, account_id, age) VALUES (90, ?, 73, 30), (91, ?, 74, 30), (92, 'CIT_C', 75, 30)",
+    [A, B]
+  );
+  await q(
+    `INSERT INTO mica_spark_swipes (id, swiper_profile_id, target_profile_id, kind) VALUES
+       (40, 90, 91, 'like'), (41, 91, 90, 'like'), (42, 91, 92, 'pass')`
+  );
+  await q(
+    'INSERT INTO mica_spark_matches (id, profile_a, profile_b) VALUES (40, 90, 91), (41, 91, 92)'
+  );
   const before = {
     attachments: (await q('SELECT COUNT(*) AS n FROM mica_blabber_attachments'))[0].n,
     photos: (await q('SELECT COUNT(*) AS n FROM mica_messages_attachments'))[0].n,
@@ -2282,12 +2326,12 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
       await statuses('mica_accounts', B),
       await statuses('mica_blabber', B)
     ],
-    [['61 active'], ['500 active'], ['71 active'], ['710 active', '711 active']]
+    [['61 active'], ['500 active'], ['71 active', '74 active'], ['710 active', '711 active']]
   );
   check(
-    `${label}: the thread A started stays live for B; it and A's kick are what was left as it was`,
+    `${label}: the thread A started stays live for B; it, A's kick and A's taken-down account are what was left as it was`,
     [await statuses('mica_messages_conversations', A), purged.kept],
-    [['50 active'], 2]
+    [['50 active'], 3]
   );
   check(
     `${label}: A is out of it: their membership and messages are erased`,
@@ -2299,9 +2343,12 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
     await statuses('mica_blabber', A),
     ['700 erased', '701 erased', '702 erased', '704 erased', '705 erased', '706 erased']
   );
-  check(`${label}: and their account, whatever references it`, await statuses('mica_accounts', A), [
-    '70 erased'
-  ]);
+  check(
+    `${label}: and their accounts, whatever references them`,
+    await statuses('mica_accounts', A),
+    // 76 was under a takedown, which holds it (MICA-426).
+    ['70 erased', '73 erased', '76 moderated']
+  );
   check(`${label}: every photo of A's is kept, erased`, await statuses('mica_media', A), [
     '30 erased',
     '31 erased',
@@ -2318,6 +2365,41 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
     [before.attachments, before.photos, before.reactions]
   );
   check(`${label}: and nothing is requested of the image host`, requested, []);
+  const statusById = async (table) =>
+    (await q(`SELECT id, status FROM ${table} ORDER BY id`)).map((r) => `${r.id} ${r.status}`);
+  check(
+    `${label}: what hangs off A's account and profile is erased with them, either way; C's stays (MICA-429)`,
+    [
+      await statusById('mica_account_follows'),
+      await statusById('mica_account_blocks'),
+      await statusById('mica_account_reactions'),
+      await statusById('mica_blabber_ears'),
+      await statusById('mica_spark_swipes'),
+      await statusById('mica_spark_matches')
+    ],
+    [
+      ['40 erased', '41 erased', '42 active', '43 active', '44 active'],
+      ['40 erased', '41 active'],
+      ['40 erased', '41 active'],
+      ['40 erased', '41 active'],
+      ['40 erased', '41 erased', '42 active'],
+      ['40 erased', '41 active']
+    ]
+  );
+  // A reopen that puts 76 back to erased takes its follow with it; the orphan sweep's catch-all
+  // takes 77's, which nothing else ever would. 42 is C's and B's, and stays.
+  await privacy.restoreTarget('mica_accounts', 76, 'erased', 'staff', 'reopened');
+  const afterRestore = await statusById('mica_account_follows');
+  const stranded = await privacy.eraseStrandedDependents('schema');
+  check(
+    `${label}: a reopen restoring erased, then the catch-all, erase what hangs off (MICA-429 review)`,
+    [afterRestore, await statusById('mica_account_follows'), stranded.failures],
+    [
+      ['40 erased', '41 erased', '42 active', '43 erased', '44 active'],
+      ['40 erased', '41 erased', '42 active', '43 erased', '44 erased'],
+      []
+    ]
+  );
   check(
     `${label}: a kick keeps removed and its own left time; a membership is erased and left`,
     (

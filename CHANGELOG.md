@@ -47,6 +47,36 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply`: follows, blocks, reactions and Spark history are kept
+too (MICA-429).** The last tables that still deleted rows now change their
+status instead. Unfollowing, unblocking, removing a reaction, un-earing a Blab,
+a Spark unmatch, an expired pass, a replaced photo and Hodlr's hourly price
+prune all keep the row. When a character or account is erased, its follows,
+blocks, reactions, ears, swipes and matches are erased with it, so follower
+counts and reaction totals stop counting it.
+
+Migration `0016_child_rows_are_kept` adds a `status` column to
+`mica_account_follows`, `mica_account_blocks`, `mica_account_reactions`,
+`mica_blabber_ears`, `mica_messages_reactions`, `mica_spark_photos`,
+`mica_spark_swipes`, `mica_spark_matches` and `mica_hodlr_price_history`. It
+moves each unique key onto a live-only copy, so a kept row frees its slot:
+
+- `mica_account_follows`: `live_followee`, key `follower_followee` →
+  `follower_live_followee`.
+- `mica_account_blocks`: `live_blocked`, key `blocker_blocked` →
+  `blocker_live_blocked`.
+- `mica_account_reactions`: `live_target`, key `account_target_emoji` →
+  `account_live_target_emoji`.
+- `mica_blabber_ears`: `live_account`, key `blab_account` → `blab_live_account`.
+- `mica_messages_reactions`: `live_message`, key `message_citizen_emoji` →
+  `live_message_citizen_emoji`.
+- `mica_spark_swipes`: `live_target`, key `swiper_target` →
+  `swiper_live_target`, and `kind_created_at` → `status_kind_created_at`.
+- `mica_spark_matches`: `live_b`, key `pair` → `live_pair`.
+- `mica_hodlr_price_history`: `recorded_at` → `status_recorded_at`.
+
+Hodlr's price history now grows by about a million rows a year.
+
 **Run `micaschema apply`: nothing deletes a row any more (MICA-428).** Every
 place that used to remove a row now hides it and keeps it stored as evidence:
 

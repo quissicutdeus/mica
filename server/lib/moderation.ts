@@ -5,7 +5,7 @@
 import { Database } from './Database';
 import { AuditLogger } from './AuditLogger';
 import { PlayerFacingError } from './errors';
-import { isDuplicateKey } from './sqlErrors';
+import { isDuplicateKey, traceOf } from './sqlErrors';
 import {
   contentContext,
   contextColumns,
@@ -14,6 +14,8 @@ import {
   openContent
 } from './contentCipher';
 import type { ReportCategory } from '@mica/shared/types';
+import { ERASED } from './statuses';
+import { eraseDependentsOf } from './sweep/dependents';
 
 /**
  * Hiding someone else's content, and the allowlist that makes it safe.
@@ -413,5 +415,20 @@ export const restoreTarget = async (
   }
   const ok = await moveStatus(table, id, MODERATED, status);
   if (ok) await audit(table, id, false, actor, reason);
+  /**
+   * Put back to `erased` — its owner was purged while it was down — it takes what hangs off it
+   * by id with it, as the purge would have (MICA-429 review): an account's follows, blocks,
+   * reactions and ears, a profile's swipes and matches. The restore stands whatever this does;
+   * a failure is logged, and the orphan sweep's catch-all finishes it.
+   */
+  if (ok && status === ERASED) {
+    const { failures } = await eraseDependentsOf(table, [id]);
+    for (const { table: failed, error } of failures) {
+      console.error(
+        `[moderation] ${table} #${id} is restored as erased, but erasing ${failed} with it failed:`,
+        traceOf(error)
+      );
+    }
+  }
   return ok;
 };

@@ -21,6 +21,8 @@ import { defineContract } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Database } from '../lib/Database';
+import { ERASED } from '../lib/statuses';
+import { registerDependentRows } from '../lib/orphanSweep';
 import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
 import {
   registerImportTarget,
@@ -353,17 +355,30 @@ export const blabber = defineService<Blab, typeof blabberContract>({
           notNull: true,
           references: { table: 'mica_accounts', column: 'id' }
         },
+        /** The ear's account while it stands: what the one-ear key is over (MICA-429). */
+        live_account: {
+          type: 'int',
+          generatedAs: "CASE WHEN `status` = 'active' THEN `account_id` ELSE NULL END"
+        },
+        /** `deleted` an un-ear, `erased` by a purge of the account (MICA-429). */
+        status: {
+          type: 'enum',
+          values: ['active', 'deleted', ERASED],
+          notNull: true,
+          default: 'active'
+        },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
       indexes: [
-        { name: 'blab_account', columns: ['blab_id', 'account_id'], unique: true },
+        { name: 'blab_live_account', columns: ['blab_id', 'live_account'], unique: true },
         { name: 'account_id', columns: ['account_id'] }
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
-          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
-          'the insert idempotent.'
+          'Kept, never deleted (MICA-429): the key is over a live-only copy that an ended row ' +
+          'does not carry, so taking it back keeps the row and doing it again is a new row ' +
+          'beside it. Never revived, which would overwrite the old one; the key only ever ' +
+          'refuses a duplicate of a live row, which is what makes the insert idempotent.'
       }
     },
     /**
@@ -437,6 +452,9 @@ export const blabber = defineService<Blab, typeof blabberContract>({
 });
 
 const app = blabber.app;
+
+// An erased account's ears go with it (MICA-429), as its follows do.
+registerDependentRows('mica_accounts', { table: 'mica_blabber_ears', columns: ['account_id'] });
 const repo = blabber.repo as BlabberRepository;
 const mediaRepo = media.repo;
 const channel = appEventChannel(APP);
@@ -720,9 +738,10 @@ app.registerEvent('unear', async (source, cbId, data, citizenid) => {
 
   const blabId = data.blab_id;
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
-  // else's ear (§2.9).
+  // else's ear (§2.9). Kept, as `deleted` (MICA-429).
   await Database.update(
-    'DELETE FROM `mica_blabber_ears` WHERE `blab_id` = ? AND `account_id` = ?',
+    "UPDATE `mica_blabber_ears` SET `status` = 'deleted' " +
+      "WHERE `blab_id` = ? AND `account_id` = ? AND `status` = 'active'",
     [blabId, account.id]
   );
   return true;
@@ -773,7 +792,7 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
     ),
     Database.query<{ blab_id: number; total: number }[]>(
       `SELECT \`blab_id\`, COUNT(*) AS total FROM \`mica_blabber_ears\`
-       WHERE \`blab_id\` IN (${placeholders})
+       WHERE \`blab_id\` IN (${placeholders}) AND \`status\` = 'active'
        GROUP BY \`blab_id\``,
       ids
     )
@@ -782,7 +801,7 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
   const myEars = myAccountIds.length
     ? await Database.query<{ blab_id: number }[]>(
         `SELECT \`blab_id\` FROM \`mica_blabber_ears\`
-         WHERE \`blab_id\` IN (${placeholders})
+         WHERE \`blab_id\` IN (${placeholders}) AND \`status\` = 'active'
          AND \`account_id\` IN (${myAccountIds.map(() => '?').join(', ')})`,
         [...ids, ...myAccountIds]
       )
@@ -871,7 +890,7 @@ app.registerEvent('feed', async (source, cbId, data, citizenid) => {
   const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';
   const blockClause = viewer
-    ? ' AND `account_id` NOT IN (SELECT `blocked_account_id` FROM `mica_account_blocks` WHERE `blocker_account_id` = ?)'
+    ? " AND `account_id` NOT IN (SELECT `blocked_account_id` FROM `mica_account_blocks` WHERE `blocker_account_id` = ? AND `status` = 'active')"
     : '';
 
   const params: unknown[] = [];
@@ -1152,10 +1171,11 @@ app.registerEvent('following', async (source, cbId, data, citizenid) => {
     `SELECT ${projection} FROM \`mica_blabber\`
      WHERE \`account_id\` IN (
        SELECT \`followee_account_id\` FROM \`mica_account_follows\`
-       WHERE \`follower_account_id\` = ?
+       WHERE \`follower_account_id\` = ? AND \`status\` = 'active'
      )
      AND \`account_id\` NOT IN (
        SELECT \`blocked_account_id\` FROM \`mica_account_blocks\` WHERE \`blocker_account_id\` = ?
+         AND \`status\` = 'active'
      )
      AND \`status\` = 'active' AND \`reply_to\` IS NULL${cursorClause}
      ORDER BY \`id\` DESC
