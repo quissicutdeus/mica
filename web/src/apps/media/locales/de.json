@@ -8,7 +8,7 @@
   "shareSelected": "Auswahl teilen",
   "deleteSelected": "Auswahl löschen",
   "deletePhotosTitle": "{count} Fotos löschen?",
-  "deletePhotosMessage": "Möchtest du diese Fotos wirklich löschen? Das lässt sich nicht rückgängig machen.",
+  "deletePhotosMessage": "Diese Fotos löschen? Du kannst sie unter „Zuletzt gelöscht“ wiederherstellen, bis die Wiederherstellungsfrist abläuft.",
   "delete": "Löschen",
   "photoDeleted": "Foto gelöscht",
   "restored": "Wiederhergestellt",

@@ -8,7 +8,7 @@
   "shareSelected": "Share selected",
   "deleteSelected": "Delete selected",
   "deletePhotosTitle": "Delete {count} Photos?",
-  "deletePhotosMessage": "Are you sure you want to delete these photos? This cannot be undone.",
+  "deletePhotosMessage": "Delete these photos? You can restore them from Recently Deleted until the restore window closes.",
   "delete": "Delete",
   "photoDeleted": "Photo deleted",
   "restored": "Restored",

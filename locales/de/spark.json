@@ -28,7 +28,7 @@
   "saved": "Profil gespeichert",
   "deleteProfile": "Profil löschen",
   "deleteTitle": "Profil löschen?",
-  "deleteMessage": "Dein Profil, deine Matches und Nachrichten werden gelöscht, und niemand sieht dich mehr unter Entdecken. Das lässt sich nicht rückgängig machen.",
+  "deleteMessage": "Dein Profil, deine Matches und Nachrichten werden für alle entfernt, und niemand sieht dich mehr unter Entdecken. Das lässt sich nicht rückgängig machen. Der Server behält eine Aufzeichnung, die das Serverteam einsehen kann.",
   "deleteConfirm": "Löschen",
   "deleted": "Profil gelöscht",
   "like": "Gefällt mir",
@@ -61,11 +61,11 @@
   "viewProfile": "Profil ansehen",
   "unmatch": "Match auflösen",
   "unmatchTitle": "Match mit {name} auflösen?",
-  "unmatchMessage": "Eure Unterhaltung wird für euch beide gelöscht.",
+  "unmatchMessage": "Eure Unterhaltung wird für euch beide entfernt.",
   "unmatched": "Match aufgelöst",
   "block": "Blockieren",
   "blockTitle": "{name} blockieren?",
-  "blockMessage": "Das Match wird aufgelöst, eure Unterhaltung gelöscht, und ihr seht euch gegenseitig nicht mehr.",
+  "blockMessage": "Das Match wird aufgelöst, eure Unterhaltung entfernt, und ihr seht euch gegenseitig nicht mehr.",
   "blocked": "Blockiert",
   "report": "Profil melden"
 }

@@ -29,6 +29,6 @@
   "selectNote": "Keine Notiz ausgewählt",
   "selectNoteHint": "Wähle links eine Notiz aus oder erstelle eine neue.",
   "deleteTitle": "Notiz löschen?",
-  "deleteMessage": "Soll „{title}“ wirklich gelöscht werden? Das lässt sich nicht rückgängig machen.",
+  "deleteMessage": "„{title}“ löschen? Du kannst die Notiz unter „Zuletzt gelöscht“ wiederherstellen, bis die Wiederherstellungsfrist abläuft.",
   "delete": "Löschen"
 }
