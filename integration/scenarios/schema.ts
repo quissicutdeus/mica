@@ -344,6 +344,19 @@ const withTablesDropped = async (
   if (failure !== null) throw failure;
 };
 
+/**
+ * What one `micaschema` round trip to the database costs on the box: each awaited call waits for
+ * a server tick, unlike in the MariaDB harness. Run 39900963763 measured `micaschema apply` on
+ * an empty ledger at 14871 ms over 255 calls (counted in the harness), about 58 ms a call.
+ */
+const MS_PER_CALL = 58;
+/** A budget is the measured or counted cost three times over: 15 s left that run 129 ms spare. */
+const budget = (calls: number): number => Math.ceil((calls * MS_PER_CALL * 3) / 5_000) * 5_000;
+/** `micaschema` or `micaschema apply` over a current ledger reads every table: ~98 calls. */
+const CURRENT_LEDGER_MS = budget(98);
+/** `micaschema apply` over an empty ledger, all 15 migrations then the creates: 255 calls. */
+const EMPTY_LEDGER_MS = budget(255);
+
 /** Every migration id in the ledger looks like this; the markers sharing it do not. */
 const MIGRATION_ID = '^[0-9]{4}_';
 
@@ -469,7 +482,8 @@ export const schemaScenarios: Scenario[] = [
     id: 'schema-micaschema-report-and-apply-clean-on-fresh-import',
     mode: 'standalone',
     tickets: ['MICA-301', 'MICA-300', 'MICA-289'],
-    timeoutMs: 40_000,
+    // Two passes over every table, the report and the apply.
+    timeoutMs: 2 * CURRENT_LEDGER_MS + 10_000,
     run: async (signal) => {
       const tap = requireTap();
       const before = await ledgerIds();
@@ -479,7 +493,7 @@ export const schemaScenarios: Scenario[] = [
       await tap.waitFor(
         mark,
         /^\[mica\] schema is up to date\.$/,
-        15_000,
+        CURRENT_LEDGER_MS,
         signal,
         "'[mica] schema is up to date.' from micaschema"
       );
@@ -489,7 +503,7 @@ export const schemaScenarios: Scenario[] = [
       await tap.waitFor(
         mark,
         /^\[mica\] schema is already up to date\.$/,
-        20_000,
+        CURRENT_LEDGER_MS,
         signal,
         "'[mica] schema is already up to date.' from micaschema apply"
       );
@@ -516,7 +530,8 @@ export const schemaScenarios: Scenario[] = [
     id: 'schema-micaschema-apply-creates-missing-tables-in-key-order',
     mode: 'standalone',
     tickets: ['MICA-388'],
-    timeoutMs: 30_000,
+    // Three passes over every table — the dry run and two applies — and the restore.
+    timeoutMs: 3 * CURRENT_LEDGER_MS + 15_000,
     run: async (signal) => {
       const tap = requireTap();
       const sql = shippedSql();
@@ -533,7 +548,7 @@ export const schemaScenarios: Scenario[] = [
         await tap.waitFor(
           mark,
           /^\[mica\] schema differences:$/,
-          8_000,
+          CURRENT_LEDGER_MS,
           signal,
           "'[mica] schema differences:' from micaschema"
         );
@@ -555,7 +570,7 @@ export const schemaScenarios: Scenario[] = [
           await tap.waitFor(
             mark,
             new RegExp(`^\\[mica\\] create table ${table}$`),
-            10_000,
+            CURRENT_LEDGER_MS,
             signal,
             `'[mica] create table ${table}' from micaschema apply`
           );
@@ -586,7 +601,7 @@ export const schemaScenarios: Scenario[] = [
         await tap.waitFor(
           mark,
           /^\[mica\] schema is already up to date\.$/,
-          10_000,
+          CURRENT_LEDGER_MS,
           signal,
           "'[mica] schema is already up to date.' from a second micaschema apply"
         );
@@ -616,7 +631,8 @@ export const schemaScenarios: Scenario[] = [
     id: 'schema-micaschema-apply-finishes-with-0001-and-0003-tables-missing',
     mode: 'standalone',
     tickets: ['MICA-389', 'MICA-388'],
-    timeoutMs: 30_000,
+    // The apply, then setting the two tables aside and back, and the ledger restore.
+    timeoutMs: EMPTY_LEDGER_MS + 30_000,
     run: async (signal) => {
       const tap = requireTap();
       const sql = shippedSql();
@@ -647,15 +663,16 @@ export const schemaScenarios: Scenario[] = [
            * Apply says nothing until it is done: every migration line once they have all run,
            * every create once the additive pass has. So this waits on the whole command — 15
            * migrations from an empty ledger, then the creates — and each of its round trips
-           * waits for a server tick here, unlike in the harness. The time it took is printed on
-           * every run, so the budget is sized from what the box measured (MICA-428).
+           * waits for a server tick here, unlike in the harness. Run 39900963763 took 14871 ms
+           * against the 15 s this had, so the budget is `EMPTY_LEDGER_MS`, that three times over.
+           * The time is printed on every run, so a slower box shows before it fails (MICA-428).
            */
           try {
             for (const table of tables) {
               await tap.waitFor(
                 mark,
                 new RegExp(`^\\[mica\\] create table ${table}$`),
-                15_000,
+                EMPTY_LEDGER_MS,
                 signal,
                 `'[mica] create table ${table}' from micaschema apply on an empty ledger`
               );
