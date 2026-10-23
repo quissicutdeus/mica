@@ -154,3 +154,5 @@ line here.
   — the purge used to free it; the participants seat took a second review
 - [Rows that hang off an id escape every purge](rows-off-an-id-escape-every-purge.md)
   — `registerDependentRows`; check the actor's account too (MICA-429)
+- [A join onto information_schema.COLUMNS reads every database](information-schema-join-scans-every-database.md)
+  — `ON` does not narrow the fill; `UNION ALL` single-table reads instead

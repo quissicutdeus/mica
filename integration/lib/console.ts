@@ -45,6 +45,10 @@ export const consoleLines = (message: unknown): string[] =>
 /** The most lines kept: far more than a run prints, and a bound on a chatty server. */
 const KEEP = 20_000;
 
+/** micaOS's own tags: `[mica]`, `[micaOS]`, and each console command's. */
+const MICA_TAG =
+  /^\s*\[(mica|micaOS|micaschema|micacrypt|micaimport|micamedia|micahttp|micastorage)\]/;
+
 export class ConsoleTap {
   private readonly lines: ConsoleLine[] = [];
   private next = 0;
@@ -95,9 +99,7 @@ export class ConsoleTap {
             (line) =>
               line.seq >= mark &&
               // `micaschema` too: a throw out of `micaschema apply` is said under that tag alone.
-              (/^\s*\[(mica|micaOS|micaschema|micacrypt|micaimport|micamedia|micahttp)\]/.test(
-                line.text
-              ) ||
+              (MICA_TAG.test(line.text) ||
                 line.channel === 'script:oxmysql' ||
                 (line.channel.includes('scripting') && line.text.includes('mica')))
           )

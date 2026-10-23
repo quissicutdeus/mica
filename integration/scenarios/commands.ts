@@ -62,7 +62,8 @@ export const commandScenarios: Scenario[] = [
         'micaseed',
         'micaimport',
         'micacrypt',
-        'micahttp'
+        'micahttp',
+        'micastorage'
       ];
       const table = GetRegisteredCommands() as { name?: unknown; resource?: unknown }[];
       if (!Array.isArray(table) || table.length === 0) {

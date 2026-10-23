@@ -22,6 +22,7 @@ import { reportsScenarios } from './reports';
 import { retentionScenarios } from './retention';
 import { schemaScenarios } from './schema';
 import { sparkScenarios } from './spark';
+import { storageScenarios } from './storage';
 
 /**
  * Every scenario, in the order they run. The order is for reading the console, not for
@@ -52,6 +53,7 @@ export const scenarios: readonly Scenario[] = [
   ...darkchatScenarios,
   ...sparkScenarios,
   ...reportsScenarios,
+  ...storageScenarios,
   ...qbxScenarios,
   ...esxScenarios
 ];
