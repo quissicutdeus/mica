@@ -94,7 +94,10 @@ export class ConsoleTap {
           .filter(
             (line) =>
               line.seq >= mark &&
-              (/^\s*\[(mica|micaOS|micacrypt|micaimport|micamedia|micahttp)\]/.test(line.text) ||
+              // `micaschema` too: a throw out of `micaschema apply` is said under that tag alone.
+              (/^\s*\[(mica|micaOS|micaschema|micacrypt|micaimport|micamedia|micahttp)\]/.test(
+                line.text
+              ) ||
                 line.channel === 'script:oxmysql' ||
                 (line.channel.includes('scripting') && line.text.includes('mica')))
           )

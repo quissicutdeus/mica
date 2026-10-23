@@ -149,35 +149,61 @@ const PLAIN_TYPE = /^(int\(\d+\)|varchar\(\d+\))$/;
 /** An expression as `information_schema` reads back, for comparing: lower case, no spaces. */
 const normalized = (expression: string): string => expression.toLowerCase().replace(/\s+/g, '');
 
-/** Migrations do not share code; these are copies on purpose, as 0001's are. */
-const count = async (sql: string, params: unknown[]): Promise<number> =>
-  Number(await Database.scalar<number>(sql, params)) || 0;
+/**
+ * What `information_schema` says about the tables this touches, read in one statement per kind
+ * rather than one per table and column. Each read is a round trip, and in game each one waits
+ * for a server tick: read one at a time, ~90 of them made `micaschema apply` on an empty ledger
+ * run past the in-server suite's budget, where the harness answers them in no time at all.
+ */
+interface Schema {
+  /** `table.column` → its type and generation expression (`''` for a plain column). */
+  columns: Map<string, { type: string; generation: string }>;
+  /** `table.index`. */
+  indexes: Set<string>;
+  /** Tables that exist, of those asked about. */
+  tables: Set<string>;
+}
 
-const hasTable = async (table: string): Promise<boolean> =>
-  (await count(
-    'SELECT COUNT(*) FROM information_schema.TABLES WHERE table_schema = DATABASE() AND table_name = ?',
-    [table]
-  )) > 0;
+const placeholders = (values: readonly unknown[]): string => values.map(() => '?').join(', ');
 
-const hasIndex = async (table: string, index: string): Promise<boolean> =>
-  (await count(
-    'SELECT COUNT(*) FROM information_schema.STATISTICS WHERE table_schema = DATABASE() ' +
-      'AND table_name = ? AND index_name = ?',
-    [table, index]
-  )) > 0;
-
-const column = async (
-  table: string,
-  name: string
-): Promise<{ type: string; generation: string } | null> => {
-  const row = await Database.single<Record<string, unknown>>(
-    `SELECT COLUMN_TYPE AS \`type\`, GENERATION_EXPRESSION AS \`generation\`
-       FROM information_schema.COLUMNS
-      WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
-    [table, name]
+/** The `status` column's type on each of `tables` that exists and has one. */
+const statusTypes = async (tables: readonly string[]): Promise<Map<string, string>> => {
+  const rows = await Database.query<{ table: unknown; type: unknown }[]>(
+    `SELECT TABLE_NAME AS \`table\`, COLUMN_TYPE AS \`type\` FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND column_name = 'status'
+        AND table_name IN (${placeholders(tables)})`,
+    [...tables]
   );
-  if (!row) return null;
-  return { type: String(row.type ?? ''), generation: String(row.generation ?? '') };
+  return new Map((rows ?? []).map((r) => [String(r.table), String(r.type ?? '')]));
+};
+
+/** Every column and index of `tables`, in two statements. */
+const schemaOf = async (tables: readonly string[]): Promise<Schema> => {
+  const columns = await Database.query<
+    { table: unknown; column: unknown; type: unknown; generation: unknown }[]
+  >(
+    `SELECT TABLE_NAME AS \`table\`, COLUMN_NAME AS \`column\`, COLUMN_TYPE AS \`type\`,
+            GENERATION_EXPRESSION AS \`generation\`
+       FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name IN (${placeholders(tables)})`,
+    [...tables]
+  );
+  const indexes = await Database.query<{ table: unknown; index: unknown }[]>(
+    `SELECT DISTINCT TABLE_NAME AS \`table\`, INDEX_NAME AS \`index\`
+       FROM information_schema.STATISTICS
+      WHERE table_schema = DATABASE() AND table_name IN (${placeholders(tables)})`,
+    [...tables]
+  );
+  const schema: Schema = { columns: new Map(), indexes: new Set(), tables: new Set() };
+  for (const r of columns ?? []) {
+    schema.tables.add(String(r.table));
+    schema.columns.set(`${String(r.table)}.${String(r.column)}`, {
+      type: String(r.type ?? ''),
+      generation: String(r.generation ?? '')
+    });
+  }
+  for (const r of indexes ?? []) schema.indexes.add(`${String(r.table)}.${String(r.index)}`);
+  return schema;
 };
 
 /** The values of an `enum('a','b')` column type, as information_schema spells it. */
@@ -188,16 +214,19 @@ const enumValues = (type: string): string[] | null => {
 };
 
 /**
- * Append what `wanted` adds to a table's `status` ENUM. Refused, before anything is written to
- * that table, when what is there is not a prefix of it — a value this does not know, or the
- * same values in another order — since a MODIFY over it would remap or reject live rows.
+ * Append what `wanted` adds to a table's `status` ENUM, whose type is `type`. Refused, before
+ * anything is written to that table, when what is there is not a prefix of it — a value this
+ * does not know, or the same values in another order — since a MODIFY over it would remap or
+ * reject live rows.
  */
-const widenStatus = async (table: string, wanted: readonly string[]): Promise<void> => {
-  const current = await column(table, 'status');
-  if (!current) return;
-  const values = enumValues(current.type);
+const widenStatus = async (
+  table: string,
+  type: string,
+  wanted: readonly string[]
+): Promise<void> => {
+  const values = enumValues(type);
   if (!values) {
-    throw new Error(`${table}.status is '${current.type}', not an ENUM; change it by hand.`);
+    throw new Error(`${table}.status is '${type}', not an ENUM; change it by hand.`);
   }
   if (values.length === wanted.length && values.every((v, i) => v === wanted[i])) return;
   if (values.length > wanted.length || values.some((v, i) => v !== wanted[i])) {
@@ -220,11 +249,15 @@ const widenStatus = async (table: string, wanted: readonly string[]): Promise<vo
  * `MODIFY`'d: MariaDB recomputing a virtual column in place was measured filling it with
  * garbage bytes (0014). A virtual column holds nothing to lose, and every new key only ever
  * narrows what holds a slot, so no row the old key allowed can collide under the new one.
+ *
+ * `schema` was read before any rekey; each spec is a table of its own, so no rekey changes what
+ * another reads.
  */
-const rekey = async (spec: (typeof KEYS)[number]): Promise<void> => {
-  const current = await column(spec.table, spec.column);
-  const keyed = await hasIndex(spec.table, spec.key.name);
-  const replaced = spec.replaces ? await hasIndex(spec.table, spec.replaces) : false;
+const rekey = async (spec: (typeof KEYS)[number], schema: Schema): Promise<void> => {
+  const column = (name: string) => schema.columns.get(`${spec.table}.${name}`) ?? null;
+  const current = column(spec.column);
+  const keyed = schema.indexes.has(`${spec.table}.${spec.key.name}`);
+  const replaced = spec.replaces ? schema.indexes.has(`${spec.table}.${spec.replaces}`) : false;
   const restated = current
     ? normalized(current.generation).includes(normalized(spec.expression))
     : false;
@@ -233,9 +266,9 @@ const rekey = async (spec: (typeof KEYS)[number]): Promise<void> => {
   // `varchar(60)` once 0004 has widened it on ESX. A copy, so the key compares like the base.
   const type =
     spec.type === 'citizenid' || spec.type === 'device_id'
-      ? ((await column(spec.table, spec.type))?.type.toLowerCase() ?? '')
+      ? (column(spec.type)?.type.toLowerCase() ?? '')
       : spec.type;
-  const placed = (await column(spec.table, spec.after)) !== null;
+  const placed = column(spec.after) !== null;
   if (!PLAIN_TYPE.test(type)) {
     throw new Error(
       `${spec.table}.${spec.column} would be '${type}', which this migration will not restate; ` +
@@ -281,11 +314,14 @@ export const migration: Migration = {
     'keys stop holding a slot for an erased row (Blabber, Spark, Hodlr, highscores, settings, ' +
     'thread memberships, blocklist)',
   up: async () => {
+    const types = await statusTypes(Object.keys(STATUSES));
     for (const [table, wanted] of Object.entries(STATUSES)) {
-      if (await hasTable(table)) await widenStatus(table, wanted);
+      const type = types.get(table);
+      if (type !== undefined) await widenStatus(table, type, wanted);
     }
+    const schema = await schemaOf(KEYS.map((spec) => spec.table));
     for (const spec of KEYS) {
-      if (await hasTable(spec.table)) await rekey(spec);
+      if (schema.tables.has(spec.table)) await rekey(spec, schema);
     }
   }
 };

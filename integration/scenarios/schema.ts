@@ -350,7 +350,7 @@ const MIGRATION_ID = '^[0-9]{4}_';
 /** What `micaschema apply` prints when it changed something, or could not. */
 const APPLY_CHANGED = /^\[mica\] (applied migration|dropped|create table|add )/;
 const APPLY_FAILED =
-  /^\[mica\] (migration .* failed|.* failed: |not attempted|additive changes were not applied|could not drop)/;
+  /^\[mica\] (migration .* failed|.* failed: |not attempted|additive changes were not applied|could not drop)|^\[micaschema\] apply failed/;
 
 export const schemaScenarios: Scenario[] = [
   {
@@ -641,14 +641,30 @@ export const schemaScenarios: Scenario[] = [
           await db.exec('DELETE FROM `mica_schema_migrations` WHERE `id` REGEXP ?', [MIGRATION_ID]);
 
           const mark = tap.mark();
+          const started = Date.now();
           await runCommand('micaschema apply');
-          for (const table of tables) {
-            await tap.waitFor(
-              mark,
-              new RegExp(`^\\[mica\\] create table ${table}$`),
-              15_000,
-              signal,
-              `'[mica] create table ${table}' from micaschema apply on an empty ledger`
+          /**
+           * Apply says nothing until it is done: every migration line once they have all run,
+           * every create once the additive pass has. So this waits on the whole command — 15
+           * migrations from an empty ledger, then the creates — and each of its round trips
+           * waits for a server tick here, unlike in the harness. The time it took is printed on
+           * every run, so the budget is sized from what the box measured (MICA-428).
+           */
+          try {
+            for (const table of tables) {
+              await tap.waitFor(
+                mark,
+                new RegExp(`^\\[mica\\] create table ${table}$`),
+                15_000,
+                signal,
+                `'[mica] create table ${table}' from micaschema apply on an empty ledger`
+              );
+            }
+          } finally {
+            const failed = tap.since(mark).filter((line) => APPLY_FAILED.test(line));
+            console.log(
+              `[mica-integration] micaschema apply on an empty ledger: ${Date.now() - started} ms ` +
+                `to its last create, or to giving up${failed.length > 0 ? `; said ${failed.join(' | ')}` : ''}`
             );
           }
           await sleep(500);

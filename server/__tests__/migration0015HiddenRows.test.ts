@@ -40,7 +40,10 @@ let live: {
   keys: Set<string>;
 };
 
-const statements = () => dbMock.query.mock.calls.map(([sql]) => String(sql).replace(/\s+/g, ' '));
+/** Every statement sent, one line each. */
+const sent = () => dbMock.query.mock.calls.map(([sql]) => String(sql).replace(/\s+/g, ' ').trim());
+/** The writes: what 0015 changed, without its reads of `information_schema`. */
+const statements = () => sent().filter((q) => !q.startsWith('SELECT'));
 
 /** What `information_schema` spells for an ENUM. */
 const enumType = (values: readonly string[]) => `enum(${values.map((v) => `'${v}'`).join(',')})`;
@@ -96,27 +99,37 @@ beforeEach(() => {
   live.keys.add('mica_settings.device_app_key');
   live.keys.add('mica_blocklist.device_number_unique');
   live.keys.add('mica_messages_participants.conversation_device_unique');
-  dbMock.scalar.mockImplementation(async (sql: string, params: unknown[]) => {
-    if (sql.includes('information_schema.TABLES'))
-      return live.tables.has(String(params[0])) ? 1 : 0;
+  dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+    // The three reads (MICA-428 review): each table's status type; the key tables' columns;
+    // their indexes. Only what `live` holds for a table that exists, as `information_schema`.
+    const asked = (params as string[]).filter((table) => live.tables.has(table));
+    if (sql.includes("column_name = 'status'")) {
+      return asked
+        .filter((table) => live.status.has(table))
+        .map((table) => ({ table, type: live.status.get(table) }));
+    }
+    if (sql.includes('information_schema.COLUMNS')) {
+      return asked.flatMap((table) => [
+        { table, column: 'citizenid', type: live.citizenid, generation: '' },
+        { table, column: 'device_id', type: 'varchar(32)', generation: '' },
+        ...[...live.plain]
+          .filter((key) => key.startsWith(`${table}.`))
+          .map((key) => ({ table, column: key.split('.')[1], type: 'int(11)', generation: '' })),
+        ...[...live.generation]
+          .filter(([key]) => key.startsWith(`${table}.`))
+          .map(([key, generation]) => ({
+            table,
+            column: key.split('.')[1],
+            type: 'varchar(50)',
+            generation
+          }))
+      ]);
+    }
     if (sql.includes('information_schema.STATISTICS')) {
-      return live.keys.has(`${params[0]}.${params[1]}`) ? 1 : 0;
+      return [...live.keys]
+        .filter((key) => asked.includes(key.split('.')[0]))
+        .map((key) => ({ table: key.split('.')[0], index: key.split('.')[1] }));
     }
-    throw new Error(`unexpected scalar: ${sql}`);
-  });
-  dbMock.single.mockImplementation(async (_sql: string, params: unknown[]) => {
-    const [table, column] = params as [string, string];
-    if (column === 'status') {
-      const type = live.status.get(table);
-      return type ? { type, generation: '' } : null;
-    }
-    if (column === 'citizenid') return { type: live.citizenid, generation: '' };
-    if (column === 'device_id') return { type: 'varchar(32)', generation: '' };
-    if (live.plain.has(`${table}.${column}`)) return { type: 'int(11)', generation: '' };
-    const generation = live.generation.get(`${table}.${column}`);
-    return generation === undefined ? null : { type: 'varchar(50)', generation };
-  });
-  dbMock.query.mockImplementation(async (sql: string) => {
     const modify = /^ALTER TABLE `(\w+)` MODIFY COLUMN `status` ENUM\((.*)\) NOT NULL/.exec(sql);
     if (modify) {
       live.status.set(modify[1], `enum(${modify[2].replace(/, /g, ',')})`);
@@ -194,7 +207,26 @@ describe('0015_hidden_rows_are_kept', () => {
     dbMock.query.mockClear();
 
     await migration.up();
-    expect(dbMock.query).not.toHaveBeenCalled();
+    expect(statements()).toEqual([]);
+  });
+
+  /**
+   * MICA-428 in-server: read one table and column at a time, 0015 made ~90 round trips, each a
+   * server tick in game, and `micaschema apply` on an empty ledger ran past the in-server
+   * suite's 15 s. Three reads, however many tables, and nothing else when there is nothing to do.
+   */
+  it('reads the schema in three statements, whatever the number of tables', async () => {
+    await migration.up();
+    dbMock.query.mockClear();
+
+    await migration.up();
+    expect(sent().map((q) => /FROM (information_schema\.\w+)/.exec(q)?.[1])).toEqual([
+      'information_schema.COLUMNS',
+      'information_schema.COLUMNS',
+      'information_schema.STATISTICS'
+    ]);
+    expect(dbMock.scalar).not.toHaveBeenCalled();
+    expect(dbMock.single).not.toHaveBeenCalled();
   });
 
   it('refuses a table whose ENUM is not the start of the new one, changing nothing there', async () => {
@@ -207,7 +239,7 @@ describe('0015_hidden_rows_are_kept', () => {
   it('skips a table this server never created', async () => {
     live.tables.clear();
     await migration.up();
-    expect(dbMock.query).not.toHaveBeenCalled();
+    expect(statements()).toEqual([]);
   });
 
   /**
