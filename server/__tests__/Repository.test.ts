@@ -183,7 +183,7 @@ describe('Repository — ownership scoping', () => {
     await repo.update(7, { title: 'renamed' } as Partial<TestRow>, 'CIT_OWNER');
 
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      "UPDATE `mica_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
+      "UPDATE `mica_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` NOT IN ('moderated', 'erased', 'expired')"
     );
     expect(paramsOf(dbMock.update.mock.calls[0])).toEqual(['renamed', 7, 'CIT_OWNER']);
   });
@@ -234,7 +234,7 @@ describe('Repository — soft delete', () => {
 
     expect(success).toBe(true);
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      "UPDATE `mica_test` SET `status` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
+      "UPDATE `mica_test` SET `status` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` NOT IN ('moderated', 'erased', 'expired')"
     );
     expect(paramsOf(dbMock.update.mock.calls[0])).toEqual(['deleted', 9, 'CIT_OWNER']);
   });
@@ -645,9 +645,44 @@ describe('handing a phone over', () => {
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(String(sql).replace(/\s+/g, ' ')).toBe(
       'UPDATE `mica_device_owned` SET `citizenid` = ?, `updated_at` = `updated_at` ' +
-        'WHERE `device_id` = ? AND `citizenid` <> ?'
+        "WHERE `device_id` = ? AND `citizenid` <> ? AND `status` NOT IN ('erased', 'expired', 'moderated')"
     );
     expect(params).toEqual(['CIT_THIEF', 'PHONE_X', 'CIT_THIEF']);
+  });
+
+  /**
+   * MICA-428 review (Gregor): the handover rewrote `citizenid` on every row on the phone, so a
+   * dead character's erased rows, its expired ones and a moderator's held one came to name the
+   * phone's next holder — evidence misattributed to somebody who never wrote it. The statement
+   * is applied to rows in every status, as MariaDB would apply its `WHERE`.
+   */
+  it('leaves an erased, expired or taken-down row naming its real author (MICA-428)', async () => {
+    const rows = ['active', 'deleted', 'erased', 'expired', 'moderated'].map((status, i) => ({
+      id: i + 1,
+      device_id: 'PHONE_X',
+      citizenid: 'CIT_GONE',
+      status
+    }));
+    dbMock.update.mockImplementation(async (sql: string, params: unknown[]) => {
+      const [to, phone, other] = params as string[];
+      const excluded = /`status` NOT IN \(([^)]*)\)/.exec(String(sql))?.[1] ?? '';
+      for (const row of rows) {
+        if (row.device_id !== phone || row.citizenid === other) continue;
+        if (excluded.includes(`'${row.status}'`)) continue;
+        row.citizenid = to;
+      }
+      return true;
+    });
+
+    await new DeviceOwnedRepo().transferDeviceRows('PHONE_X', 'CIT_THIEF');
+
+    expect(rows.map((r) => `${r.status}:${r.citizenid}`)).toEqual([
+      'active:CIT_THIEF',
+      'deleted:CIT_THIEF',
+      'erased:CIT_GONE',
+      'expired:CIT_GONE',
+      'moderated:CIT_GONE'
+    ]);
   });
 
   it('refuses on a table with no device_id — those rows belong to the citizen', async () => {

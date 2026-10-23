@@ -279,6 +279,23 @@ describe('resolveAppSchema — rejections', () => {
     expect(() => resolveAppSchema({ id: '', schema: { a: 'string' } })).toThrow(/'id' is required/);
   });
 
+  it("appends 'erased' to every status table, once, after what it declares (MICA-428)", () => {
+    const plain = resolveAppSchema({ id: 'x', schema: { a: 'string' } });
+    expect(plain.statuses).toEqual(['active', 'deleted', 'erased']);
+    const declared = resolveAppSchema({
+      id: 'y',
+      statuses: ['active', 'deleted', 'moderated', 'expired'],
+      schema: { a: 'string' }
+    });
+    expect(declared.statuses).toEqual(['active', 'deleted', 'moderated', 'expired', 'erased']);
+    const already = resolveAppSchema({
+      id: 'z',
+      statuses: ['active', 'deleted', 'erased', 'moderated'],
+      schema: { a: 'string' }
+    });
+    expect(already.statuses).toEqual(['active', 'deleted', 'erased', 'moderated']);
+  });
+
   it('refuses statuses missing active or deleted', () => {
     expect(() =>
       resolveAppSchema({ id: 'x', statuses: ['live', 'gone'], schema: { a: 'string' } })
@@ -796,7 +813,8 @@ describe('toCreateTableSql', () => {
     expect(sql).toContain('`citizenid` varchar(50) NOT NULL');
     expect(sql).toContain('`title` varchar(255) DEFAULT NULL');
     expect(sql).toContain('`content` text DEFAULT NULL');
-    expect(sql).toContain("ENUM('active', 'archived', 'deleted', 'moderated')");
+    // `erased` appended to every declaration's statuses (MICA-428), after what it declares.
+    expect(sql).toContain("ENUM('active', 'archived', 'deleted', 'moderated', 'erased')");
     expect(sql).toContain('`created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP');
     expect(sql).toContain('ON UPDATE CURRENT_TIMESTAMP');
     expect(sql).toContain('PRIMARY KEY (`id`)');

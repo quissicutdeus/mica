@@ -309,7 +309,7 @@ const dbMock = vi.hoisted(() => {
           (p) => p.conversation_id === conversation_id && p.device_id === device_id
         )
       ) {
-        throw new Error("Duplicate entry for key 'conversation_device_unique'");
+        throw new Error("Duplicate entry for key 'conversation_live_device'");
       }
       const id = db.nextId++;
       db.participants.push({ id, conversation_id, citizenid, device_id, role });

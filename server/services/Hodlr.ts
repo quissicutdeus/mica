@@ -55,11 +55,24 @@ export const hodlr = defineService<HodlrHolding, typeof hodlrContract>({
   app: 'hodlr',
   access: { read: 'owner', write: 'server' },
   schema: {
-    quantity: { type: 'int', notNull: true, default: 0 }
+    quantity: { type: 'int', notNull: true, default: 0 },
+    /**
+     * The citizenid while the holding is not erased (MICA-428): what the one-holding key is
+     * over. An erased holding is evidence, never revived or overwritten, so it gives up the key
+     * and the player's next trade starts a fresh one beside it. A revive compares the citizenid
+     * in its place (`reviveAs`). Restated, frozen, by `0015_hidden_rows_are_kept`.
+     */
+    live_citizen: {
+      type: 'string',
+      citizenId: true,
+      clientWritable: false,
+      generatedAs: "CASE WHEN `status` <> 'erased' THEN `citizenid` ELSE NULL END",
+      reviveAs: 'citizenid'
+    }
   },
   // One row per player, enforced by the database rather than a find-then-write that can
   // interleave with a concurrent buy and sell.
-  indexes: [{ name: 'citizenid_unique', columns: ['citizenid'], unique: true }],
+  indexes: [{ name: 'live_citizen', columns: ['live_citizen'], unique: true }],
   // `findOrCreateHolding` reads the active row or creates one at zero (`findAll` reads `active`
   // only), so a deleted holding under the key would refuse every trade. Nothing deletes one
   // today; if anything ever does, the next trade revives the row at the zero its create writes.

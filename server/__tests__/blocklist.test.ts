@@ -84,10 +84,13 @@ describe('isBlocked (MICA-64)', () => {
 });
 
 describe('blocklist schema', () => {
-  it('is unique per phone and number', () => {
-    // Per phone since MICA-282: each phone keeps its own list, so the key names the device.
+  it('is unique per phone and number, while the block is not erased', () => {
+    // Per phone since MICA-282: each phone keeps its own list, so the key names the device —
+    // through `live_device` since MICA-428, which an erased block does not carry.
     expect(blocklist.resolved.indexes).toContainEqual(
-      expect.objectContaining({ columns: ['device_id', 'number'], unique: true })
+      expect.objectContaining({ columns: ['live_device', 'number'], unique: true })
     );
+    const live = blocklist.resolved.fields.find((f) => f.name === 'live_device')?.def;
+    expect(live?.generatedAs).toBe("CASE WHEN `status` <> 'erased' THEN `device_id` ELSE NULL END");
   });
 });

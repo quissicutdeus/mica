@@ -433,7 +433,7 @@ const findOneToOne = async (phoneA: string, phoneB: string): Promise<number | nu
 
 /**
  * A participant of a thread being created in the same transaction, so `@mica_import_id` is its
- * id. A plain insert: the thread is new, so `conversation_device_unique` cannot collide.
+ * id. A plain insert: the thread is new, so `conversation_live_device` cannot collide.
  */
 const participant = (member: Member, role: 'admin' | 'member'): TransactionQuery => ({
   query: `INSERT INTO \`mica_messages_participants\`

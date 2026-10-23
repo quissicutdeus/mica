@@ -89,7 +89,7 @@ export class GlimpseRepository extends SchemaRepository<GlimpsePost> {
    * photo purged between the ownership check and here fails its foreign key — the post is
    * soft-deleted under its own `citizenid` before the error is rethrown. A post therefore never
    * stays live without the photos it was posted with, and a retry after a failure leaves one
-   * live post, not two. A soft delete rather than a `DELETE`, because a hard delete would
+   * live post, not two. A soft delete rather than a hard one, because a hard delete would
    * cascade into anything that reached the id in the meantime.
    */
   async createWithPhotos(
@@ -142,9 +142,8 @@ export class GlimpseRepository extends SchemaRepository<GlimpsePost> {
 
   /**
    * A page's photos, batched. `MediaPreview` only: `m.url` is selected so a hosted photo
-   * (MICA-339's media host) renders, and a `moderated` photo drops out of the join — the post
-   * stays, with that photo gone, which is also what a retention-removed photo leaves behind
-   * (its attachment row cascades away with it).
+   * (MICA-339's media host) renders, and a `moderated`, `expired` or `erased` photo drops out
+   * of the join — the post stays, with that photo gone (MICA-428 keeps the attachment row).
    */
   async findAttachmentsFor(
     postIds: number[]
@@ -158,7 +157,8 @@ export class GlimpseRepository extends SchemaRepository<GlimpsePost> {
               m.mime_type, m.duration_ms, m.alt_text,
               m.citizenid AS media_citizenid, m.device_id AS media_device_id
          FROM \`mica_glimpse_attachments\` a
-         JOIN \`mica_media\` m ON a.media_id = m.id AND m.status <> 'moderated'
+         JOIN \`mica_media\` m ON a.media_id = m.id
+          AND m.status NOT IN ('moderated', 'expired', 'erased')
         WHERE a.post_id IN (${ids.map(() => '?').join(', ')})
         ORDER BY a.id ASC`,
       ids

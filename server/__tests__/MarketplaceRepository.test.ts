@@ -25,11 +25,13 @@ describe('MarketplaceRepository.findAttachmentsFor', () => {
    * deleted from their own gallery still shows where they posted it, and a restore changes
    * nothing here. SQL text only — the mock cannot run it; `test:schema` drives the real join.
    */
-  it('hides moderated media, and names no other status', async () => {
+  it('hides moderated, expired and erased media, and no other status', async () => {
     const spy = vi.spyOn(Database, 'query').mockResolvedValue([] as any);
     await repo.findAttachmentsFor([10]);
     const sql = String(spy.mock.calls[0][0]).replace(/\s+/g, ' ');
-    expect(sql).toContain("JOIN `mica_media` m ON a.media_id = m.id AND m.status <> 'moderated'");
+    expect(sql).toContain(
+      "JOIN `mica_media` m ON a.media_id = m.id AND m.status NOT IN ('moderated', 'expired', 'erased')"
+    );
     expect(sql).not.toMatch(/'active'|'deleted'/);
   });
 

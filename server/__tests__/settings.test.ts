@@ -78,13 +78,16 @@ describe('settings service', () => {
     // Not decoration. Without it two writes in the same tick — which is what dragging a
     // slider produces — leave two rows for one preference, and the read picks whichever
     // the engine returns first.
-    // Per phone since MICA-282: a character with two phones has two themes.
+    // Per phone since MICA-282: a character with two phones has two themes. Over `live_device`
+    // since MICA-428, which an erased setting does not carry: `put` writes beside it, never over.
     const index = (settings.resolved.indexes ?? []).find(
-      (i: any) => i.name === 'device_app_key'
+      (i: any) => i.name === 'live_device_app_key'
     ) as any;
     expect(index).toBeDefined();
     expect(index.unique).toBe(true);
-    expect(index.columns).toEqual(['device_id', 'app', 'setting_key']);
+    expect(index.columns).toEqual(['live_device', 'app', 'setting_key']);
+    const live = settings.resolved.fields.find((f) => f.name === 'live_device')?.def;
+    expect(live?.generatedAs).toBe("CASE WHEN `status` <> 'erased' THEN `device_id` ELSE NULL END");
   });
 
   it('registers no generic CRUD action', () => {

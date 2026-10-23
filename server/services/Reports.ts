@@ -178,23 +178,29 @@ class ReportRepository extends SchemaRepository<Report> {
 
   /**
    * An owner deleted the row a takedown holds (MICA-426, `recordOwnerDeletion`): every
-   * standing takedown of it restores `deleted` on its reopen, not what it recorded.
+   * standing takedown of it restores `status` on its reopen, not what it recorded — `deleted`
+   * for the owner's own delete, `erased` for a purge (MICA-428).
    */
-  async recordOwnerDeletion(table: string, targetId: number): Promise<void> {
+  async recordOwnerDeletion(table: string, targetId: number, status: string): Promise<void> {
     await Database.update(
-      `UPDATE \`${this.tableName}\` SET \`target_prior_status\` = 'deleted'
+      `UPDATE \`${this.tableName}\` SET \`target_prior_status\` = ?
        WHERE \`target_table\` = ? AND \`target_id\` = ?
          AND \`resolution\` = 'actioned' AND \`status\` = 'active'`,
-      [table, targetId]
+      [status, table, targetId]
     );
   }
 
+  /**
+   * Every resolved report, for staff. Erased ones too (MICA-428): a report its filer's privacy
+   * delete or deleted character erased is hidden from that player, and kept for staff, which is
+   * here.
+   */
   async findAllResolved(): Promise<Report[]> {
     return openRows(
       this.tableName,
       await Database.query<Report[]>(
         `SELECT * FROM \`${this.tableName}\`
-         WHERE \`status\` = 'active' AND \`resolution\` <> 'pending'`,
+         WHERE \`status\` IN ('active', 'erased') AND \`resolution\` <> 'pending'`,
         []
       )
     );
@@ -267,7 +273,9 @@ export const reports = defineService<Report, typeof reportsContract>({
 const app = reports.app;
 const repo = reports.repo as ReportRepository;
 
-registerOwnerDeletionRecorder((table, targetId) => repo.recordOwnerDeletion(table, targetId));
+registerOwnerDeletionRecorder((table, targetId, status) =>
+  repo.recordOwnerDeletion(table, targetId, status)
+);
 
 /**
  * Whether a player can see a row: the question a report asks before it reads one (MICA-339).

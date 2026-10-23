@@ -283,7 +283,7 @@ export const accounts = defineService<Account, typeof accountsContract>({
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
           'and the key only ever refuses a duplicate of a live row, which is what makes ' +
           'the insert idempotent.'
       }
@@ -323,7 +323,7 @@ export const accounts = defineService<Account, typeof accountsContract>({
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
           'and the key only ever refuses a duplicate of a live row, which is what makes ' +
           'the insert idempotent.'
       }
@@ -367,7 +367,7 @@ export const accounts = defineService<Account, typeof accountsContract>({
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
           'and the key only ever refuses a duplicate of a live row, which is what makes ' +
           'the insert idempotent.'
       }

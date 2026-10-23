@@ -159,11 +159,17 @@ export const spark = defineService<ProfileRow, typeof sparkContract>({
     age: { type: 'int', notNull: true, clientWritable: false },
     bio: { type: 'string', length: BIO_MAX, clientWritable: false },
     looking_for: { type: 'string', length: LOOKING_FOR_MAX, clientWritable: false },
-    /** The citizenid while the profile is not deleted; carries the one-live-profile key. */
+    /**
+     * The citizenid while the profile is not hidden — not `deleted`, and since MICA-428 not
+     * `expired` or `erased` either; carries the one-live-profile key. An erased profile must not
+     * stop a player who deleted their data making a profile again. Restated, frozen, by
+     * `0015_hidden_rows_are_kept`.
+     */
     live_citizen: {
       type: 'string',
       citizenId: true,
-      generatedAs: "CASE WHEN `status` <> 'deleted' THEN `citizenid` ELSE NULL END"
+      generatedAs:
+        "CASE WHEN `status` NOT IN ('deleted', 'expired', 'erased') THEN `citizenid` ELSE NULL END"
     }
   },
   indexes: [
@@ -286,11 +292,14 @@ const marks = (ids: readonly unknown[]): string => ids.map(() => '?').join(', ')
 const PROFILE_COLUMNS =
   '`id`, `citizenid`, `account_id`, `age`, `bio`, `looking_for`, `status`' as const;
 
-/** The caller's profile that is not deleted — active or taken down — or null. */
+/**
+ * The caller's profile that is not hidden — active or taken down — or null. Never an erased one
+ * (MICA-428): the same rows `live_citizen` holds its key for.
+ */
 const liveProfileOf = async (citizenid: string): Promise<ProfileRow | null> =>
   await Database.single<ProfileRow | null>(
     `SELECT ${PROFILE_COLUMNS} FROM \`${PROFILES}\`
-     WHERE \`citizenid\` = ? AND \`status\` <> 'deleted' LIMIT 1`,
+     WHERE \`citizenid\` = ? AND \`status\` NOT IN ('deleted', 'expired', 'erased') LIMIT 1`,
     [citizenid]
   );
 
@@ -690,7 +699,9 @@ const removeProfiles = async (citizenid: string): Promise<boolean> => {
   for (const row of rows ?? []) {
     const id = Number(row.id);
     accountIds.add(Number(row.account_id));
-    if (row.status !== 'deleted') {
+    // Gone already: deleted by the player, or erased or expired (MICA-428). Recording an owner's
+    // deletion over an erased profile's takedown would turn its `erased` back into `deleted`.
+    if (!['deleted', 'erased', 'expired'].includes(row.status)) {
       had = true;
       // Deleted first, then forgotten: a swipe that lands in between meets a profile no longer
       // active, and its own re-check takes back any match it made (`pairStillOpen`).

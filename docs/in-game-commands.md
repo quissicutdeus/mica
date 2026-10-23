@@ -43,11 +43,11 @@ principals to check.
 | `micaschema`                            | Reports where the database differs from the code. Changes nothing                       |
 | `micaschema apply`                      | **Console only.** Runs pending migrations, then creates missing tables and adds columns |
 | `micamedia`                             | Reports `mica_media`'s size and its top ten holders. Changes nothing                    |
-| `micamedia prune`                       | **Console only.** Runs the expiry and orphan sweeps now                                 |
+| `micamedia prune`                       | **Console only.** Expires old media and erases orphaned media now; deletes nothing      |
 | `micacharge [playerId] <0-100>`         | Sets a player's battery level; omit the id for yourself                                 |
 | `micaseed` / `micaseed add`             | Creates test characters, contacts and threads for the caller                            |
 | `micaseed text <firstname> <message>`   | Has a seeded character text you — exercises inbound delivery                            |
-| `micaseed clear`                        | Removes everything `micaseed` created                                                   |
+| `micaseed clear`                        | Erases everything `micaseed` created (hidden, kept); leaves its `players` rows          |
 | `micacall [number \| firstname]`        | Rings yourself — a real call, peer faked. See `docs/testing-voip.md`                    |
 | `micacall end`                          | Force-ends your own active call                                                         |
 | `micaimport <qb-phone\|lb-phone\|npwd>` | **Console only.** Reports what it would bring across from that phone. Changes nothing   |
@@ -66,18 +66,20 @@ one `RegisterCommand` each.
 ## The two that are gated harder than the rest
 
 **`micaschema apply` and `micamedia prune` take the server console and nobody
-else**, `isAdmin` notwithstanding. They are the only two commands in the
-resource that destroy or restructure data a server owner cannot get back: one
-changes a live schema, the other deletes rows. Both check `isAdmin` _first_, so
-an ordinary player is refused for the same reason they would be refused the
-report, rather than being told a privileged subcommand exists.
+else**, `isAdmin` notwithstanding. They are the two commands in the resource
+that restructure or hide data in bulk: one changes a live schema, the other
+moves rows to `expired` and `erased`. Nothing is deleted (MICA-428), so a hidden
+row can still be recovered from the database, but no player can bring it back.
+Both check `isAdmin` _first_, so an ordinary player is refused for the same
+reason they would be refused the report, rather than being told a privileged
+subcommand exists.
 
 Each one has a dry run, and it is the bare command. `micaschema` reports the
 drift the migrator will and will not touch; `micamedia` reports the table's size
 and its heaviest holders. **Read the bare form before running either
 subcommand** — `micamedia` in particular is what an owner should read before
 setting `mica_media_retention`, since a retention window nobody measured against
-the real table is how a sweep removes more than anyone expected. If
+the real table is how a sweep hides more than anyone expected. If
 `mica_media_retention` is unset, `prune` says so and still runs the orphan
 sweep.
 
@@ -206,9 +208,12 @@ made-up string will not do.
 
 So the seeded rows are genuine `players` rows. They are marked twice — by a
 license nothing else in the database uses (`SEED_LICENSE`, `server/lib/seed.ts`)
-and by a `citizenid` prefix — which is what lets `micaseed clear` remove exactly
-its own rows and nothing a person made. Nothing seeds automatically; the command
-is the only way in.
+and by a `citizenid` prefix — which is what lets `micaseed clear` find exactly
+its own rows and nothing a person made. It erases them (`status = 'erased'`,
+hidden and kept) and leaves the `players` rows in place: that table is the
+framework's, with no status to move, and the next `micaseed` reads them to skip
+creating the characters again. Nothing seeds automatically; the command is the
+only way in.
 
 `micaseed clear` needs no loaded character, because it is scoped by the license
 rather than by the caller. Every other form does: run it in game, as the

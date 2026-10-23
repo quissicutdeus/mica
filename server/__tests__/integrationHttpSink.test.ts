@@ -42,7 +42,7 @@ import {
   type HttpSink
 } from '../../integration/lib/httpSink';
 import { selfSignedIdentity } from '../../integration/lib/selfSigned';
-import { releaseHostedImages, resetMediaHostForTests, uploadImage } from '../lib/mediaHost';
+import { resetMediaHostForTests, uploadImage, warnRetiredDeleteUrl } from '../lib/mediaHost';
 import { __resetDiscordWebhook, forwardAudit, WEBHOOK_CONVAR } from '../lib/DiscordWebhook';
 import { catalogEntries, resetStoreCatalogForTests } from '../services/Store';
 import { who } from '../lib/who';
@@ -258,24 +258,16 @@ describe('the image host (MICA-243, MICA-292), on the wire', () => {
     });
   });
 
-  it('asks the host to DELETE each unreferenced file by name, with the header', async () => {
+  it('sends the host nothing but the upload, the retired delete URL set (MICA-428)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     await withSink(async (sink) => {
       imageHostAt(sink, 'k-del');
-      sink.respond((request) =>
-        request.path.endsWith('/b.png') ? { status: 404 } : { status: 500 }
-      );
-      const outcome = await releaseHostedImages([
-        'https://127.0.0.1/itx/files/a.png',
-        'https://127.0.0.1/itx/files/b.png'
-      ]);
-      // 404 is "already gone", which is what was asked for; the 500 is left on the host.
-      expect(outcome).toMatchObject({ deleted: 1, failed: 1, unconfigured: 0 });
-      const seen = sink.since(0);
-      expect(seen.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
-        'DELETE /itx/delete/a.png',
-        'DELETE /itx/delete/b.png'
-      ]);
-      expect(seen.every((r) => r.headers['x-itx-key'] === 'k-del')).toBe(true);
+      sink.respond(() => ({ status: 200, json: { url: 'https://127.0.0.1/itx/files/a.png' } }));
+
+      warnRetiredDeleteUrl();
+      expect(await uploadImage(`data:image/png;base64,${PNG_BASE64}`)).not.toBeNull();
+
+      expect(sink.since(0).map((r) => `${r.method} ${r.path}`)).toEqual(['POST /itx/upload']);
     });
   });
 });

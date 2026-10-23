@@ -10,7 +10,7 @@ import { registerService } from './services';
 import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
 import { AUDIT_LOG_TABLE } from './AuditLogger';
 import { whenSchemaReady } from './schemaReady';
-import { CASCADE_DEPENDENTS, SELF_SERVICE_EXCEPT } from '../services/Privacy';
+import { SELF_SERVICE_EXCEPT } from '../services/Privacy';
 import { traceOf } from './sqlErrors';
 import { who } from './who';
 import { withoutOwnerKeys } from './replyShape';
@@ -683,51 +683,59 @@ onPlayerLoaded('framework-sources', FrameworkBridge.rememberSource);
  * What outlives a deleted character (MICA-300): the reports they filed that staff have not
  * resolved yet, which keep holding the content they name, and their rows in the moderation
  * ledger, permanently — the record of a staff member's moderation outlives the staff member.
- * Everything else they owned goes, the device rows included.
  *
- * The two entries a player's own delete keeps for the same reasons, taken from
+ * **And the device rows, live** (MICA-428). They are the phone's identity and state, not the
+ * character's content, and the phone item can outlive its character: the next holder's
+ * resolve reads its `mica_devices` row as `active`, finds none if it was erased, and its
+ * create is refused by `device_id_unique` — a phone that never works again. Left `active`, the
+ * row is handed on by the handover walk like any phone that changes hands. Before MICA-428 the
+ * purge deleted them and the next resolve minted the row afresh.
+ *
+ * Everything else they owned is erased. The entries are a player's own delete's, taken from
  * `SELF_SERVICE_EXCEPT` rather than restated, so the pending-report predicate cannot drift
- * between the two deletes. Taking them by name is checked loudly: a rename there that dropped
- * one would otherwise delete the ledger with nothing said (`orphanSweep.test.ts` holds it too).
+ * between the two. Taking them by name is checked loudly: a rename there that dropped one would
+ * otherwise erase it with nothing said (`orphanSweep.test.ts` holds it too).
  */
-const CHARACTER_KEEPS = [AUDIT_LOG_TABLE, 'mica_reports'];
+const CHARACTER_KEEPS = [
+  AUDIT_LOG_TABLE,
+  'mica_reports',
+  'mica_devices',
+  'mica_phone_numbers',
+  'mica_battery',
+  'mica_lockscreen'
+];
 export const CHARACTER_EXCEPT = SELF_SERVICE_EXCEPT.filter(({ table }) =>
   CHARACTER_KEEPS.includes(table)
 );
 if (CHARACTER_EXCEPT.length !== CHARACTER_KEEPS.length) {
   console.error(
-    `[mica] a deleted character's ${CHARACTER_KEEPS.join(' and ')} rows should be kept, but ` +
-      "Privacy's SELF_SERVICE_EXCEPT no longer names them all; they will be deleted."
+    `[mica] a deleted character's ${CHARACTER_KEEPS.join(', ')} rows should be kept, but ` +
+      "Privacy's SELF_SERVICE_EXCEPT no longer names them all; they will be erased."
   );
 }
 
 /**
- * The character-deleted purge and the start-up sweep, as their hooks below run them: the plan
- * in `orphanSweep.ts`, keeping `CHARACTER_EXCEPT`, with the child tables whose rows belong to
- * their parent (a like, a tag, a follow) going with it. Which tables those are is Privacy's
- * decision, made once for all three deletes, so a table added there is not missed here.
+ * The character-deleted purge and the start-up sweep, as their hooks below run them: the write
+ * in `orphanSweep.ts`, leaving `CHARACTER_EXCEPT` as it is.
  *
- * **Both keep the same rows**, and the sweep's copy is not optional: with no foreign key onto
+ * **Both leave the same rows**, and the sweep's copy is not optional: with no foreign key onto
  * the owner, a kept report is an orphan like any other at the next start. A pending report is
- * swept once it resolves; a ledger row never is.
+ * erased once it resolves; a ledger row never is.
  */
-const cascade = { dependents: CASCADE_DEPENDENTS };
 export const purgeDeletedCharacter = (citizenid: string) =>
   purgeOwnedRows(citizenid, {
-    cascade,
     except: CHARACTER_EXCEPT,
     purpose: 'for a deleted character'
   });
-export const sweepDeletedCharacters = () =>
-  sweepOrphanedRows({ cascade, except: CHARACTER_EXCEPT });
+export const sweepDeletedCharacters = () => sweepOrphanedRows({ except: CHARACTER_EXCEPT });
 
 /**
- * Told that a character is gone, remove its rows from every table that owned any.
+ * Told that a character is gone, erase its rows in every table that owned any (MICA-428).
  *
  * **`on`, never `onNet`, and the distinction is the security boundary.** `onNet` would
  * register this as a net event, and a registered net event is reachable by a modified
- * client (§2.9) — which would hand any player a one-argument purge of any other player's
- * entire phone, across twenty-two tables. `on` registers a local handler only, so the sole
+ * client (§2.9) — which would hand any player a one-argument erase of any other player's
+ * entire phone, across thirty tables. `on` registers a local handler only, so the sole
  * way to reach it is a trigger from another **server** resource, which is code the owner
  * installed. `mediaRetention.test.ts` has asserted exactly this for the media hook since
  * MICA-71 and `orphanSweep.test.ts` asserts it here; that assertion is the one thing that
@@ -750,25 +758,24 @@ export const sweepDeletedCharacters = () =>
  *
  * **Since MICA-300 this and the sweep below are the only cleanup there is**, on qb as on ESX:
  * the foreign keys onto `players` that used to cascade are gone, so the framework deleting a
- * character leaves micaOS's rows in place for this to decide over. It decides with the plan a
- * player's own delete uses (`purgeDeletedCharacter`), keeping less: the character's rows go,
- * the device included, except their pending reports and moderation ledger rows
- * (`CHARACTER_EXCEPT`), what an open report holds, what hangs off it, and what another
- * player's rows still reference.
+ * character leaves micaOS's rows in place for this to decide over. It erases with the write a
+ * player's own delete uses (`purgeDeletedCharacter`), keeping less live: every row of the
+ * character's moves to `erased`, except their pending reports, moderation ledger rows and
+ * device rows (`CHARACTER_EXCEPT`) and a takedown's `moderated` row.
  */
 on(`mica:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
   const citizenid = typeof rawCitizenid === 'string' ? rawCitizenid.trim() : '';
   if (citizenid.length === 0) return;
 
   void purgeDeletedCharacter(citizenid)
-    .then(({ removed, kept, failures }) => {
+    .then(({ erased, kept, failures }) => {
       // Unconditionally, including zero, for the reason the start-up sweep below gives at
       // length: a query issued while oxmysql has no pool hangs rather than failing, so an
       // outcome logged only when there was something to say cannot be told apart from one
       // that never returned. An operator triggering this deliberately needs the difference.
       console.log(
-        `[mica] purged ${removed} row(s) for deleted character ${who(citizenid)}` +
-          (kept > 0 ? `, kept ${kept} held or still referenced.` : '.')
+        `[mica] erased ${erased} row(s) for deleted character ${who(citizenid)}` +
+          (kept > 0 ? `, left ${kept} under a takedown or kept live.` : '.')
       );
       // Each failure is logged where it happened, in `purgeOwnedRows`; this is the count.
       if (failures.length > 0) {
@@ -789,8 +796,8 @@ on(`mica:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
  * A hook is what keeps a busy server tidy between restarts, and it only fires on the
  * servers whose owner wired it up. This is what covers everyone else — and since MICA-300,
  * with no framework's schema cascading any more, it is the only thing standing between a
- * deleted character and rows that live forever. It keeps what the purge above keeps, and
- * takes it once the report holding it resolves.
+ * deleted character's rows staying live forever. It leaves what the purge above leaves, and
+ * erases a pending report once it resolves.
  *
  * `onResourceStart` rather than module scope, matching `Schema.ts` and `Media.ts`: it fires
  * after the whole controller graph has imported, so `declaredServices` is complete and the
@@ -802,12 +809,12 @@ on(`mica:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
  * starting, and nothing is waiting on this: no player is connected yet.
  *
  * **It says it is starting before its own first query, and says it finished even when it
- * removed nothing.** (The first-start schema check, which it waits for, asks first and logs for
+ * erased nothing.** (The first-start schema check, which it waits for, asks first and logs for
  * itself.) Both halves are load-bearing, and the reason is specific rather
  * than tidiness. oxmysql's `rawQuery` does `await using connection = await getConnection();
  * if (!connection) return;` without ever invoking the callback, so a query issued before the
  * pool is up **neither resolves nor rejects** — it hangs, and `lib/Database.ts` has no
- * timeout. This hook can fire in exactly that window. A hang is safe from deleting anything,
+ * timeout. This hook can fire in exactly that window. A hang is safe from erasing anything,
  * which is the half that matters, but a sweep that logged only its results would be
  * indistinguishable from one that ran and found nothing: silence that reads as success, the
  * failure this repo cares most about. A `starting` line with no `finished` line after it is
@@ -819,7 +826,7 @@ on(`mica:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
  *
  * `mica_media` is swept twice at start — once here and once by `runMediaMaintenance`,
  * which also runs the retention prune and reports the pair. That is deliberate. The second
- * `DELETE … WHERE NOT EXISTS` over a table just swept removes nothing, and making either
+ * `UPDATE … WHERE NOT EXISTS` over a table just swept moves nothing, and making either
  * conditional on the other would couple two lifecycles to save one no-op statement.
  */
 on('onResourceStart', (resourceName: string) => {
@@ -832,13 +839,13 @@ on('onResourceStart', (resourceName: string) => {
     console.log(`[mica] orphan sweep starting over ${tables} table(s).`);
 
     void sweepDeletedCharacters()
-      .then(({ removed, kept, byTable, failures }) => {
+      .then(({ erased, kept, byTable, failures }) => {
         const detail = Object.entries(byTable)
           .map(([table, count]) => `${table} ${count}`)
           .join(', ');
         console.log(
-          `[mica] orphan sweep finished: removed ${removed} row(s)${detail ? ` (${detail})` : ''}` +
-            (kept > 0 ? `, kept ${kept} held or still referenced.` : '.')
+          `[mica] orphan sweep finished: erased ${erased} row(s)${detail ? ` (${detail})` : ''}` +
+            (kept > 0 ? `, left ${kept} under a takedown or kept live.` : '.')
         );
         // Each failure is logged where it happened, in `sweepOrphanedRows`; this is the count.
         if (failures.length > 0) {

@@ -36,8 +36,6 @@ export const acceptsClientKind = (value: string): boolean => value === 'photo';
  * beacon: every viewer of a shared row, a Blab or a listing fetched it from their own machine,
  * handing its owner their IP. `url` is the column a hosted or hotlinked image lives in, and it is
  * `clientWritable: false` — the image host's URLs reach it only from `uploadImage`, through
- * `validateHostedUrl`. A host URL written into `data` would also be invisible to the reference
- * check `releaseHostedImages` makes on `url`, so a prune could delete the file under a row
- * still showing it. No client writer produces one: the camera only ever has bytes.
+ * `validateHostedUrl`. No client writer produces one: the camera only ever has bytes.
  */
 export const acceptsClientData = (value: string): boolean => isInlineImage(value);

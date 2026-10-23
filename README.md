@@ -115,7 +115,7 @@ decision, recorded in [`docs/decisions.md`](docs/decisions.md).
   code. Each member picks an alias per channel, and no name, handle or phone
   number is ever shown. The creator owns the channel: they can read and replace
   its code and remove members, and if they leave, the longest-standing member
-  takes over. Messages are deleted after `mica_darkchat_retention` hours, a
+  takes over. Messages are hidden after `mica_darkchat_retention` hours, a
   member can report another's message to Admin, and a job script can post into a
   channel with `PostToDarkChat`. Installs from the Store.
 - **Spark** _(add-on)_: Dating with swipe matching. Opt in with a profile (a
@@ -446,18 +446,18 @@ one per character, so every character a player has shares one phone: one contact
 list, one inbox, one gallery. This is intended.
 
 **Cleanup after a deleted character is micaOS's job, on every framework.**
-Nothing in the database removes micaOS's rows when a character is deleted —
-there is no foreign key onto `players` or `users` (MICA-300). Two things do: the
-server event `mica:server:shell:characterDeleted`, if your deletion flow fires
-it, and the sweep at every resource start, which asks the framework's table
-(`users(identifier)` on ESX, `players(citizenid)` on qb) who exists and deletes
-the rows belonging to characters who do not. Both keep anything under an open
-report or taken down by staff, what hangs off a reported row (attachments,
-replies, photos), and anything another player's rows still reference. What is
-kept as evidence is hidden from everyone, including a player account a kept post
-names; an account kept only because another player's row references it (another
-player's DM to it) stays live; a deleted character's reports that staff have not
-resolved, and their audit-log entries, are kept too.
+Nothing in the database touches micaOS's rows when a character is deleted —
+there is no foreign key onto `players` or `users` (MICA-300). Two things hide
+them: the server event `mica:server:shell:characterDeleted`, if your deletion
+flow fires it, and the sweep at every resource start, which asks the framework's
+table (`users(identifier)` on ESX, `players(citizenid)` on qb) who exists and
+hides the rows belonging to characters who do not. **Nothing is deleted**
+(MICA-428): the rows move to `erased` and stay in the database, hidden from
+every player and kept for staff. Both leave a row staff have taken down, the
+character's pending reports and their audit-log entries, and the phone's own
+device rows, which stay live because the phone item can outlive its character. A
+group thread or Dark Chat channel the character started stays live while another
+member is still in it, and the next sweep erases it once the last has left.
 
 **It refuses to run rather than guess, and you will see it say so.** Treating an
 owner table it cannot read as "everybody is an orphan" would delete your
@@ -900,7 +900,7 @@ set mica_location_interval 5
 | `mica_media_upload_field`          | form field name                                         | `file`                              | Multipart field the photo is posted in                                                                                                |
 | `mica_media_upload_response_path`  | dot path                                                | `url`                               | Where the photo's URL is in the host's JSON reply, e.g. `data.link`                                                                   |
 | `mica_media_image_host`            | host name                                               | the upload URL's host               | The only host a returned photo URL may be on                                                                                          |
-| `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)                         | Endpoint sent `DELETE` for a hosted photo once no row names it                                                                        |
+| `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)                         | Retired (MICA-428): ignored, with a one-time warning at start; nothing is deleted from the host                                       |
 | `mica_message_retention`           | integer, days, or `off`                                 | `180`                               | How long text messages are kept                                                                                                       |
 | `mica_dm_retention`                | integer, days, or `off`                                 | `90`                                | How long direct messages are kept, in every social app that has them                                                                  |
 | `mica_darkchat_retention`          | integer, hours, at least 1                              | `24`                                | How long a Dark Chat message is kept; there is no off switch                                                                          |
@@ -1145,13 +1145,14 @@ the convar is invisible until the resource restarts.
   non-positive value falls back to 900 rather than removing the window — a typo
   here should not make every Blab editable forever.
 - **`mica_notification_retention`** — how many days of notification history to
-  keep. At resource start micaOS deletes every row in `mica_notifications` older
-  than this, read or unread, cleared or not, and nothing else ever prunes them:
-  there is no timer, so a server that never restarts never prunes, and one that
-  restarts often prunes at each start. That is also why this is the one convar
-  here whose change needs a restart — it is read once, at the moment the prune
-  runs. Raise it if you want players to keep more history; lower it if the table
-  grows faster than you care to carry. A non-positive value falls back to 30.
+  show. At resource start micaOS hides every live row in `mica_notifications`
+  older than this, read or unread: it moves to `expired` and is kept (MICA-428),
+  and nothing else ever prunes them: there is no timer, so a server that never
+  restarts never prunes, and one that restarts often prunes at each start. That
+  is also why this is the one convar here whose change needs a restart — it is
+  read once, at the moment the prune runs. Raise it if you want players to keep
+  more history; lower it if the table grows faster than you care to carry. A
+  non-positive value falls back to 30.
 - **`mica_restore_window_days`** — how many days after deleting a contact, note
   or photo a player may still undo it through that app's `restore` action.
   Shared across all three rather than one convar each: a "recently deleted"
@@ -1159,9 +1160,9 @@ the convar is invisible until the resource restarts.
   tuning it almost certainly wants one answer, not three that can drift apart.
   Read per call, not cached, so `set` from the console takes effect on the next
   restore attempt with no restart. Past the window the row is not gone — nothing
-  in micaOS ever hard-deletes a contact, note or photo, since the moderation
-  system depends on a soft-deleted row surviving — it is only no longer
-  reachable through `restore`. A non-positive value falls back to 30.
+  in micaOS ever deletes a contact, note or photo, and since MICA-428 nothing
+  deletes any row — it is only no longer reachable through `restore`. A
+  non-positive value falls back to 30.
 
 - **`mica_camera_quality`** — how hard the phone squeezes a photo before it is
   stored, 1 to 100. Every capture is a single lossy encode (WebP where the
@@ -1199,36 +1200,41 @@ the convar is invisible until the resource restarts.
   you read rather than discover. Set it to 0 for no ceiling.
 - **Content retention: `mica_message_retention` (180 days), `mica_dm_retention`
   (90) and `mica_media_retention` (365) (MICA-167).** Text messages, direct
-  messages in any social app, and stored media older than the window are deleted
-  permanently -- media is stored in the row, so the photo is gone with it. `0`
-  or `off` keeps that content forever; a value micaOS cannot read falls back to
-  the default with a warning. The prune runs at resource start and every six
-  hours, 500 rows at a time and at most 100,000 rows per table per run, and
-  `micamedia prune` runs it on demand. What is never deleted: anything under an
+  messages in any social app, and stored media older than the window are hidden
+  after it, not deleted (MICA-428): the row moves from `active` to `expired` and
+  stays in the database, for staff, and the photo's bytes stay with it. A player
+  sees none of it, and an expired row is never restorable. `0` or `off` keeps
+  showing that content forever; a value micaOS cannot read falls back to the
+  default with a warning. The prune runs at resource start and every six hours,
+  500 rows at a time and at most 100,000 rows per table per run, and
+  `micamedia prune` runs it on demand. What is never hidden: anything under an
   open report -- the reported message's whole conversation, the reported DM's
   whole thread, and every DM of a reported account -- until the report is
   resolved; anything staff have taken down, for as long as it stays taken down
   (the row is the evidence, and a reopen puts it back); and any photo still
-  attached to a message, blab or listing that exists. A conversation itself is
-  never removed, only its old messages. **Nothing is deleted on the first start
-  with a window on.** The console says how many rows would go and at what time,
+  attached to a message, blab or listing that is still shown. Only `active` rows
+  expire: one a player deleted stays `deleted`. A conversation itself is never
+  touched, only its old messages. **Nothing is hidden on the first start with a
+  window on.** The console says how many rows would be hidden and at what time,
   24 hours later, and names the convar that stops it; setting it to `0` before
-  then keeps everything. Shortening a window later gets its own 24-hour notice,
-  and so does turning retention off and back on. A table is not pruned at all
-  until `micaschema apply` has added its `created_at` index, and the console
-  says so. The notices are recorded as `retention:<table>:<days>d` rows in
-  `mica_schema_migrations`; deleting one restarts that table's notice. Run
-  `micamedia` first to see how large the media table is.
+  then keeps everything showing. Shortening a window later gets its own 24-hour
+  notice, and so does turning retention off and back on. A table is not pruned
+  at all until `micaschema apply` has added its `created_at` index, and the
+  console says so. The notices are recorded as `retention:<table>:<days>d` rows
+  in `mica_schema_migrations`; turning retention off records a `retention-off:`
+  marker that voids them, and turning it back on starts a fresh notice. Run
+  `micamedia` first to see how large the media table is. **This frees no disk**:
+  a hidden row is still stored.
 - **`mica_darkchat_retention` — Dark Chat's window, in hours (24) (MICA-254).**
-  A Dark Chat message older than the window is never shown and is deleted
-  permanently by a sweep every 15 minutes, 500 rows at a time. Unlike the
-  content-retention convars above, it has no `0` or `off` and no first-start
-  notice: a value that is not a whole number of hours of at least one warns and
-  uses 24. A message under an open report is kept until the report is resolved,
-  and one staff have taken down is kept while it stays taken down. A line a
-  reopen restores is still subject to the window. Neither reaches the player
-  data export once it is past the window. Read on every use, so a change takes
-  effect without a restart.
+  A Dark Chat message older than the window is never shown and is moved to
+  `expired`, kept but hidden, by a sweep every 15 minutes, 500 rows at a time.
+  Unlike the content-retention convars above, it has no `0` or `off` and no
+  first-start notice: a value that is not a whole number of hours of at least
+  one warns and uses 24. A message under an open report is kept until the report
+  is resolved, and one staff have taken down is kept while it stays taken down.
+  A line a reopen restores is still subject to the window. Neither reaches the
+  player data export once it is past the window. Read on every use, so a change
+  takes effect without a restart.
 - **`mica_content_key_file` — conversations and a phone's own content encrypted
   at rest (MICA-165, MICA-431).** The path of a key file, never a key:
   `server.cfg` is the file that travels with a database dump. **The file has to
@@ -1289,51 +1295,46 @@ the convar is invisible until the resource restarts.
   check, the photo is stored in the database as if no host were configured, and
   the console says why. Old base64 photos keep working, and the phone draws
   either kind; Store add-ons may load images from the image host and from
-  nowhere else new. Thumbnails stay in the database — they are small. When
-  micaOS deletes a hosted photo's last row — by retention, by either
-  character-deleted event, or by the orphan sweep — it sends `DELETE` to
-  `mica_media_delete_url` with `{url}` replaced by the photo's URL and `{name}`
-  by its file name, both URL-encoded, and the same header. A file another
-  player's copy still names is never deleted. Without that convar the files are
-  left on the host and the console counts them every time. A hosted photo is
-  still a row, so the quota counts only its thumbnail.
+  nowhere else new. Thumbnails stay in the database — they are small. When A
+  hosted file is never deleted (MICA-428): retention expires the row and a purge
+  erases it, and the file stays on the host for as long as the row, which is for
+  good. **`mica_media_delete_url` is retired.** It used to be sent a `DELETE`
+  for a photo no row named; a server that still sets it now logs one line at
+  start saying so, and nothing is sent. Remove files on the host yourself if you
+  want them gone. A hosted photo is still a row, so the quota counts only its
+  thumbnail.
 
   **Changing `mica_media_image_host` does not move old photos.** micaOS records
   each host it has uploaded to, and a photo on an earlier one is still drawn and
-  still counted when its last row goes. It is never deleted, though: the delete
-  URL you have now is for the new host, so the console names the old host and
-  how many of its files no longer belong to any row, and removing them there is
-  up to you.
+  still counted against the quota.
 
   **Run `micaschema apply` on qb if you have not since MICA-300.** Until
   migration 0006 has run, the old `ON DELETE CASCADE` onto `players` removes a
-  deleted character's photo rows inside the database, so the files they named
-  stay on the host and nothing is left for micaOS to find them by. With an image
-  host set, the console warns about this at every start while that constraint
-  exists.
+  deleted character's photo rows inside the database, bypassing the erase that
+  would have kept them. With an image host set, the console warns about this at
+  every start while that constraint exists.
 
 Two things about media storage that are not convars, since this is where you
-will be looking if the table is bigger than you expected. micaOS removes a
-deleted character's photos in two ways: a sweep at every resource start deletes
-rows whose owner no longer exists, and a deletion script of your own can trigger
-the server event `mica:server:shell:characterDeleted` with a citizenid to
-reclaim the space immediately, across every table rather than photos alone.
-`mica:server:media:characterDeleted` does the same for photos only, and removes
-only photos that are neither under an open report, taken down, nor attached to a
-message, post or listing; attached ones go with the full purge. Both are local
-events — another server resource can fire them, a game client cannot. Neither
-ever takes a photo under an open report or taken down, or one another player's
-rows still use.
+will be looking if the table is bigger than you expected. **Nothing shrinks it**
+(MICA-428): retention expires rows and the purges erase them, and both keep the
+row and its bytes. micaOS hides a deleted character's photos in two ways: a
+sweep at every resource start erases rows whose owner no longer exists, and a
+deletion script of your own can trigger the server event
+`mica:server:shell:characterDeleted` with a citizenid to do it immediately,
+across every table rather than photos alone.
+`mica:server:media:characterDeleted` does the same for photos only. Both are
+local events — another server resource can fire them, a game client cannot.
+Neither touches a photo a takedown holds.
 
 **The sweep refuses rather than guesses.** It skips, and logs which of these it
-hit, whenever it cannot prove what it is about to delete: no framework has
+hit, whenever it cannot prove what it is about to erase: no framework has
 answered yet, the owner table is empty or unreadable, or not one of the
 identities sampled out of micaOS's own rows exists in that table. Treating an
-owner table it cannot read as "everybody is an orphan" would delete your
-database, so a refusal always leaves rows behind and never removes extra ones.
-It also logs a line when it starts and a line when it finishes, including a
-finish that removed nothing, so a sweep that ran and found nothing is
-distinguishable from one that never reached the database at all.
+owner table it cannot read as "everybody is an orphan" would hide your whole
+database, so a refusal always leaves rows live and never erases extra ones. It
+also logs a line when it starts and a line when it finishes, including a finish
+that erased nothing, so a sweep that ran and found nothing is distinguishable
+from one that never reached the database at all.
 
 - **`mica_orphan_owner_table`** — names the table and column the orphan sweep
   should check against, as `table.column`, instead of only ever trusting the

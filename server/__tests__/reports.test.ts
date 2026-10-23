@@ -56,7 +56,12 @@ import '../services/Glimpse';
 import '../services/GlimpseComments';
 import '../services/Marketplace';
 import '../services/Spark';
-import { isReportableTable, isReportCategory, REPORTABLE } from '../lib/moderation';
+import {
+  isReportableTable,
+  isReportCategory,
+  REPORTABLE,
+  summariseTarget
+} from '../lib/moderation';
 
 const REPORTER = 'REPORTER1';
 const ADMIN = 'ADMIN1';
@@ -1057,6 +1062,129 @@ describe('resolving is admin-only', () => {
     const reply = await call('resolve', { id: 9, action: 'moderate' }, ADMIN);
     expect(reply).toMatchObject({ error: expect.any(String) });
     expect(dbMock.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MICA-428, from Scorch's read: no purge holds a reported row any more, so a row under an open
+ * report is erased with the rest of its owner's rows — kept, hidden from everyone. The report
+ * has to keep working on it: staff read what was reported, a takedown records the row as
+ * evidence and remembers `erased`, and neither a dismissal nor a reopen brings it back for the
+ * owner who asked for everything to go.
+ */
+describe('a report on a row its owner erased (MICA-428)', () => {
+  /** One reported message, erased, and the reports on it, as the database holds them. */
+  let target: { status: string };
+  let reports: Record<number, Record<string, unknown>>;
+
+  beforeEach(() => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    target = { status: 'erased' };
+    const report = (id: number) => ({
+      id,
+      citizenid: REPORTER,
+      resolution: 'pending',
+      status: 'active',
+      target_table: 'mica_messages',
+      target_id: 4,
+      category: 'spam',
+      target_prior_status: null
+    });
+    reports = { 9: report(9), 10: report(10) };
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      const text = String(sql).replace(/\s+/g, ' ');
+      if (text.startsWith('SELECT * FROM `mica_reports`'))
+        return reports[Number(params[0])] ?? null;
+      if (text.startsWith('SELECT `status` FROM `mica_messages`')) return { status: target.status };
+      if (text.startsWith('SELECT `citizenid`, `status`, `message` AS preview')) {
+        return {
+          citizenid: 'AUTHOR',
+          status: target.status,
+          preview: 'bad words',
+          conversation_id: 1
+        };
+      }
+      return null;
+    });
+    dbMock.scalar.mockResolvedValue(0);
+    dbMock.update.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      const text = String(sql).replace(/\s+/g, ' ');
+      const move =
+        /^UPDATE `mica_messages` SET `status` = \?(, `updated_at` = `updated_at`)? WHERE `id` = \? AND `status` = \?$/.exec(
+          text
+        );
+      if (move) {
+        const [to, , from] = params as [string, number, string];
+        if (target.status !== from) return false;
+        target.status = to;
+        return true;
+      }
+      const claim =
+        /^UPDATE `mica_reports` SET `resolution` = \? WHERE `id` = \? AND `resolution` = \?$/.exec(
+          text
+        );
+      if (claim) {
+        const [to, id, from] = params as [string, number, string];
+        if (reports[id]?.resolution !== from) return false;
+        reports[id].resolution = to;
+        return true;
+      }
+      const prior = /^UPDATE `mica_reports` SET `target_prior_status` = \? WHERE `id` = \?$/.exec(
+        text
+      );
+      if (prior) {
+        const [status, id] = params as [string, number];
+        reports[id].target_prior_status = status;
+        return true;
+      }
+      return true;
+    });
+  });
+
+  it('(a) staff still read what was reported on the erased row', async () => {
+    const summary = await summariseTarget('mica_messages', 4);
+    expect(summary).toEqual({
+      exists: true,
+      citizenid: 'AUTHOR',
+      status: 'erased',
+      preview: 'bad words'
+    });
+  });
+
+  it('(b) actioning it takes it down as evidence, and records erased for a reopen', async () => {
+    const reply = await call('resolve', { id: 9, action: 'moderate' }, ADMIN);
+
+    expect(reply).toMatchObject({ ok: true, resolution: 'actioned' });
+    expect(target.status).toBe('moderated');
+    expect(reports[9].target_prior_status).toBe('erased');
+    expect(dbMock.insert.mock.calls.some((c: any[]) => /mica_audit_logs/.test(c[0]))).toBe(true);
+  });
+
+  it('(c) dismissing it as safe leaves the row erased: it never reappears', async () => {
+    const reply = await call('resolve', { id: 10, action: 'dismiss' }, ADMIN);
+
+    expect(reply).toMatchObject({ ok: true, resolution: 'dismissed' });
+    expect(target.status).toBe('erased');
+  });
+
+  it("keeps a resolved report its filer's erase hid in staff history", async () => {
+    dbMock.query.mockResolvedValue([]);
+    await call('history', {}, ADMIN);
+
+    const read = dbMock.query.mock.calls.find((c: any[]) =>
+      /FROM `mica_reports`/.test(String(c[0]))
+    )!;
+    expect(String(read[0]).replace(/\s+/g, ' ')).toContain(
+      "WHERE `status` IN ('active', 'erased') AND `resolution` <> 'pending'"
+    );
+  });
+
+  it('(c) and reopening a takedown puts back erased, not active', async () => {
+    await call('resolve', { id: 9, action: 'moderate' }, ADMIN);
+    const reply = await call('reopen', { id: 9 }, ADMIN);
+
+    expect(reply).toMatchObject({ ok: true, resolution: 'pending' });
+    expect(target.status).toBe('erased');
   });
 });
 

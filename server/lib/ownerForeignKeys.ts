@@ -63,7 +63,7 @@ export const ownerForeignKeys = async (): Promise<OwnerForeignKey[]> => {
 /**
  * Drop every foreign key onto `players` that is still there, whatever the ledger says. Answers
  * how many it dropped; a second run drops none. Throws when it cannot finish, and every name is
- * checked before the first `DROP`, so a refusal leaves nothing half done.
+ * checked before the first drop, so a refusal leaves nothing half done.
  */
 export const dropOwnerForeignKeys = async (): Promise<number> => {
   const keys = await ownerForeignKeys();

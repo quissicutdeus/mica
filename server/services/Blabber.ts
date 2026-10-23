@@ -273,20 +273,23 @@ export const blabber = defineService<Blab, typeof blabberContract>({
      * - `'deleted'` frees it: the author withdrew the mouth, and no action restores a deleted
      *   Blab, so mouthing it again is a new row at the top of the feed.
      *
-     * Written as `<> 'deleted'` rather than as a list of the statuses that hold, so a status
+     * Written as the statuses that free it — `deleted`, and since MICA-428 `expired` and
+     * `erased`, hidden for good — rather than as a list of the statuses that hold, so a status
      * added to the enum later holds the slot until someone decides otherwise: a refused
      * re-mouth can be undone, two live mouths of one Blab cannot.
      *
-     * **`0012_blabber_mouths_unique_while_live` restates this expression**, frozen as it
-     * shipped: change it here and a fresh install and an upgraded one disagree, which the
-     * planner cannot see (it compares a generated column by name only). A change is a new
-     * migration.
+     * **`0015_hidden_rows_are_kept` restates this expression**, frozen as it shipped, as
+     * `0012_blabber_mouths_unique_while_live` did the one before it: change it here and a fresh
+     * install and an upgraded one disagree, which the planner cannot see (it compares a generated
+     * column by name only). A change is a new migration.
+     *
      */
     mouth_key: {
       type: 'int',
       clientWritable: false,
       private: true,
-      generatedAs: "CASE WHEN `status` <> 'deleted' THEN `mouth_of` ELSE NULL END"
+      generatedAs:
+        "CASE WHEN `status` NOT IN ('deleted', 'expired', 'erased') THEN `mouth_of` ELSE NULL END"
     }
   },
   /**
@@ -358,7 +361,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
           'and the key only ever refuses a duplicate of a live row, which is what makes ' +
           'the insert idempotent.'
       }
@@ -797,7 +800,7 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
         `SELECT \`mouth_of\` FROM \`mica_blabber\`
          WHERE \`mouth_of\` IN (${placeholders})
          AND \`account_id\` IN (${myAccountIds.map(() => '?').join(', ')})
-         AND \`status\` <> 'deleted'`,
+         AND \`status\` NOT IN ('deleted', 'expired', 'erased')`,
         [...ids, ...myAccountIds]
       )
     : [];
@@ -1309,12 +1312,13 @@ registerImportTarget('posts', {
       'SELECT `root_id` FROM `mica_blabber` WHERE `id` = ? LIMIT 1',
       [postId]
     )) ?? null,
-  // Asks exactly what `account_mouth_key` refuses: a mouth that is not deleted. A deleted one
-  // holds no key since MICA-330, so a repeat of it imports as a new row rather than a skip.
+  // Asks exactly what `account_mouth_key` refuses: a mouth that is not hidden. A deleted one holds
+  // no key since MICA-330, nor an erased or expired one since MICA-428, so a repeat of it imports
+  // as a new row rather than a skip.
   repeats: async (accountId, postId) =>
     Boolean(
       await Database.scalar<number | null>(
-        "SELECT 1 FROM `mica_blabber` WHERE `account_id` = ? AND `mouth_of` = ? AND `status` <> 'deleted' LIMIT 1",
+        "SELECT 1 FROM `mica_blabber` WHERE `account_id` = ? AND `mouth_of` = ? AND `status` NOT IN ('deleted', 'expired', 'erased') LIMIT 1",
         [accountId, postId]
       )
     )

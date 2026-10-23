@@ -100,12 +100,13 @@ describe('seed characters', () => {
 });
 
 describe('clearSeed', () => {
-  it('never deletes a contact on a seed number that the seed did not write', async () => {
+  it('never erases a contact on a seed number that the seed did not write', async () => {
     // The defect: `DELETE FROM mica_contacts WHERE phone IN (...)` and nothing else,
     // so a player who had saved 5550101 themselves lost it whenever an admin ran
     // `micaseed clear`. A contact row carries no marker saying the seed wrote it, so
     // the delete has to match everything the seed would have written. Since MICA-431 the
-    // name is sealed, so it is matched after the rows are read and opened, and deleted by id.
+    // name is sealed, so it is matched after the rows are read and opened, and erased by id
+    // (MICA-428: kept, never removed).
     dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
       String(sql).startsWith('SELECT id, citizenid, device_id, firstname, lastname')
         ? contactsOn(await seedNumberOf(params))
@@ -123,9 +124,10 @@ describe('clearSeed', () => {
     expect(read.toSorted()).toEqual(SEED_CHARACTERS.map((c) => c.phone).toSorted());
     for (const [sql] of reads) expect(String(sql)).not.toMatch(/\bphone = \?/);
     const contactDeletes = dbMock.query.mock.calls.filter((c) =>
-      String(c[0]).includes('DELETE FROM mica_contacts')
+      String(c[0]).includes("UPDATE mica_contacts SET status = 'erased'")
     );
     for (const [sql] of contactDeletes) {
+      expect(String(sql)).toContain("AND status NOT IN ('moderated', 'erased')");
       // No name in SQL: it is sealed, and a comparison there would match nothing.
       expect(String(sql)).not.toMatch(/firstname|lastname/);
       expect(String(sql)).toContain('WHERE id IN');
@@ -135,46 +137,53 @@ describe('clearSeed', () => {
     expect(deleted).toEqual(SEED_CHARACTERS.map((_, i) => 100 + i));
   });
 
-  it('requires the seed license as well as the seed ids before touching players', async () => {
-    // The one delete that reaches the framework's own table. Two independent guards.
-    await clearSeed();
-
-    const call = queryFor('DELETE FROM players');
-    expect(call, 'the players delete should still happen').toBeDefined();
-
-    const [sql, params] = call!;
-    const flat = String(sql).replace(/\s+/g, ' ');
-    expect(flat).toContain('license = ?');
-    expect(flat).toContain('citizenid IN');
-    expect(params[0]).toBe('license:micaseed');
-    expect(params.slice(1).toSorted()).toEqual(SEED_CHARACTERS.map((c) => c.citizenid).toSorted());
-  });
-
-  it('deletes conversation children before their parent', async () => {
-    // Both child tables carry a foreign key onto the conversation, so the order is not
-    // cosmetic — reversing it fails on the constraint and leaves the seed half-removed.
+  it("leaves the framework's players rows alone, and deletes nothing anywhere (MICA-428)", async () => {
+    // The seed characters' `players` rows are the framework's, with no status to move: they
+    // stay, and the next `seedFor` reads them back rather than inserting them again.
     dbMock.query.mockResolvedValueOnce([{ conversation_id: 7 }]);
     await clearSeed();
 
-    const order = queries();
-    const messages = order.findIndex((q) => q.includes('DELETE FROM mica_messages WHERE'));
-    const participants = order.findIndex((q) => q.includes('mica_messages_participants'));
-    const conversations = order.findIndex((q) =>
-      q.includes('DELETE FROM mica_messages_conversations')
-    );
+    expect(queries().some((q) => /\bplayers\b/.test(q) && !q.startsWith('SELECT'))).toBe(false);
+    expect(queries().some((q) => /DELETE/.test(q))).toBe(false);
+  });
 
-    expect(messages).toBeGreaterThanOrEqual(0);
-    expect(messages).toBeLessThan(conversations);
-    expect(participants).toBeLessThan(conversations);
+  it("erases the seed's threads, their members and their messages, never a moderated one", async () => {
+    dbMock.query.mockResolvedValueOnce([{ conversation_id: 7 }]);
+    await clearSeed();
+
+    const erased = (table: string, column: string) =>
+      queryFor(`UPDATE ${table} SET status = 'erased', updated_at = updated_at`) &&
+      dbMock.query.mock.calls.find((c) => {
+        const sql = String(c[0]).replace(/\s+/g, ' ');
+        return (
+          sql.startsWith(`UPDATE ${table} SET status = 'erased'`) &&
+          sql.includes(`WHERE ${column} IN (?)`)
+        );
+      });
+    for (const [table, column] of [
+      ['mica_messages', 'conversation_id'],
+      ['mica_messages_participants', 'conversation_id'],
+      ['mica_messages_conversations', 'id']
+    ]) {
+      const call = erased(table, column);
+      expect(call, table).toBeDefined();
+      expect(String(call![0]).replace(/\s+/g, ' ')).toContain(
+        "AND status NOT IN ('moderated', 'erased')"
+      );
+      expect(call![1]).toEqual([7]);
+    }
+    // The members are marked left too, or they stay in the thread (MICA-428 review).
+    expect(String(erased('mica_messages_participants', 'conversation_id')![0])).toContain(
+      'left_at = COALESCE(left_at, CURRENT_TIMESTAMP)'
+    );
+    expect(String(erased('mica_messages', 'conversation_id')![0])).not.toContain('left_at');
   });
 
   it('touches no conversation table when the seed has no threads', async () => {
     dbMock.query.mockResolvedValue([]);
     await clearSeed();
 
-    expect(queries().some((q) => q.includes('DELETE FROM mica_messages_conversations'))).toBe(
-      false
-    );
+    expect(queries().some((q) => q.includes('UPDATE mica_messages_conversations'))).toBe(false);
   });
 });
 
@@ -229,6 +238,18 @@ describe('seedFor', () => {
     expect(
       dbMock.query.mock.calls.some((c) => String(c[0]).includes('INSERT INTO mica_contacts'))
     ).toBe(false);
+  });
+
+  it('seeds again after a clear: an erased contact or thread is not one the player has', async () => {
+    // `micaseed clear` erases rather than deletes (MICA-428), so the existence checks have to
+    // pass over what it erased, or a re-seed would find the cleared rows and add nothing.
+    await seedFor('REAL_PLAYER');
+    const contact = queryFor('SELECT id FROM mica_contacts WHERE');
+    expect(String(contact![0])).toContain("AND status <> 'erased'");
+    const thread = queryFor('FROM mica_messages_participants p JOIN mica_messages_participants q');
+    expect(String(thread![0]).replace(/\s+/g, ' ')).toContain(
+      "AND p.status <> 'erased' AND q.status <> 'erased'"
+    );
   });
 });
 
@@ -334,7 +355,7 @@ describe('MICA-165: seeded messages are sealed', () => {
     await clearSeed();
 
     const deleted = dbMock.query.mock.calls
-      .filter((c) => String(c[0]).includes('DELETE FROM mica_contacts'))
+      .filter((c) => String(c[0]).includes("UPDATE mica_contacts SET status = 'erased'"))
       .flatMap((c) => c[1] as number[])
       .toSorted((a, b) => a - b);
     expect(deleted).toEqual(SEED_CHARACTERS.map((_, i) => 100 + i));

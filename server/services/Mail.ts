@@ -40,25 +40,39 @@ import { withoutOwnerKeys } from '../lib/replyShape';
  */
 class MailRepository extends SchemaRepository<Mail> {
   /**
-   * Everything not deleted, newest first — archived mail still shows in the UI. Bodies are
-   * sealed at rest (MICA-165) and opened here; `*` carries the owner they are bound to.
+   * Everything not deleted, newest first — archived mail still shows in the UI. Nor erased or
+   * expired (MICA-428): kept for staff, shown to nobody, the owner included. Bodies are sealed
+   * at rest (MICA-165) and opened here; `*` carries the owner they are bound to.
    */
   async findAllByCitizenId(citizenid: string): Promise<Mail[]> {
     const query = `
             SELECT * FROM \`mica_mail\`
-            WHERE \`citizenid\` = ? AND \`status\` != 'deleted'
+            WHERE \`citizenid\` = ? AND \`status\` NOT IN ('deleted', 'erased', 'expired')
             ORDER BY \`created_at\` DESC
         `;
     return openRows(this.tableName, await Database.query<Mail[]>(query, [citizenid]));
   }
 
+  /**
+   * Only mail the inbox shows: `active` or `archived`. Not a row a moderator took down, nor
+   * one a purge erased (MICA-428), which is kept as it was and is not the player's to touch.
+   */
   async markAsRead(id: number, citizenid: string): Promise<boolean> {
-    const query = 'UPDATE `mica_mail` SET `read` = 1 WHERE `id` = ? AND `citizenid` = ?';
+    const query =
+      'UPDATE `mica_mail` SET `read` = 1 ' +
+      "WHERE `id` = ? AND `citizenid` = ? AND `status` IN ('active', 'archived')";
     return await Database.update(query, [id, citizenid]);
   }
 
+  /**
+   * Between `active` and `archived` only. Without the status in the `WHERE`, unarchiving wrote
+   * `active` over whatever the row was on: an erased letter came back to its owner after a
+   * privacy delete, and a taken-down one came back up (MICA-428 review).
+   */
   async archive(id: number, citizenid: string, archiveState: boolean = true): Promise<boolean> {
-    const query = 'UPDATE `mica_mail` SET `status` = ? WHERE `id` = ? AND `citizenid` = ?';
+    const query =
+      'UPDATE `mica_mail` SET `status` = ? ' +
+      "WHERE `id` = ? AND `citizenid` = ? AND `status` IN ('active', 'archived')";
     return await Database.update(query, [archiveState ? 'archived' : 'active', id, citizenid]);
   }
 

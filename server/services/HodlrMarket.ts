@@ -297,7 +297,7 @@ const tickMarket = (): void => {
  * along with the history, and hand the next restore an empty table — MICA-130's own
  * precondition, reached through MICA-130's own retry path.
  *
- * Two statements rather than one self-referencing `DELETE`, because MySQL refuses a
+ * Two statements rather than one self-referencing delete, because MySQL refuses a
  * subquery against the table being deleted from (error 1093) and the derived-table dodge
  * around it is harder to read than a second indexed lookup once an hour. An empty table
  * yields no id and `0` matches no row, since AUTO_INCREMENT starts at 1.

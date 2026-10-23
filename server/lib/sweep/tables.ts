@@ -4,8 +4,6 @@
 
 import { AUDIT_LOG_TABLE } from '../AuditLogger';
 import { declaredServices, type ColumnDef, type ColumnType } from '../defineService';
-import { OWNER_TABLE } from '../schemaSql';
-import { identifier } from './sql';
 
 /** The column every micaOS table names its owner in. */
 const OWNER_COLUMN = 'citizenid';
@@ -37,13 +35,10 @@ const asColumnDef = (spec: ColumnType | ColumnDef): ColumnDef =>
  *   gone, and the column name is the same test the primary tables have always passed.
  * - **`mica_audit_logs`**, which has no declaration behind it — see `AUDIT_LOG_TABLE`.
  *
- * Six further child tables hang off micaOS's *own* tables rather than off the owner
+ * Further child tables hang off micaOS's *own* tables rather than off the owner
  * (`mica_account_follows` → `mica_accounts(id)`, and friends). They are deliberately not
- * here: they carry no citizenid to key on, and their rows go with the parent by its foreign
- * key — when the plan lets the parent go (`CascadeOptions.dependents`). That is also why this
- * must issue real per-table `DELETE`s and never a `TRUNCATE` or anything under
- * `FOREIGN_KEY_CHECKS = 0` — either would orphan those six permanently, with nothing left to
- * find them by.
+ * here: they carry no citizenid to key on, and they stay as they are when the row they hang off
+ * is erased (MICA-428) — nothing is deleted, so nothing cascades.
  *
  * Computed on call, never at module scope: `declaredServices` is filled as a side effect of
  * each `defineService`, so a value captured at import time holds only the services that
@@ -74,75 +69,28 @@ export const ownedTables = (): OwnedTable[] => {
 };
 
 /**
- * Something an owned table's rows name outside the database — a photo on an image host
- * (MICA-243) — which must be released when the rows go, or it outlives them. MICA-292.
- *
- * The same two halves as retention's `RetentionExternal`, for the same reasons: `collect`
- * runs **before** the delete, since afterwards the rows and the reference are gone, and if it
- * throws that table is not deleted from at all — deleting the rows would strand whatever they
- * named. `release` runs after, with what `collect` answered, and decides for itself what is
- * still referenced, so collecting more than was deleted is safe and collecting less is the
- * only failure. It is caught and logged: the rows are already gone.
- *
- * `where` is SQL that is true for exactly the rows about to be deleted, qualifying the row
- * as `t`, with its parameters in order. It is built here from declared identifiers only.
+ * Whether `table` has a `status` column a purge can move (MICA-428). Every declared primary
+ * table does; a child table only when it declares one. A table without one is left alone by
+ * every purge until it gets one (MICA-429), and so is the audit ledger, which has none.
  */
-export interface OwnedExternal {
-  collect: (
-    where: { sql: string; params: readonly unknown[] },
-    limit: number
-  ) => Promise<readonly string[]>;
-  release: (refs: readonly string[]) => Promise<void>;
-}
-
-export const externals = new Map<string, OwnedExternal>();
-
-/**
- * Register what an owned table's rows name outside the database. Called by the owning service,
- * once — `server/lib` names no service's table itself (`sdk/coreBoundary.test.ts`).
- */
-export const registerOwnedExternal = (table: string, external: OwnedExternal): void => {
-  identifier(table, 'an owned table');
-  if (externals.has(table)) {
-    throw new Error(`registerOwnedExternal: '${table}' is already registered.`);
+export const hasStatus = (table: string): boolean => {
+  for (const service of declaredServices) {
+    if (service.table === table) return true;
+    const child = service.childTables.find((c) => c.name === table);
+    if (child) return child.columns.status !== undefined;
   }
-  externals.set(table, external);
+  return false;
 };
 
-/** A foreign key between two micaOS tables: `child.column` references `parent.parentColumn`. */
-export interface CascadeEdge {
-  child: string;
-  column: string;
-  parent: string;
-  parentColumn: string;
-  onDelete: 'CASCADE' | 'SET NULL' | 'RESTRICT';
-}
-
 /**
- * Every foreign key from one micaOS table to another, derived from the declarations — the same
- * walk `ownedTables` makes. `SET NULL` and `RESTRICT` are kept too: the first rewrites another
- * player's row, the second would fail the delete, and neither is something a purge should
- * reach into blind. A reference to the framework's owner table is not one of these; micaOS
- * declares none since MICA-300, and `schemaSql` refuses to emit one.
+ * Whether `table` has an `updated_at` an erase must pin. Every declared primary table does; a
+ * child table only when it declares one — `mica_darkchat_members` has a status and none.
  */
-export const cascadeEdges = (): CascadeEdge[] => {
-  const out: CascadeEdge[] = [];
-  const add = (child: string, column: string, spec: ColumnType | ColumnDef): void => {
-    const ref = asColumnDef(spec).references;
-    if (!ref || ref.table === OWNER_TABLE) return;
-    out.push({
-      child,
-      column,
-      parent: ref.table,
-      parentColumn: ref.column,
-      onDelete: ref.onDelete ?? 'CASCADE'
-    });
-  };
+export const hasUpdatedAt = (table: string): boolean => {
   for (const service of declaredServices) {
-    for (const { name, def } of service.fields) add(service.table, name, def);
-    for (const child of service.childTables) {
-      for (const [name, spec] of Object.entries(child.columns)) add(child.name, name, spec);
-    }
+    if (service.table === table) return true;
+    const child = service.childTables.find((c) => c.name === table);
+    if (child) return child.columns.updated_at !== undefined;
   }
-  return out;
+  return false;
 };

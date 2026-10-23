@@ -62,7 +62,7 @@ function declaredTypeOf(name: string): string {
     case 'pinned':
       return 'tinyint(1)';
     case 'status':
-      return "enum('active','deleted')";
+      return "enum('active','deleted','erased')";
     default:
       return 'timestamp';
   }

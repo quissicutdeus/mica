@@ -97,7 +97,7 @@ describe('ServiceEndpoint — payload cannot choose its own owner', () => {
 
     expect(dbMock.update.mock.calls[0][1]).toEqual(['renamed', 7, OWNER]);
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      "UPDATE `mica_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
+      "UPDATE `mica_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` NOT IN ('moderated', 'erased', 'expired')"
     );
   });
 
@@ -133,7 +133,7 @@ describe('ServiceEndpoint — payload field allowlist', () => {
     });
 
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      "UPDATE `mica_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
+      "UPDATE `mica_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` NOT IN ('moderated', 'erased', 'expired')"
     );
     expect(dbMock.update.mock.calls[0][1]).toEqual(['renamed', 7, OWNER]);
   });

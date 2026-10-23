@@ -31,7 +31,8 @@ export class MarketplaceRepository extends SchemaRepository<Listing> {
               m.mime_type, m.duration_ms, m.alt_text,
               m.citizenid AS media_citizenid, m.device_id AS media_device_id
          FROM \`mica_marketplace_attachments\` a
-         JOIN \`mica_media\` m ON a.media_id = m.id AND m.status <> 'moderated'
+         JOIN \`mica_media\` m ON a.media_id = m.id
+          AND m.status NOT IN ('moderated', 'expired', 'erased')
         WHERE a.listing_id IN (${placeholders})
         ORDER BY a.id ASC`,
       ids

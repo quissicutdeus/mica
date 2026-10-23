@@ -208,7 +208,17 @@ export const oneDecisionAbout = async <T>(
  * service, which owns that record, rather than written here: this file is core and names no
  * table (`mediaTable.test.ts`).
  */
-type OwnerDeletionRecorder = (table: ReportableTable, id: number) => Promise<void>;
+type OwnerDeletionRecorder = (
+  table: ReportableTable,
+  id: number,
+  status: OwnerDeletionStatus
+) => Promise<void>;
+
+/**
+ * What a reopen restores after the owner hid the row: `deleted` for their own delete, `erased`
+ * for a purge (MICA-428) — the privacy delete, a deleted character, the orphan sweep.
+ */
+export type OwnerDeletionStatus = 'deleted' | 'erased';
 let ownerDeletionRecorder: OwnerDeletionRecorder | null = null;
 
 /**
@@ -246,7 +256,8 @@ export const registerOwnerDeletionRecorder = (
  */
 export const recordOwnerDeletion = async (
   table: ReportableTable,
-  ids: readonly number[]
+  ids: readonly number[],
+  status: OwnerDeletionStatus = 'deleted'
 ): Promise<void> => {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return;
@@ -257,7 +268,7 @@ export const recordOwnerDeletion = async (
     );
   }
   for (const id of unique) {
-    await oneDecisionAbout(table, id, () => recorder(table, id));
+    await oneDecisionAbout(table, id, () => recorder(table, id, status));
   }
 };
 
@@ -385,6 +396,10 @@ export const moderateTarget = async (
  * Only while the row is still moderated: a row something else has moved since is not this
  * reopen's to overwrite, and answers false. `status` is checked for shape rather than trusted —
  * it is server-written, off the row itself, but it is about to be written back unscoped.
+ *
+ * The status only, never the owner: a takedown reopened after its phone changed hands comes
+ * back under the character who wrote it, since the handover never moves a moderated row
+ * (MICA-428). Right for evidence; the phone's new holder never wrote it.
  */
 export const restoreTarget = async (
   table: ReportableTable,

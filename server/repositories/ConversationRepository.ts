@@ -732,11 +732,15 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
   /**
    * The phone's live membership of a thread with a line, restored if it had left (MICA-275).
    *
-   * Not `addParticipant` alone: `conversation_device_unique` is on `(conversation_id,
-   * device_id)` and holds a left row too, so inserting a second row for a phone that left is
-   * a duplicate-key error rather than a rejoin. A `left` row is reopened and re-pointed at
-   * the phone's current holder; a phone with no row at all gets one; a live row is left
-   * alone. `removed` and `moderated` are never reopened.
+   * Not `addParticipant` alone: `conversation_live_device` is on `(conversation_id,
+   * live_device)` — the phone, on every row but an erased one — and holds a left row too, so
+   * inserting a second row for a phone that left is a duplicate-key error rather than a rejoin.
+   * A `left` row is reopened and re-pointed at the phone's current holder; a phone with no row
+   * at all gets one; a live row is left alone. `removed` and `moderated` are never reopened.
+   *
+   * An erased row is never reopened either, and holds no seat (MICA-428): it is a dead or
+   * deleted character's, which the handover leaves naming them, so the phone's next holder
+   * gets a row of their own beside it.
    *
    * Reached only from `openLineThread`, after `findExternalThread` matched this phone as one
    * side of the thread's pair columns, so it can only ever restore the phone the thread is
@@ -784,10 +788,13 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * what is being changed, so no ownership predicate could express it.
    */
   async transferParticipants(deviceId: string, citizenid: string): Promise<boolean> {
+    // Never an erased, expired or taken-down membership (MICA-428 review): its citizenid is
+    // the member it was, kept as evidence, as `transferDeviceRows` keeps every other table's.
     return await Database.update(
       `UPDATE mica_messages_participants
           SET citizenid = ?, updated_at = updated_at
-        WHERE device_id = ? AND citizenid <> ?`,
+        WHERE device_id = ? AND citizenid <> ?
+          AND status NOT IN ('erased', 'expired', 'moderated')`,
       [citizenid, deviceId, citizenid]
     );
   }
@@ -1100,7 +1107,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     if (typeof canonical !== 'number' || canonical === conversationId) return conversationId;
 
     const messages = await Database.scalar<number>(
-      `SELECT COUNT(*) FROM mica_messages WHERE conversation_id = ? AND status <> 'deleted'`,
+      `SELECT COUNT(*) FROM mica_messages WHERE conversation_id = ? AND status NOT IN ('deleted', 'expired', 'erased')`,
       [conversationId]
     );
     if (Number(messages) > 0) return conversationId;

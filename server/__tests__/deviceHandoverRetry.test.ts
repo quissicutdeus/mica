@@ -76,7 +76,7 @@ let gates: Record<string, Promise<void>[]>;
 let reads: string[];
 
 const TRANSFER =
-  /^UPDATE `(mica_\w+)` SET `citizenid` = \?.* WHERE `device_id` = \? AND `citizenid` <> \?$/;
+  /^UPDATE `(mica_\w+)` SET `citizenid` = \?.* WHERE `device_id` = \? AND `citizenid` <> \?( AND `status` NOT IN \('erased', 'expired', 'moderated'\))?$/;
 
 const holders = (table: string) => tables[table].map((row) => row.citizenid);
 

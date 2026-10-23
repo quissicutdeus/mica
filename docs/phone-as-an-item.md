@@ -203,26 +203,28 @@ moment the buyer uses the phone.
 
 What already covers some of that:
 
-- **The orphan sweep** (`server/lib/orphanSweep.ts`) deletes the rows of a
-  _character_ that no longer exists. It runs at resource start and when another
-  server resource triggers `mica:server:shell:characterDeleted` with a
-  citizenid. On qb it is a backstop for the schema's own `ON DELETE CASCADE`; on
-  ESX it is the cascade. Delete the character and every phone they ever held
-  goes with them. It does nothing for a destroyed phone whose owner still plays.
-- **Notification retention** (`mica_notification_retention`, 30 days) prunes old
+- **The orphan sweep** (`server/lib/orphanSweep.ts`) hides the rows of a
+  _character_ that no longer exists (`erased`, MICA-428: nothing is deleted). It
+  runs at resource start and when another server resource triggers
+  `mica:server:shell:characterDeleted` with a citizenid. On qb it is a backstop
+  for the schema's old `ON DELETE CASCADE`; on ESX it is the cleanup. It leaves
+  the device rows live: the phone item can outlive its character, and the next
+  holder needs its `mica_devices` row. It does nothing for a destroyed phone
+  whose owner still plays.
+- **Notification retention** (`mica_notification_retention`, 30 days) hides old
   notifications on every phone, destroyed or not.
-- **Media retention** (`mica_media_retention`, off by default) hard-deletes
-  media older than the window, and `micamedia prune` from the console runs that
-  and the media orphan sweep now (`docs/in-game-commands.md`).
+- **Media retention** (`mica_media_retention`, off by default) expires media
+  older than the window, keeping the row, and `micamedia prune` from the console
+  runs that and the media orphan sweep now (`docs/in-game-commands.md`).
 - **`mica_restore_window_days`** (30) is how long a soft-deleted contact, note
   or photo stays restorable. It deletes nothing past the window, on purpose:
   moderation depends on a soft-deleted row surviving.
 
 There is no export or command today that says "this phone id is gone, drop its
 rows". On a server where phones are destroyed often, the abandoned rows are
-small and inert, but they are not reclaimed until the character is. An owner who
-needs that has to delete `WHERE device_id = ?` by hand across the device-owned
-tables, in the order `docs/schema-and-services.md` lists them.
+small and inert, and they are never reclaimed: nothing deletes a row. An owner
+who needs that has to delete `WHERE device_id = ?` by hand across the
+device-owned tables, in the order `docs/schema-and-services.md` lists them.
 
 ## A burner
 

@@ -11,8 +11,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * the bookkeeping — `information_schema` and the grace markers in the migrations ledger — and
  * the pruned table serves ids in batches. What the suite proves: which convar each table reads
  * and what it falls back to; that no statement against a pruned table names more than a batch;
- * that every hold is in *both* the select and the delete; that children follow only parents
- * that are gone; the grace, the index gate and the schedule. That MariaDB and MySQL accept these
+ * that every hold is in *both* the select and the update; that nothing is deleted — an expired
+ * row moves to `expired` and its children stay (MICA-428); the grace, the index gate and the
+ * schedule. That MariaDB and MySQL accept these
  * statements and keep the right rows was checked against real `mariadb:11` and `mysql:8`
  * containers during MICA-167; `pnpm test:schema` does not execute them.
  */
@@ -113,18 +114,20 @@ const bookkeeping = (text: string, params: unknown[]): unknown => {
   if (text.includes('information_schema.STATISTICS')) {
     return [{ n: db.unindexed.has(String(params[0])) ? 0 : 1 }];
   }
-  if (text.startsWith('SELECT `id`, TIMESTAMPDIFF')) {
+  if (text.startsWith('SELECT m.`id` AS `id`, TIMESTAMPDIFF')) {
+    // A marker announced before the table's off marker is void (MICA-428): older is a larger age.
     const pattern = like(String(params[0]));
-    return [...db.markers].filter(([id]) => pattern.test(id)).map(([id, age]) => ({ id, age }));
+    const off = db.markers.get(String(params[1]));
+    return [...db.markers]
+      .filter(([id, age]) => pattern.test(id) && (off === undefined || off >= age))
+      .map(([id, age]) => ({ id, age }));
   }
-  if (text.startsWith('INSERT IGNORE INTO `mica_schema_migrations`')) {
-    const id = String(params[0]);
-    if (!db.markers.has(id)) db.markers.set(id, 0);
+  if (
+    text.startsWith('INSERT INTO `mica_schema_migrations` (`id`) VALUES (?) ON DUPLICATE KEY') &&
+    text.endsWith('UPDATE `applied_at` = CURRENT_TIMESTAMP')
+  ) {
+    db.markers.set(String(params[0]), 0);
     return { affectedRows: 1 };
-  }
-  if (text.startsWith('DELETE FROM `mica_schema_migrations`')) {
-    for (const id of params) db.markers.delete(String(id));
-    return { affectedRows: params.length };
   }
   if (text.startsWith('SELECT COUNT(*) AS `n` FROM `mica_')) return [{ n: db.count }];
   return undefined;
@@ -132,7 +135,7 @@ const bookkeeping = (text: string, params: unknown[]): unknown => {
 
 /**
  * `table` holds `total` expired rows. Each select serves the next batch of ids, capped at the
- * LIMIT it was asked for; each delete removes exactly the ids it named.
+ * LIMIT it was asked for; each update moves exactly the ids it named.
  */
 const expired = (table: string, total: number) => {
   let next = 1;
@@ -147,7 +150,7 @@ const expired = (table: string, total: number) => {
       while (ids.length < limit && next <= total) ids.push({ id: next++ });
       return ids;
     }
-    if (text.startsWith(`DELETE FROM \`${table}\` WHERE \`id\` IN`)) {
+    if (text.startsWith(`UPDATE \`${table}\` SET \`status\` = ?`)) {
       const marks = /IN \(([?, ]+)\)/.exec(text)![1].split(',').length;
       return { affectedRows: marks };
     }
@@ -157,8 +160,7 @@ const expired = (table: string, total: number) => {
 
 const selects = (table?: string) =>
   calls().filter((c) => c.sql.startsWith(`SELECT t.\`id\` FROM \`${table ?? ''}`));
-const deletesFrom = (table: string) =>
-  calls().filter((c) => c.sql.startsWith(`DELETE FROM \`${table}\``));
+const expiresOf = (table: string) => calls().filter((c) => c.sql.startsWith(`UPDATE \`${table}\``));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -249,18 +251,32 @@ describe('each table reads its own convar', () => {
     const select = selects('mica_blabber_dms')[0];
     expect(select.sql).toContain('t.`created_at` < NOW() - INTERVAL ? DAY');
     expect(select.params[0]).toBe(10);
-    const remove = deletesFrom('mica_blabber_dms')[0];
+    const remove = expiresOf('mica_blabber_dms')[0];
     expect(remove.sql).toContain('`created_at` < NOW() - INTERVAL ? DAY');
-    expect(remove.params[1]).toBe(10);
+    expect(remove.params[2]).toBe(10);
   });
 
-  it('deletes nothing from the table while it is off', async () => {
+  it('expires only active rows, to expired, and keeps updated_at (MICA-428)', async () => {
+    expired('mica_messages', 2);
+
+    await pruneTable(policy('mica_messages'));
+
+    const select = selects('mica_messages')[0];
+    expect(select.sql).toContain("WHERE t.`status` = 'active' AND t.`created_at` <");
+    const update = expiresOf('mica_messages')[0];
+    expect(update.sql).toMatch(
+      /^UPDATE `mica_messages` SET `status` = \?, `updated_at` = `updated_at` WHERE `id` IN \(\?, \?\) AND `status` = 'active' AND /
+    );
+    expect(update.params.slice(0, 3)).toEqual(['expired', 1, 2]);
+  });
+
+  it('hides nothing in the table while it is off', async () => {
     withConvar({ mica_message_retention: '0' });
     expired('mica_messages', 5);
 
     expect(await pruneTable(policy('mica_messages'))).toBe(0);
     expect(selects()).toEqual([]);
-    expect(deletesFrom('mica_messages')).toEqual([]);
+    expect(expiresOf('mica_messages')).toEqual([]);
   });
 });
 
@@ -273,13 +289,13 @@ describe('batching', () => {
     await vi.runAllTimersAsync();
 
     expect(await run).toBe(RETENTION_BATCH * 2 + 3);
-    const onTable = [...selects('mica_messages'), ...deletesFrom('mica_messages')];
+    const onTable = [...selects('mica_messages'), ...expiresOf('mica_messages')];
     expect(selects('mica_messages')).toHaveLength(3);
-    expect(deletesFrom('mica_messages')).toHaveLength(3);
+    expect(expiresOf('mica_messages')).toHaveLength(3);
     for (const statement of onTable) {
       expect(statement.sql).toMatch(new RegExp(`LIMIT ${RETENTION_BATCH}$`));
     }
-    for (const statement of deletesFrom('mica_messages')) {
+    for (const statement of expiresOf('mica_messages')) {
       const ids = /IN \(([?, ]+)\)/.exec(statement.sql)![1].split(',').length;
       expect(ids).toBeLessThanOrEqual(RETENTION_BATCH);
     }
@@ -309,57 +325,31 @@ describe('batching', () => {
     expect(console.warn).toHaveBeenCalled();
   });
 
-  it('removes its own children with it, and only those of rows that are gone', async () => {
-    expired('mica_messages', 2);
+  it('leaves its own children as they are, and deletes nothing anywhere (MICA-428)', async () => {
+    for (const table of ['mica_messages', 'mica_blabber_dms', 'mica_media']) {
+      dbMock.query.mockClear();
+      expired(table, 2);
 
-    await pruneTable(policy('mica_messages'));
+      await pruneTable(policy(table));
 
-    const children = calls().filter(
-      (c) =>
-        c.sql.startsWith('DELETE FROM `mica_messages_attachments`') ||
-        c.sql.startsWith('DELETE FROM `mica_messages_reactions`')
-    );
-    expect(children).toHaveLength(2);
-    for (const child of children) {
-      expect(child.sql).toContain('`message_id` IN (?, ?)');
-      expect(child.sql).toContain('NOT EXISTS (SELECT 1 FROM `mica_messages` p WHERE p.`id` =');
-      expect(child.params).toEqual([1, 2]);
+      expect(calls().some((c) => /DELETE/.test(c.sql))).toBe(false);
+      const writes = calls().filter((c) => /^(UPDATE|INSERT)/.test(c.sql));
+      expect(writes.map((c) => /^(?:UPDATE|INSERT INTO) `(\w+)`/.exec(c.sql)![1])).toEqual([table]);
     }
-  });
-
-  it('never deletes another service’s rows that point at media', async () => {
-    expired('mica_media', 3);
-
-    await pruneTable(policy('mica_media'));
-
-    const statements = calls().filter((c) => c.sql.startsWith('DELETE FROM'));
-    expect(statements.map((c) => /DELETE FROM `(\w+)`/.exec(c.sql)![1])).toEqual(['mica_media']);
-  });
-
-  it('scopes the DM reactions it removes to DMs, since that table is shared', async () => {
-    expired('mica_blabber_dms', 1);
-
-    await pruneTable(policy('mica_blabber_dms'));
-
-    const reactions = calls().find((c) =>
-      c.sql.startsWith('DELETE FROM `mica_account_reactions`')
-    )!;
-    expect(reactions.sql).toContain('`target_id` IN (?) AND `target_table` = ?');
-    expect(reactions.params).toEqual([1, 'mica_blabber_dms']);
   });
 });
 
 describe('holds', () => {
   const OPEN = "r.`status` = 'active' AND r.`resolution` = 'pending'";
 
-  /** The select and the delete for one prune of `table`, with the hold SQL each carried. */
+  /** The select and the update for one prune of `table`, with the hold SQL each carried. */
   const bothStatements = async (table: string) => {
     expired(table, 1);
     await pruneTable(policy(table));
-    return { select: selects(table)[0], remove: deletesFrom(table)[0] };
+    return { select: selects(table)[0], remove: expiresOf(table)[0] };
   };
 
-  it('an open report on the row itself, in the select and again in the delete', async () => {
+  it('an open report on the row itself, in the select and again in the update', async () => {
     const { select, remove } = await bothStatements('mica_messages');
 
     expect(select.sql).toContain(
@@ -374,18 +364,19 @@ describe('holds', () => {
   /**
    * MICA-426: once its report is actioned, the open-report hold no longer names a moderated row,
    * and every prune took it at its age — so a reopen found nothing to put back. The row's own
-   * status holds it, in every retained table, in the select and again in the delete.
+   * status holds it, in every retained table, in the select and again in the update.
    */
   it.each(['mica_messages', 'mica_blabber_dms', 'mica_media'])(
-    '%s: a moderated row is held, in the select and again in the delete',
+    '%s: a moderated row is held, in the select and again in the update',
     async (table) => {
       const { select, remove } = await bothStatements(table);
 
       expect(select.sql).toContain(`AND ${OPEN}) AND t.\`status\` <> 'moderated'`);
       expect(remove.sql).toContain(`AND ${OPEN}) AND \`${table}\`.\`status\` <> 'moderated'`);
-      // Only `moderated`: a row its author deleted ages out as it always did.
+      // A row its author deleted stays `deleted`: only an `active` one expires (MICA-428).
       for (const statement of [select, remove]) {
         expect(statement.sql).not.toMatch(/`status` (=|<>|!=) 'deleted'/);
+        expect(statement.sql).toMatch(/`status` = 'active'/);
       }
     }
   );
@@ -438,13 +429,20 @@ describe('holds', () => {
     const { select, remove } = await bothStatements('mica_blabber_dms');
 
     expect(select.params).toEqual([90, 'mica_blabber_dms', 'mica_accounts', 'mica_blabber_dms']);
-    expect(remove.params).toEqual([1, 90, 'mica_blabber_dms', 'mica_accounts', 'mica_blabber_dms']);
+    expect(remove.params).toEqual([
+      'expired',
+      1,
+      90,
+      'mica_blabber_dms',
+      'mica_accounts',
+      'mica_blabber_dms'
+    ]);
     for (const statement of [select, remove]) {
       expect((statement.sql.match(/\?/g) ?? []).length).toBe(statement.params.length);
     }
   });
 
-  it('media: every attaching table is found, and holds while its parent row exists', () => {
+  it('media: every attaching table is found, and holds while its parent row is shown', () => {
     const refs = liveReferences('mica_media');
 
     expect(refs).toEqual(
@@ -477,16 +475,19 @@ describe('holds', () => {
     ['mica_blabber_attachments', 'media_id', 'mica_blabber', 'blab_id'],
     ['mica_marketplace_attachments', 'media_id', 'mica_marketplace', 'listing_id']
   ]) {
-    it(`media: a photo attached through ${child} is held in the select and the delete`, async () => {
+    it(`media: a photo attached through ${child} is held in the select and the update`, async () => {
       const { select, remove } = await bothStatements('mica_media');
 
       for (const [statement, row] of [
         [select, 't'],
         [remove, '`mica_media`']
       ] as const) {
+        // A parent kept but hidden — deleted, expired, erased (MICA-428) — holds nothing.
         expect(statement.sql).toContain(
           `NOT EXISTS (SELECT 1 FROM \`${child}\` a JOIN \`${parent}\` p ` +
-            `ON p.\`id\` = a.\`${parentColumn}\` WHERE a.\`${column}\` = ${row}.\`id\`)`
+            `ON p.\`id\` = a.\`${parentColumn}\` ` +
+            "AND p.`status` NOT IN ('deleted', 'expired', 'erased') " +
+            `WHERE a.\`${column}\` = ${row}.\`id\`)`
         );
       }
     });
@@ -502,7 +503,8 @@ describe('holds', () => {
       c.sql.startsWith('SELECT COUNT(*) AS `n` FROM `mica_media`')
     )!;
     expect(count.sql).toBe(
-      'SELECT COUNT(*) AS `n` FROM `mica_media` t WHERE t.`created_at` < NOW() - INTERVAL ? DAY AND ' +
+      "SELECT COUNT(*) AS `n` FROM `mica_media` t WHERE t.`status` = 'active' " +
+        'AND t.`created_at` < NOW() - INTERVAL ? DAY AND ' +
         holdClause(policy('mica_media'), 't').sql
     );
   });
@@ -519,9 +521,17 @@ describe('holds', () => {
 });
 
 describe('the first-run grace', () => {
-  const markerWrites = () => calls().filter((c) => c.sql.startsWith('INSERT IGNORE INTO'));
+  /** Window announcements; a switch-off writes `retention-off:` instead (`offWrites`). */
+  const markerWrites = () =>
+    calls().filter(
+      (c) => c.sql.startsWith('INSERT INTO') && String(c.params[0]).startsWith('retention:')
+    );
+  const offWrites = () =>
+    calls().filter(
+      (c) => c.sql.startsWith('INSERT INTO') && String(c.params[0]).startsWith('retention-off:')
+    );
 
-  it('on the first start: counts, writes the marker, warns once, and deletes nothing', async () => {
+  it('on the first start: counts, writes the marker, warns once, and hides nothing', async () => {
     // A pinned clock makes the announced deadline exact; afterEach restores real timers.
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-01T12:00:00.000Z'));
@@ -530,7 +540,7 @@ describe('the first-run grace', () => {
 
     expect(await pruneTable(policy('mica_messages'))).toBe(0);
 
-    expect(deletesFrom('mica_messages')).toEqual([]);
+    expect(expiresOf('mica_messages')).toEqual([]);
     expect(selects()).toEqual([]);
     expect(markerWrites()).toHaveLength(1);
     expect(markerWrites()[0].sql).toContain('`mica_schema_migrations`');
@@ -538,9 +548,9 @@ describe('the first-run grace', () => {
     expect(console.warn).toHaveBeenCalledTimes(1);
     const line = String((console.warn as any).mock.calls[0][0]);
     expect(line).toMatch(
-      /^\[mica\] retention: 42 mica_messages rows are older than 180 days and will be deleted from \S+Z\. Set mica_message_retention "0" to keep them forever\.$/
+      /^\[mica\] retention: 42 mica_messages rows are older than 180 days and will be hidden from \S+Z\. Every row is kept; set mica_message_retention "0" to keep showing them\.$/
     );
-    const deadline = Date.parse(/deleted from (\S+)\. /.exec(line)![1]);
+    const deadline = Date.parse(/hidden from (\S+)\. /.exec(line)![1]);
     expect(deadline).toBe(Date.now() + RETENTION_GRACE_MS);
   });
 
@@ -553,7 +563,7 @@ describe('the first-run grace', () => {
 
     expect(await pruneTable(policy('mica_messages'))).toBe(0);
 
-    expect(deletesFrom('mica_messages')).toEqual([]);
+    expect(expiresOf('mica_messages')).toEqual([]);
     expect(markerWrites()).toEqual([]);
     expect(console.warn).not.toHaveBeenCalled();
     const line = String((console.log as any).mock.calls.at(-1)[0]);
@@ -576,15 +586,15 @@ describe('the first-run grace', () => {
     expired('mica_messages', 5);
 
     await pruneTable(policy('mica_messages'));
-    expect(deletesFrom('mica_messages')).toEqual([]);
+    expect(expiresOf('mica_messages')).toEqual([]);
 
     db.markers.set('retention:mica_messages:180d', DAY_S);
     await vi.advanceTimersByTimeAsync(RETENTION_GRACE_MS);
 
-    expect(deletesFrom('mica_messages').length).toBeGreaterThan(0);
+    expect(expiresOf('mica_messages').length).toBeGreaterThan(0);
   });
 
-  it('deletes nothing ever when the convar is set to 0 during the grace', async () => {
+  it('hides nothing ever when the convar is set to 0 during the grace', async () => {
     vi.useFakeTimers();
     db.markers.clear();
     expired('mica_messages', 5);
@@ -594,7 +604,7 @@ describe('the first-run grace', () => {
     await vi.advanceTimersByTimeAsync(RETENTION_GRACE_MS + RETENTION_INTERVAL_MS);
     await runRetention();
 
-    expect(deletesFrom('mica_messages')).toEqual([]);
+    expect(expiresOf('mica_messages')).toEqual([]);
   });
 
   it('a shorter window is a fresh announcement, with its own 24 hours', async () => {
@@ -653,13 +663,13 @@ describe('the first-run grace', () => {
 
     expect(await pruneTable(policy('mica_messages'))).toBe(0);
 
-    const read = calls().find((c) => c.sql.startsWith('SELECT `id`, TIMESTAMPDIFF'))!;
-    expect(read.params).toEqual(['retention:mica_messages:%']);
+    const read = calls().find((c) => c.sql.startsWith('SELECT m.`id` AS `id`, TIMESTAMPDIFF'))!;
+    expect(read.params).toEqual(['retention:mica_messages:%', 'retention-off:mica_messages']);
     expect(String(read.params[0])).not.toContain('\\');
     expect(markerWrites()[0].params).toEqual(['retention:mica_messages:180d']);
   });
 
-  it('forgetting deletes exact ids, never by pattern', async () => {
+  it('forgetting writes an off marker for the table, and deletes no marker (MICA-428)', async () => {
     db.markers.clear();
     db.markers.set('retention:mica_messages:180d', DAY_S);
     db.markers.set('retention:micaXmessages:1d', DAY_S);
@@ -667,10 +677,18 @@ describe('the first-run grace', () => {
 
     await pruneTable(policy('mica_messages'));
 
-    const forget = calls().find((c) => c.sql.startsWith('DELETE FROM `mica_schema_migrations`'))!;
-    expect(forget.sql).toContain('WHERE `id` IN (?)');
-    expect(forget.params).toEqual(['retention:mica_messages:180d']);
-    expect([...db.markers.keys()]).toEqual(['retention:micaXmessages:1d']);
+    expect(offWrites().map((c) => c.params)).toEqual([['retention-off:mica_messages']]);
+    expect(calls().some((c) => /DELETE/.test(c.sql))).toBe(false);
+    expect([...db.markers.keys()].toSorted()).toEqual([
+      'retention-off:mica_messages',
+      'retention:micaXmessages:1d',
+      'retention:mica_messages:180d'
+    ]);
+
+    // Written once: a table left off is not rewritten every six hours.
+    dbMock.query.mockClear();
+    await pruneTable(policy('mica_messages'));
+    expect(offWrites()).toEqual([]);
   });
 
   it('switching off forgets the announcement, so switching back on starts a fresh grace', async () => {
@@ -680,7 +698,9 @@ describe('the first-run grace', () => {
 
     withConvar({ mica_message_retention: 'off' });
     await pruneTable(policy('mica_messages'));
-    expect([...db.markers.keys()]).toEqual(['retention:mica_media:365d']);
+    // Kept, and void: announced before the off marker.
+    expect(db.markers.has('retention:mica_messages:180d')).toBe(true);
+    expect(db.markers.get('retention-off:mica_messages')).toBe(0);
 
     withConvar({});
     expired('mica_messages', 3);
@@ -688,15 +708,17 @@ describe('the first-run grace', () => {
     expect(markerWrites()[0].params).toEqual(['retention:mica_messages:180d']);
   });
 
-  it('deletes nothing when the ledger cannot be read', async () => {
+  it('hides nothing when the ledger cannot be read', async () => {
     dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
       const text = flat(sql);
-      if (text.startsWith('SELECT `id`, TIMESTAMPDIFF')) throw new Error('lock wait timeout');
+      if (text.startsWith('SELECT m.`id` AS `id`, TIMESTAMPDIFF')) {
+        throw new Error('lock wait timeout');
+      }
       return bookkeeping(text, params) ?? [{ id: 1 }];
     });
 
     await expect(pruneTable(policy('mica_messages'))).rejects.toThrow();
-    expect(deletesFrom('mica_messages')).toEqual([]);
+    expect(expiresOf('mica_messages')).toEqual([]);
   });
 });
 
@@ -735,7 +757,7 @@ describe('what apply brings', () => {
       .map((c: unknown[]) => String(c[0]))
       .filter((l: string) => l.includes('mica_schema_migrations does not exist yet'));
     expect(ledgerLines).toHaveLength(1);
-    expect(deletesFrom('mica_messages')).toEqual([]);
+    expect(expiresOf('mica_messages')).toEqual([]);
   });
 });
 

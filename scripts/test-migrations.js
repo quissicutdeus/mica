@@ -84,13 +84,14 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * `runWedgedPairsMigration` to 459, and MICA-330's `runMouthKeyMigration`s (18 on each shape)
  * to 495, and MICA-388's `runApplyCreatesMissingTables` (9 on each shape, over a current ledger
  * and over an empty one) to 531, and MICA-389's `runApplyFinishesHalfCreated` (11 on each
- * shape) to 553, and MICA-432's `runBlindIndexMigration`s (10 on each shape) to 573 — so the
- * margin here is eight again.
+ * shape) to 553, and MICA-432's `runBlindIndexMigration`s (10 on each shape) to 573, and
+ * MICA-428's `runHiddenRowsMigration`s (13 on each shape) to 599 — so the margin here is eight
+ * again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 565;
+const MINIMUM_CHECKS = 599;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -451,8 +452,8 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
 
   const participantIndexes = await indexesOn(connection, 'mica_messages_participants');
   check(
-    `${schemaFile}: the unique participant key is on, per phone (MICA-282)`,
-    participantIndexes.includes('conversation_device_unique (unique)'),
+    `${schemaFile}: the unique participant key is on, per phone (MICA-282), over the live one (MICA-428)`,
+    participantIndexes.includes('conversation_live_device (unique)'),
     true
   );
   check(
@@ -609,16 +610,23 @@ const seedSweepRows = async (connection, live, gone) => {
 const rowsIn = async (connection, table) =>
   Number(await scalar(connection, `SELECT COUNT(*) FROM ${table}`));
 
+/** Rows still shown: `active`. An erase (MICA-428) hides a row and keeps it. */
+const shownIn = async (connection, table) =>
+  Number(await scalar(connection, `SELECT COUNT(*) FROM ${table} WHERE status = 'active'`));
+
 /**
  * MICA-152, against a real server rather than a mocked `Database`.
  *
  * The unit suite asserts the SQL as text, which cannot tell you whether MariaDB accepts
- * `DELETE … WHERE NOT EXISTS … LIMIT n`, and cannot tell you what an empty owner table
+ * `UPDATE … WHERE NOT EXISTS … LIMIT n`, and cannot tell you what an empty owner table
  * actually does. Those are the two questions worth a container.
  *
+ * Since MICA-428 the sweep erases rather than deletes: an orphan moves to `erased` and stays.
+ * So every count below is of rows still shown, beside the rows still there.
+ *
  * **The fail-closed cases are the point.** A sweep that reads "I cannot see the owner table"
- * as "everything is an orphan" deletes every row on the server while logging a success, so
- * each case below breaks exactly one precondition and asserts the row counts did not move —
+ * as "everything is an orphan" erases every row on the server while logging a success, so
+ * each case below breaks exactly one precondition and asserts the shown counts did not move —
  * not merely that the return value was zero, which a guard that stopped running would also
  * produce.
  */
@@ -690,8 +698,8 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
     await seedSweepRows(connection, live, gone);
 
     const intact = await server.sweepOrphanedRows();
-    check(`${label}: with both characters alive the sweep removes nothing`, intact.removed, 0);
-    check(`${label}: and leaves every row where it was`, await rowsIn(connection, 'mica_notes'), 3);
+    check(`${label}: with both characters alive the sweep erases nothing`, intact.erased, 0);
+    check(`${label}: and leaves every row shown`, await shownIn(connection, 'mica_notes'), 3);
 
     await connection.query(`DELETE FROM ${ownerTable} WHERE ${ownerColumn} = ?`, [gone]);
     check(
@@ -710,10 +718,14 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
     sweptResult.failures.map((f) => f.table),
     []
   );
-  check(`${label}: the orphans are gone`, await rowsIn(connection, 'mica_notes'), 1);
   check(
-    `${label}: the live character kept their contact`,
-    await rowsIn(connection, 'mica_contacts'),
+    `${label}: the orphans are hidden, and kept`,
+    [await shownIn(connection, 'mica_notes'), await rowsIn(connection, 'mica_notes')],
+    [1, 3]
+  );
+  check(
+    `${label}: the live character kept their contact shown`,
+    await shownIn(connection, 'mica_contacts'),
     1
   );
 
@@ -726,10 +738,10 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   };
 
   const refuses = async (why, expected) => {
-    const before = await rowsIn(connection, 'mica_notes');
+    const before = await shownIn(connection, 'mica_notes');
     const result = await server.sweepOrphanedRows();
     check(`${label}: ${why} — refuses with '${expected}'`, result.skipped, expected);
-    check(`${label}: ${why} — DELETED NOTHING`, await rowsIn(connection, 'mica_notes'), before);
+    check(`${label}: ${why} — ERASED NOTHING`, await shownIn(connection, 'mica_notes'), before);
   };
 
   await reseed();
@@ -763,16 +775,16 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   // that just deleted the character, so there is no absence of evidence to misread. It has
   // to keep working on exactly the servers where the owner row is already gone.
   const purge = await server.purgeOwnedRows(gone);
-  check(`${label}: the purge works with no framework at all`, purge.removed > 0, true);
+  check(`${label}: the purge works with no framework at all`, purge.erased > 0, true);
   check(
-    `${label}: the purge left the live character alone`,
-    await rowsIn(connection, 'mica_notes'),
-    1
+    `${label}: the purge left the live character shown, and kept every row`,
+    [await shownIn(connection, 'mica_notes'), await rowsIn(connection, 'mica_notes')],
+    [1, 3]
   );
   check(
-    `${label}: the purge reached the audit ledger`,
+    `${label}: the purge leaves the audit ledger, which has no status, as it was`,
     await rowsIn(connection, 'mica_audit_logs'),
-    0
+    1
   );
 
   server.__setResourceLookup();
@@ -826,6 +838,23 @@ const renamedTable = (table) => (table === 'mica_phones' ? 'mica_devices' : tabl
  * after it in the same apply, as it would on a server, and the scenario judges the end state.
  */
 const regressDeviceNames = async (connection) => {
+  // 0015 (MICA-428) put three of the keys 0008 renames over a status-aware copy of the phone.
+  // Undone first, and pending again, so the apply rebuilds them after 0008 as a server would.
+  await connection.query(
+    'ALTER TABLE mica_settings DROP KEY live_device_app_key, DROP COLUMN live_device, ' +
+      'ADD UNIQUE KEY device_app_key (device_id, app, setting_key)'
+  );
+  await connection.query(
+    'ALTER TABLE mica_blocklist DROP KEY live_device_number, DROP COLUMN live_device, ' +
+      'ADD UNIQUE KEY device_number_unique (device_id, number)'
+  );
+  await connection.query(
+    'ALTER TABLE mica_messages_participants DROP KEY conversation_live_device, ' +
+      'DROP COLUMN live_device, ADD UNIQUE KEY conversation_device_unique (conversation_id, device_id)'
+  );
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [
+    HIDDEN_ROWS_MIGRATION
+  ]);
   await connection.query('RENAME TABLE mica_devices TO mica_phones');
   for (const table of RENAMED_TABLES) {
     const changes = [
@@ -982,9 +1011,10 @@ const runNumberMigration = async ({ connection, schemaFile, hasPlayers, server }
   }
 
   const run = await server.runPendingMigrations();
-  check(`${label}: the migration applied, and 0008 after it`, run.applied, [
+  check(`${label}: the migration applied, and 0008 and 0015 after it`, run.applied, [
     NUMBER_MIGRATION,
-    RENAME_MIGRATION
+    RENAME_MIGRATION,
+    HIDDEN_ROWS_MIGRATION
   ]);
   check(`${label}: and failed nothing`, run.failed, null);
 
@@ -1261,11 +1291,12 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
   );
 
   const run = await server.runPendingMigrations();
-  check(`${label}: the migration applied, and 0008, 0010 and 0014 after it`, run.applied, [
+  check(`${label}: the migration applied, and 0008, 0010, 0014 and 0015 after it`, run.applied, [
     DATA_MIGRATION,
     RENAME_MIGRATION,
     CONTACT_KEY_MIGRATION,
-    BLIND_INDEX_MIGRATION
+    BLIND_INDEX_MIGRATION,
+    HIDDEN_ROWS_MIGRATION
   ]);
   check(`${label}: and failed nothing`, run.failed, null);
 
@@ -1356,11 +1387,18 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
     const plan = plans.find((p) => p.table === table);
     check(`${label}: ${table} — nothing to add, no drift`, [plan.additive, plan.drift], [[], []]);
   }
+  // 0015 (MICA-428) rebuilds three of them over a status-aware copy of the phone, after 0008.
+  const settled = {
+    device_app_key: 'live_device_app_key',
+    device_number_unique: 'live_device_number',
+    conversation_device_unique: 'conversation_live_device'
+  };
   for (const [table, , dropped, , renamed] of KEY_SWAPS) {
+    const final = settled[renamed] ?? renamed;
     const keys = await indexesOn(connection, table);
     check(
-      `${label}: ${table} — ${renamed} is unique and ${dropped} is gone`,
-      [keys.includes(`${renamed} (unique)`), keys.some((k) => k.startsWith(dropped))],
+      `${label}: ${table} — ${final} is unique and ${dropped} is gone`,
+      [keys.includes(`${final} (unique)`), keys.some((k) => k.startsWith(dropped))],
       [true, false]
     );
   }
@@ -1473,9 +1511,10 @@ const runBatteryMigration = async ({ connection, schemaFile, hasPlayers, server 
   ]);
 
   const run = await server.runPendingMigrations();
-  check(`${label}: the migration applied, and 0008 after it`, run.applied, [
+  check(`${label}: the migration applied, and 0008 and 0015 after it`, run.applied, [
     BATTERY_MIGRATION,
-    RENAME_MIGRATION
+    RENAME_MIGRATION,
+    HIDDEN_ROWS_MIGRATION
   ]);
   check(`${label}: and failed nothing`, run.failed, null);
 
@@ -1615,7 +1654,8 @@ const runRenameMigration = async ({ connection, schemaFile, hasPlayers, server }
   );
 
   const run = await server.runPendingMigrations();
-  check(`${label}: the migration applied`, run.applied, [RENAME_MIGRATION]);
+  // 0015 is pending with it: it rebuilds two of the keys 0008 renames (MICA-428).
+  check(`${label}: the migration applied`, run.applied, [RENAME_MIGRATION, HIDDEN_ROWS_MIGRATION]);
   check(`${label}: and failed nothing`, run.failed, null);
 
   check(
@@ -2231,6 +2271,7 @@ const runContactKeyMigration = async ({ connection, schemaFile, hasPlayers, serv
 };
 
 const MOUTH_KEY_MIGRATION = '0012_blabber_mouths_unique_while_live';
+const HIDDEN_ROWS_MIGRATION = '0015_hidden_rows_are_kept';
 
 /**
  * MICA-330's 0012, executed rather than read: the current schema put back to the key it had
@@ -2266,7 +2307,12 @@ const runMouthKeyMigration = async ({ connection, schemaFile, hasPlayers, server
        DROP COLUMN mouth_key,
        ADD UNIQUE KEY account_mouth (account_id, mouth_of)`
   );
-  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [MOUTH_KEY_MIGRATION]);
+  // 0015 restates the key 0012 makes (MICA-428): a database from before 0012 is from before 0015
+  // too, so both are pending, or 0012 would leave its own expression and 0015 never run.
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id IN (?, ?)', [
+    MOUTH_KEY_MIGRATION,
+    HIDDEN_ROWS_MIGRATION
+  ]);
   const mouthKeys = async () =>
     (await allIndexes(connection)).filter((key) => key.startsWith('mica_blabber.account_mouth'));
   check(
@@ -2311,16 +2357,17 @@ const runMouthKeyMigration = async ({ connection, schemaFile, hasPlayers, server
   runningFramework(server, hasPlayers);
   const apply = await captured(() => server.runApply(0));
   check(
-    `${label}: apply runs 0012, failing nothing`,
+    `${label}: apply runs 0012 and then 0015, failing nothing`,
     [
       apply.lines.includes(`[mica] applied migration ${MOUTH_KEY_MIGRATION}`),
+      apply.lines.includes(`[mica] applied migration ${HIDDEN_ROWS_MIGRATION}`),
       apply.lines.filter((line) => /fail/i.test(line))
     ],
-    [true, []]
+    [true, true, []]
   );
   check(`${label}: and touches no row`, await rows(), before);
   check(
-    `${label}: mouth_key is generated as declared, NULL only on a deleted row`,
+    `${label}: mouth_key is generated as declared, NULL on a deleted, expired or erased row`,
     String(
       await scalar(
         connection,
@@ -2329,9 +2376,9 @@ const runMouthKeyMigration = async ({ connection, schemaFile, hasPlayers, server
             AND column_name = 'mouth_key'`
       )
     )
-      .replace(/\s+/g, ' ')
+      .replace(/\s+/g, '')
       .toLowerCase(),
-    "case when `status` <> 'deleted' then `mouth_of` else null end"
+    "casewhen`status`notin('deleted','expired','erased')then`mouth_of`elsenullend"
   );
   check(`${label}: account_mouth_key replaces account_mouth`, await mouthKeys(), [
     'mica_blabber.account_mouth_key (unique)'
@@ -2400,6 +2447,245 @@ const runMouthKeyMigration = async ({ connection, schemaFile, hasPlayers, server
 
   const settled = { schema: await wholeSchema(connection), rows: await rows() };
   await server.migrations.find((m) => m.id === MOUTH_KEY_MIGRATION).up();
+  check(
+    `${label}: running up() a second time changes nothing`,
+    { schema: await wholeSchema(connection), rows: await rows() },
+    settled
+  );
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+};
+
+/**
+ * MICA-428's 0015, executed rather than read: the current schema put back to what it was before
+ * — every status ENUM without `erased` or `expired`, and Blabber's and Spark's generated keys
+ * reading "not deleted" — rows in every status the old ENUMs knew, the real `micaschema apply`,
+ * and then what the restated keys free. Only MariaDB can say an ENUM append keeps every row's
+ * value, and what a generated column under a unique key refuses.
+ */
+const runHiddenRowsMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} hidden rows`;
+  step(`${schemaFile} — MICA-428 ${HIDDEN_ROWS_MIGRATION}, on a ${variant} database`);
+
+  const fresh = async (database) => {
+    await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+    await connection.query(`CREATE DATABASE \`${database}\``);
+    await connection.changeUser({ database });
+    if (hasPlayers) await connection.query(PLAYERS_TABLE);
+    await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  };
+
+  // Sorted: 0015 appends the two key columns, where a fresh import has them in declaration order.
+  await fresh(`mica_hidden_rows_shape_${variant}`);
+  const shape = {
+    columns: (await wholeSchema(connection)).toSorted(),
+    keys: await allIndexes(connection)
+  };
+
+  await fresh(`mica_hidden_rows_${variant}`);
+  const [enums] = await connection.query(
+    `SELECT table_name AS t, column_type AS type FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND column_name = 'status'
+        AND table_name LIKE 'mica|_%' ESCAPE '|'`
+  );
+  for (const { t, type } of enums) {
+    const old = [...String(type).matchAll(/'([^']*)'/g)]
+      .map((m) => m[1])
+      .filter((value) => value !== 'erased' && (value !== 'expired' || t === 'mica_invoices'));
+    await connection.query(
+      `ALTER TABLE \`${t}\` MODIFY COLUMN \`status\` ENUM(${old.map((v) => `'${v}'`).join(', ')}) NOT NULL DEFAULT 'active'`
+    );
+  }
+  await connection.query(
+    `ALTER TABLE mica_blabber DROP KEY account_mouth_key, DROP COLUMN mouth_key,
+       ADD COLUMN mouth_key int(11) GENERATED ALWAYS AS
+         (CASE WHEN status <> 'deleted' THEN mouth_of ELSE NULL END) VIRTUAL,
+       ADD UNIQUE KEY account_mouth_key (account_id, mouth_key)`
+  );
+  await connection.query(
+    `ALTER TABLE mica_spark DROP KEY live_citizen, DROP COLUMN live_citizen,
+       ADD COLUMN live_citizen varchar(50) GENERATED ALWAYS AS
+         (CASE WHEN status <> 'deleted' THEN citizenid ELSE NULL END) VIRTUAL,
+       ADD UNIQUE KEY live_citizen (live_citizen)`
+  );
+  // The five keys over the plain owner or phone, as they were before MICA-428.
+  for (const regress of [
+    'ALTER TABLE mica_hodlr DROP KEY live_citizen, DROP COLUMN live_citizen, ' +
+      'ADD UNIQUE KEY citizenid_unique (citizenid)',
+    'ALTER TABLE mica_highscores DROP KEY live_citizen_app, DROP COLUMN live_citizen, ' +
+      'ADD UNIQUE KEY citizenid_app (citizenid, app)',
+    'ALTER TABLE mica_settings DROP KEY live_device_app_key, DROP COLUMN live_device, ' +
+      'ADD UNIQUE KEY device_app_key (device_id, app, setting_key)',
+    'ALTER TABLE mica_blocklist DROP KEY live_device_number, DROP COLUMN live_device, ' +
+      'ADD UNIQUE KEY device_number_unique (device_id, number)',
+    'ALTER TABLE mica_messages_participants DROP KEY conversation_live_device, ' +
+      'DROP COLUMN live_device, ADD UNIQUE KEY conversation_device_unique (conversation_id, device_id)'
+  ]) {
+    await connection.query(regress);
+  }
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [
+    HIDDEN_ROWS_MIGRATION
+  ]);
+  const enumOf = async (table) =>
+    String(
+      await scalar(
+        connection,
+        `SELECT column_type FROM information_schema.COLUMNS
+          WHERE table_schema = DATABASE() AND table_name = ? AND column_name = 'status'`,
+        [table]
+      )
+    );
+  check(
+    `${label}: the regressed schema has neither erased nor expired anywhere but invoices`,
+    [await enumOf('mica_notes'), await enumOf('mica_messages'), await enumOf('mica_invoices')],
+    [
+      "enum('active','archived','deleted','moderated')",
+      "enum('active','deleted','moderated')",
+      "enum('active','paid','declined','expired','deleted')"
+    ]
+  );
+
+  const A = hasPlayers ? 'CIT_A' : SWEEP_LIVE;
+  for (const status of ['active', 'archived', 'deleted', 'moderated']) {
+    await connection.query(
+      "INSERT INTO mica_notes (citizenid, title, content, status) VALUES (?, ?, 'x', ?)",
+      [A, status, status]
+    );
+  }
+  const account = (
+    await connection.query(
+      "INSERT INTO mica_accounts (citizenid, app, handle) VALUES (?, 'spark', 'ada')",
+      [A]
+    )
+  )[0].insertId;
+  const profile = async () =>
+    (
+      await connection.query(
+        'INSERT INTO mica_spark (citizenid, account_id, age) VALUES (?, ?, 30)',
+        [A, account]
+      )
+    )[0].insertId;
+  const first = await profile();
+  const rows = async () =>
+    (await connection.query('SELECT id, status, updated_at FROM mica_notes ORDER BY id'))[0].map(
+      (r) => `${r.id}:${r.status}:${new Date(r.updated_at).toISOString()}`
+    );
+  const before = await rows();
+
+  runningFramework(server, hasPlayers);
+  const apply = await captured(() => server.runApply(0));
+  check(
+    `${label}: apply runs 0015, failing nothing`,
+    [
+      apply.lines.includes(`[mica] applied migration ${HIDDEN_ROWS_MIGRATION}`),
+      apply.lines.filter((line) => /fail/i.test(line))
+    ],
+    [true, []]
+  );
+  check(`${label}: every row keeps its status and its updated_at`, await rows(), before);
+  check(
+    `${label}: every status ENUM gains erased, the retained tables expired, at the end`,
+    [await enumOf('mica_notes'), await enumOf('mica_messages'), await enumOf('mica_invoices')],
+    [
+      "enum('active','archived','deleted','moderated','erased')",
+      "enum('active','deleted','moderated','expired','erased')",
+      "enum('active','paid','declined','expired','deleted','erased')"
+    ]
+  );
+  check(
+    `${label}: every column a fresh import has, type, nullability and collation`,
+    (await wholeSchema(connection)).toSorted(),
+    shape.columns
+  );
+  check(`${label}: and every key`, await allIndexes(connection), shape.keys);
+  const plans = await server.SchemaMigrator.plan();
+  check(
+    `${label}: the planner finds nothing to add and no drift`,
+    plans.flatMap((p) => [...p.additive, ...p.drift]),
+    []
+  );
+
+  step(`${schemaFile} — what the restated keys free`);
+  check(`${label}: a second live profile is still refused`, await rejects(profile), 'ER_DUP_ENTRY');
+  await connection.query("UPDATE mica_spark SET status = 'erased' WHERE id = ?", [first]);
+  check(
+    `${label}: an erased profile frees its citizen's slot, as a deleted one does`,
+    await rejects(profile),
+    null
+  );
+
+  // Settings' own upsert (`put`), over a key 0015 rebuilt from the plain phone.
+  const put = (value) =>
+    connection.query(
+      `INSERT INTO mica_settings (citizenid, device_id, app, setting_key, setting_value, status)
+       VALUES (?, 'p1', 'clock', 'format', ?, 'active')
+       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), status = 'active'`,
+      [A, value]
+    );
+  const settingRows = async () =>
+    (
+      await connection.query(
+        "SELECT status, setting_value AS v FROM mica_settings WHERE device_id = 'p1' ORDER BY id"
+      )
+    )[0].map((r) => `${r.status}:${r.v}`);
+  await put('"12h"');
+  await connection.query("UPDATE mica_settings SET status = 'deleted' WHERE device_id = 'p1'");
+  await put('"24h"');
+  check(
+    `${label}: a deleted setting still holds its key, and the upsert brings it back`,
+    await settingRows(),
+    ['active:"24h"']
+  );
+  await connection.query("UPDATE mica_settings SET status = 'erased' WHERE device_id = 'p1'");
+  await put('"12h"');
+  check(
+    `${label}: an erased setting holds none: the upsert writes beside it, and never over it`,
+    await settingRows(),
+    ['erased:"24h"', 'active:"12h"']
+  );
+
+  // A thread's one membership per phone (MICA-428 review): an erased one, a dead character's
+  // that the handover left naming them, no longer refuses the phone's next holder.
+  const thread = (
+    await connection.query(
+      'INSERT INTO mica_messages_conversations (citizenid, is_group) VALUES (?, 1)',
+      [A]
+    )
+  )[0].insertId;
+  const join = (citizenid) => () =>
+    connection.query(
+      `INSERT INTO mica_messages_participants (conversation_id, citizenid, device_id, status)
+       VALUES (?, ?, 'p1', 'active')`,
+      [thread, citizenid]
+    );
+  check(`${label}: a phone joins a thread`, await rejects(join(A)), null);
+  check(
+    `${label}: and a second live membership on it is refused`,
+    await rejects(join(A)),
+    'ER_DUP_ENTRY'
+  );
+  await connection.query(
+    "UPDATE mica_messages_participants SET status = 'moderated' WHERE conversation_id = ?",
+    [thread]
+  );
+  check(
+    `${label}: a taken-down membership still holds the phone's seat`,
+    await rejects(join('CIT_B')),
+    'ER_DUP_ENTRY'
+  );
+  await connection.query(
+    "UPDATE mica_messages_participants SET status = 'erased', left_at = NOW() WHERE conversation_id = ?",
+    [thread]
+  );
+  check(
+    `${label}: an erased one frees it for the phone's next holder`,
+    await rejects(join('CIT_B')),
+    null
+  );
+
+  const settled = { schema: await wholeSchema(connection), rows: await rows() };
+  await server.migrations.find((m) => m.id === HIDDEN_ROWS_MIGRATION).up();
   check(
     `${label}: running up() a second time changes nothing`,
     { schema: await wholeSchema(connection), rows: await rows() },
@@ -4146,6 +4432,15 @@ const main = async () => {
     // MICA-330. 0012 through `micaschema apply`, on both shapes, then what its key refuses.
     await runMouthKeyMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runMouthKeyMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-428. 0015 through `micaschema apply`, on both shapes, then what its keys free.
+    await runHiddenRowsMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runHiddenRowsMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

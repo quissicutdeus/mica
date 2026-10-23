@@ -16,8 +16,9 @@ import { resetRetentionForTests } from '../lib/contentRetention';
  *   columns are what say the photo survived.
  * - **The secret is asserted absent from everything a client or a log could see**, not just
  *   present in the request that needed it.
- * - **Deletion is asserted against rows that still name the URL**, since the failure that
- *   costs a player a photo is deleting a file a proximity copy still points at.
+ * - **Nothing is ever deleted from the host** (MICA-428): a refused insert keeps its uploaded
+ *   file, and the prune and the purges send no request at all. `hostedCleanup.test.ts` drives
+ *   every such path.
  *
  * `fetch` is stubbed per test: nothing here reaches a network, and `Database` is mocked so
  * nothing reaches MySQL either — which also means no SQL is evaluated, only inspected.
@@ -49,13 +50,12 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import {
   imageHost,
   imageHostOrigin,
-  releaseHostedImages,
   resetMediaHostForTests,
   uploadImage,
   validateHostedUrl,
   valueAtPath
 } from '../lib/mediaHost';
-import { pruneExpiredMedia, purgeMediaForCitizen } from '../services/Media';
+import '../services/Media';
 import '../services/MediaHost';
 
 const CREATE_EVENT = 'mica:server:media:create';
@@ -384,37 +384,35 @@ describe('the create path', () => {
 
   /**
    * The upload has to precede the insert (the quota is a predicate in it), so an insert that
-   * refuses or throws after a successful upload would strand the file with no row naming it.
+   * refuses or throws after a successful upload leaves the file with no row naming it. It is
+   * kept, as every hosted file is (MICA-428): the upload is the only request, a delete URL
+   * configured or not.
    */
-  const hostedThenDeleted = () => {
+  const hostedWithDeleteUrl = () => {
     hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
-    fetchMock
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ url: HOSTED }) })
-      .mockResolvedValueOnce({ ok: true, status: 204, json: async () => ({}) });
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ url: HOSTED }) });
   };
 
-  it('deletes the uploaded file when the quota refuses the row', async () => {
-    hostedThenDeleted();
+  it('keeps the uploaded file when the quota refuses the row', async () => {
+    hostedWithDeleteUrl();
     dbMock.insert.mockResolvedValue(0);
 
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
 
     expect(reply.error).toMatch(/full/i);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const [url, init] = fetchMock.mock.calls[1] as FetchCall;
-    expect(url).toBe('https://api.example.test/files/abc.webp');
-    expect(init.method).toBe('DELETE');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((fetchMock.mock.calls[0] as FetchCall)[1].method).toBe('POST');
   });
 
-  it('deletes the uploaded file when the insert throws, and still reports the failure', async () => {
-    hostedThenDeleted();
+  it('keeps the uploaded file when the insert throws, and still reports the failure', async () => {
+    hostedWithDeleteUrl();
     dbMock.insert.mockRejectedValue(new Error('deadlock'));
 
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
 
     expect(reply.error).toBeDefined();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect((fetchMock.mock.calls[1] as FetchCall)[1].method).toBe('DELETE');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((fetchMock.mock.calls[0] as FetchCall)[1].method).toBe('POST');
   });
 
   it('asks the host for nothing when a refused row was never hosted', async () => {
@@ -430,195 +428,5 @@ describe('the create path', () => {
     await call(CREATE_EVENT, { kind: 'photo', data: PHOTO, url: 'https://evil.test/x.png' });
 
     expect(lastInsert().params).not.toContain('https://evil.test/x.png');
-  });
-});
-
-describe('releaseHostedImages', () => {
-  const OTHER = 'https://img.example.test/p/other.webp';
-
-  it('leaves alone a URL not on the image host — a hotlink is not ours to delete', async () => {
-    hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
-
-    const outcome = await releaseHostedImages(['https://giphy.test/a.gif']);
-
-    expect(outcome).toEqual({ deleted: 0, failed: 0, unconfigured: 0, formerHost: {} });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('never deletes a file a remaining row still names', async () => {
-    hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
-    // A proximity copy of HOSTED survives; OTHER has no row left.
-    dbMock.query.mockResolvedValue([{ url: HOSTED }]);
-    replyWith(200, {});
-
-    const outcome = await releaseHostedImages([HOSTED, OTHER]);
-
-    expect(outcome.deleted).toBe(1);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as FetchCall;
-    expect(url).toBe('https://api.example.test/files/other.webp');
-    expect(init.method).toBe('DELETE');
-    expect(init.headers).toEqual({ Authorization: SECRET });
-  });
-
-  it('refuses to follow a redirect on a delete, too', async () => {
-    hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
-    replyWith(200, {});
-
-    await releaseHostedImages([OTHER]);
-
-    expect((fetchMock.mock.calls[0] as FetchCall)[1].redirect).toBe('error');
-  });
-
-  it('fills {url} URL-encoded', async () => {
-    hosting({ mica_media_delete_url: 'https://api.example.test/delete?u={url}' });
-    replyWith(200, {});
-
-    await releaseHostedImages([OTHER]);
-
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      `https://api.example.test/delete?u=${encodeURIComponent(OTHER)}`
-    );
-  });
-
-  it('counts, and does not request, what it has no delete endpoint for', async () => {
-    hosting();
-
-    expect(await releaseHostedImages([OTHER])).toEqual({
-      deleted: 0,
-      failed: 0,
-      unconfigured: 1,
-      formerHost: {}
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('counts a refusal as failed and a 404 as already gone, and never throws', async () => {
-    hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
-    fetchMock
-      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) })
-      .mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({}) })
-      .mockRejectedValueOnce(new Error('down'));
-
-    const outcome = await releaseHostedImages([
-      OTHER,
-      'https://img.example.test/p/b.webp',
-      'https://img.example.test/p/c.webp'
-    ]);
-
-    expect(outcome).toEqual({ deleted: 1, failed: 2, unconfigured: 0, formerHost: {} });
-  });
-
-  it('deletes nothing when it cannot tell what is still referenced', async () => {
-    hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
-    dbMock.query.mockRejectedValue(new Error('db down'));
-
-    const outcome = await releaseHostedImages([OTHER]);
-
-    expect(outcome.failed).toBe(1);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-});
-
-describe('the retention prune releases hosted photos', () => {
-  /** A database past the first-run grace with two expired rows, one hosted. */
-  const expiredHostedRows = () => {
-    let served = false;
-    dbMock.query.mockImplementation(async (sql: string) => {
-      const text = String(sql);
-      if (text.includes('information_schema.')) return [{ n: 1 }];
-      if (text.startsWith('SELECT `id`, TIMESTAMPDIFF')) {
-        return [{ id: 'retention:mica_media:1d', age: 2 * 24 * 60 * 60 }];
-      }
-      if (text.startsWith('SELECT t.`id` FROM `mica_media`')) {
-        if (served) return [];
-        served = true;
-        return [{ id: 1 }, { id: 2 }];
-      }
-      if (
-        text.startsWith(
-          'SELECT DISTINCT t.`url` FROM `mica_media` t WHERE t.`url` IS NOT NULL AND t.`id` IN'
-        )
-      ) {
-        return [{ url: HOSTED }, { url: 'https://giphy.test/a.gif' }];
-      }
-      // After the delete, nothing names the hosted URL any more.
-      if (text.startsWith('SELECT DISTINCT `url` FROM `mica_media` WHERE `url` IN')) return [];
-      if (text.startsWith('DELETE FROM `mica_media` WHERE `id` IN')) return { affectedRows: 2 };
-      return { affectedRows: 0 };
-    });
-  };
-
-  const statements = () => dbMock.query.mock.calls.map((c) => String(c[0]));
-
-  it('reads the URLs before the delete and asks the host to delete after it', async () => {
-    hosting({
-      mica_media_retention: '30',
-      mica_media_delete_url: 'https://api.example.test/files/{name}'
-    });
-    expiredHostedRows();
-    replyWith(200, {});
-
-    expect(await pruneExpiredMedia()).toBe(2);
-
-    const all = statements();
-    const collect = all.findIndex((s) => s.includes('t.`id` IN') && s.includes('t.`url`'));
-    const remove = all.findIndex((s) => s.startsWith('DELETE FROM `mica_media` WHERE `id` IN'));
-    expect(collect).toBeGreaterThanOrEqual(0);
-    expect(collect).toBeLessThan(remove);
-    // Only the hosted file, never the hotlink.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.test/files/abc.webp');
-    expect(logged()).toMatch(/deleted 1 hosted photo/);
-  });
-
-  it('still deletes the rows, and says the files were left, with no delete endpoint', async () => {
-    hosting({ mica_media_retention: '30' });
-    expiredHostedRows();
-
-    expect(await pruneExpiredMedia()).toBe(2);
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(logged()).toMatch(/1 hosted photo\(s\) no longer belong to any row/);
-    expect(logged()).toContain('mica_media_delete_url');
-  });
-
-  it('keeps pruning when the host is down', async () => {
-    hosting({
-      mica_media_retention: '30',
-      mica_media_delete_url: 'https://api.example.test/files/{name}'
-    });
-    expiredHostedRows();
-    fetchMock.mockRejectedValue(new Error('down'));
-
-    expect(await pruneExpiredMedia()).toBe(2);
-    expect(logged()).toMatch(/could not be deleted from the image host/);
-  });
-});
-
-describe('purging a deleted character releases their hosted photos', () => {
-  it('reads the URLs first, deletes the rows, then releases', async () => {
-    hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
-    dbMock.query.mockImplementation(async (sql: string) => {
-      const text = String(sql);
-      // The plan (MICA-300): three of the character's photos, none held, nothing naming them.
-      if (text.includes('AS `go`') && text.includes('FROM mica_media t')) {
-        return [1, 2, 3].map((id) => ({ id, go: 1, held: 0, ex: 0 }));
-      }
-      if (
-        text.startsWith('SELECT DISTINCT t.`url` FROM `mica_media` t') &&
-        text.includes('t.`citizenid` = ?')
-      ) {
-        return [{ url: HOSTED }];
-      }
-      if (text.startsWith('DELETE FROM mica_media')) return { affectedRows: 3 };
-      return [];
-    });
-    replyWith(200, {});
-
-    expect(await purgeMediaForCitizen('CID_Z')).toBe(3);
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.test/files/abc.webp');
   });
 });

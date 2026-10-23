@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { EXPIRED } from '../lib/statuses';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { NotificationItem } from '@mica/shared/types';
 import { Database } from '../lib/Database';
@@ -211,11 +212,17 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
     return true;
   }
 
+  /**
+   * Expire the notifications past the window (MICA-428): `active` to `expired`, kept and hidden.
+   * A `moderated` one, or one the player already cleared away to `deleted`, stays as it is.
+   * `updated_at` is pinned: expiring is not an edit.
+   */
   async pruneStale(retentionDays: number): Promise<number> {
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
     const result = await Database.query<{ affectedRows?: number }>(
-      `DELETE FROM mica_notifications WHERE created_at < ?`,
-      [cutoff]
+      `UPDATE mica_notifications SET status = ?, updated_at = updated_at
+       WHERE status = 'active' AND created_at < ?`,
+      [EXPIRED, cutoff]
     );
     return result && typeof result === 'object' && 'affectedRows' in result
       ? Number(result.affectedRows)
@@ -230,7 +237,8 @@ export const notifications = defineService<NotificationItem, typeof notification
   deviceOwned: true,
   id: 'notifications',
   access: { read: 'owner', write: 'server' },
-  statuses: ['active', 'deleted', 'moderated'],
+  // `expired`: the retention window passed (MICA-428), never a player's own delete.
+  statuses: ['active', 'deleted', 'moderated', EXPIRED],
   paging: { pageSize: 30, maxPageSize: 60 },
   encryptionScope: [],
   schema: {

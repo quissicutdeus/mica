@@ -42,7 +42,7 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
   /**
    * Write one key.
    *
-   * `ON DUPLICATE KEY UPDATE` against the unique `(device_id, app, setting_key)` index,
+   * `ON DUPLICATE KEY UPDATE` against the unique `(live_device, app, setting_key)` index,
    * rather than find-then-insert. Two rapid writes to the same key — which is what
    * dragging a slider produces — race in the find-then-insert form and the loser becomes
    * either a duplicate row or a lost write. The constraint decides, not the order the
@@ -88,10 +88,14 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
     return new Map(rows.map((row) => [row.citizenid, row.setting_value]));
   }
 
-  /** Remove one key. Hard delete: a tombstoned preference is not a preference. */
+  /**
+   * Remove one key: the row goes to `deleted` and stays (MICA-428). Every read asks for
+   * `active`, and the next `put` of the key brings the row back under `live_device_app_key`.
+   */
   async remove(citizenid: string, deviceId: string, app: string, key: string): Promise<void> {
     await Database.query(
-      `DELETE FROM mica_settings WHERE citizenid = ? AND device_id = ? AND app = ? AND setting_key = ?`,
+      `UPDATE mica_settings SET status = 'deleted'
+       WHERE citizenid = ? AND device_id = ? AND app = ? AND setting_key = ? AND status = 'active'`,
       [citizenid, deviceId, app, key]
     );
   }
@@ -101,11 +105,12 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    *
    * Without this an uninstalled app's rows outlive it on the server and come back on the
    * next hydrate — which is exactly the resurrection bug `clearAppStorage`'s own comment
-   * says it exists to prevent, moved one layer down.
+   * says it exists to prevent, moved one layer down. `deleted`, never removed (MICA-428).
    */
   async clearApp(citizenid: string, deviceId: string, app: string): Promise<void> {
     await Database.query(
-      `DELETE FROM mica_settings WHERE citizenid = ? AND device_id = ? AND app = ?`,
+      `UPDATE mica_settings SET status = 'deleted'
+       WHERE citizenid = ? AND device_id = ? AND app = ? AND status = 'active'`,
       [citizenid, deviceId, app]
     );
   }
@@ -123,7 +128,19 @@ export const settings = defineService<PhoneSetting, typeof settingsContract>({
   schema: {
     app: { type: 'string', length: 32, notNull: true },
     setting_key: { type: 'string', length: 64, notNull: true },
-    setting_value: { type: 'text' }
+    setting_value: { type: 'text' },
+    /**
+     * The phone while the setting is not erased (MICA-428): what the key is over, so `put`
+     * never revives or overwrites an erased setting and writes a fresh row beside it. A
+     * `deleted` one still holds the key, and `put` brings it back. Restated, frozen, by
+     * `0015_hidden_rows_are_kept`.
+     */
+    live_device: {
+      type: 'string',
+      length: 32,
+      clientWritable: false,
+      generatedAs: "CASE WHEN `status` <> 'erased' THEN `device_id` ELSE NULL END"
+    }
   },
   /**
    * A constraint rather than an optimisation (§10). It is what makes the upsert above
@@ -139,13 +156,17 @@ export const settings = defineService<PhoneSetting, typeof settingsContract>({
      * `citizenid_app_key` for it): a character with two phones has two themes, and the upsert
      * in `put` collides on this key and no other.
      */
-    { name: 'device_app_key', columns: ['device_id', 'app', 'setting_key'], unique: true }
+    {
+      name: 'live_device_app_key',
+      columns: ['live_device', 'app', 'setting_key'],
+      unique: true
+    }
   ],
   uniqueAfterDelete: {
     optOut:
       'No generic create or delete: `put` is an INSERT … ON DUPLICATE KEY UPDATE that sets the ' +
-      "row back to 'active', and `remove`/`clearApp` are hard DELETEs, so no deleted row " +
-      'holds a key.'
+      "row back to 'active', so the row `remove`/`clearApp` moved to 'deleted' comes back under " +
+      'its key; an erased one holds no key (MICA-428).'
   },
   /**
    * No generic action survives. The client addresses a row by `(app, setting_key)` and

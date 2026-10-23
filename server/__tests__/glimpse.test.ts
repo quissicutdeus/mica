@@ -70,7 +70,6 @@ import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { isReactableTable } from '../lib/reactions';
 import { isReportableTable } from '../lib/moderation';
-import { cascadeEdges } from '../lib/orphanSweep';
 
 type AnyRow = Record<string, any>;
 
@@ -400,24 +399,6 @@ describe('the declarations', () => {
     expect(handlers.has('mica:server:glimpse:delete')).toBe(true);
   });
 
-  /**
-   * The purge's `cascadeGuard` keeps a parent while any row it would not delete references it,
-   * and it reads the references from these edges — so a purged player's post keeps another
-   * player's comment, reported or not, only if the edge is here. `privacy.test.ts` then checks
-   * the guard is in every such `DELETE`.
-   */
-  it('declares the keys the purge guards a post by', () => {
-    const edges = cascadeEdges().map((e) => `${e.child}.${e.column} -> ${e.parent}`);
-    expect(edges).toEqual(
-      expect.arrayContaining([
-        'mica_glimpse_comments.post_id -> mica_glimpse',
-        'mica_glimpse_attachments.post_id -> mica_glimpse',
-        'mica_glimpse.account_id -> mica_accounts',
-        'mica_glimpse_comments.account_id -> mica_accounts'
-      ])
-    );
-  });
-
   it('opts both tables into reports and posts into reactions', () => {
     expect(isReportableTable('mica_glimpse')).toBe(true);
     expect(isReportableTable('mica_glimpse_comments')).toBe(true);
@@ -657,7 +638,7 @@ describe('the reads', () => {
       )
     );
     expect(sql).toContain('m.url');
-    expect(sql).toContain("m.status <> 'moderated'");
+    expect(sql).toContain("m.status NOT IN ('moderated', 'expired', 'erased')");
   });
 
   it('answers view with null for a moderated post and the post for a live one', async () => {

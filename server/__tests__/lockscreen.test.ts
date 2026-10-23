@@ -199,12 +199,28 @@ describe('lockscreen:check (MICA-60)', () => {
 });
 
 describe('lockscreen:clear (MICA-60)', () => {
-  it("deletes the caller's own row", async () => {
+  it("moves the caller's own row to deleted, and keeps it (MICA-428)", async () => {
     const reply = await call('clear', {});
     expect(reply).toEqual({ ok: true });
     const [sql, params] = queryCalls()[0];
-    expect(String(sql)).toContain('DELETE FROM mica_lockscreen');
+    expect(String(sql).replace(/\s+/g, ' ')).toBe(
+      "UPDATE mica_lockscreen SET status = 'deleted' " +
+        "WHERE citizenid = ? AND device_id = ? AND status = 'active'"
+    );
     expect(params).toEqual(['CIT_A', TEST_PHONE_ID]);
+  });
+
+  it('reads only an active passcode, so a cleared one unlocks the phone (MICA-428)', async () => {
+    dbMock.single.mockResolvedValue(null);
+    await call('status', {});
+    const reads = dbMock.single.mock.calls.map(([sql]) => String(sql).replace(/\s+/g, ' '));
+    expect(
+      reads.some((sql) =>
+        sql.includes(
+          "FROM mica_lockscreen WHERE citizenid = ? AND device_id = ? AND status = 'active'"
+        )
+      )
+    ).toBe(true);
   });
 
   it('is idempotent — clearing an already-unset passcode still answers ok', async () => {

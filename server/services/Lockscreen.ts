@@ -26,7 +26,7 @@ import { lockscreenContract } from '@mica/shared/contracts/lockscreen';
 export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
   async findForPhone(citizenid: string, deviceId: string): Promise<LockscreenRow | null> {
     return await Database.single<LockscreenRow>(
-      `SELECT * FROM mica_lockscreen WHERE citizenid = ? AND device_id = ?`,
+      `SELECT * FROM mica_lockscreen WHERE citizenid = ? AND device_id = ? AND status = 'active'`,
       [citizenid, deviceId]
     );
   }
@@ -49,12 +49,17 @@ export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
     );
   }
 
-  /** Hard delete: an unset passcode is not a row to keep around, and there is nothing to audit. */
+  /**
+   * Unset the passcode: the row goes to `deleted` and stays (MICA-428), hash and salt included.
+   * `findForPhone` reads only an `active` row, so the phone is unlocked, and the next `upsert`
+   * brings the row back under `device_id_unique` with the new passcode.
+   */
   async clear(citizenid: string, deviceId: string): Promise<void> {
-    await Database.query(`DELETE FROM mica_lockscreen WHERE citizenid = ? AND device_id = ?`, [
-      citizenid,
-      deviceId
-    ]);
+    await Database.query(
+      `UPDATE mica_lockscreen SET status = 'deleted' ` +
+        `WHERE citizenid = ? AND device_id = ? AND status = 'active'`,
+      [citizenid, deviceId]
+    );
   }
 }
 
@@ -88,7 +93,7 @@ export const lockscreen = defineService<LockscreenRow, typeof lockscreenContract
   uniqueAfterDelete: {
     optOut:
       'No generic create: `upsert` is an INSERT … ON DUPLICATE KEY UPDATE that sets the row ' +
-      "back to 'active' itself, and `clear` is a hard DELETE, so no deleted row holds the key."
+      "back to 'active' itself, and so revives the row `clear` moved to 'deleted' (MICA-428)."
   },
   // No generic action survives. `get` would ship the hash back to its own owner —
   // exactly what "never sent back to the client in any form" forbids — and `delete`

@@ -5,25 +5,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
- * MICA-292: every path that deletes hosted photo rows releases their files.
+ * MICA-428: a hosted photo is never deleted from its host. Nothing deletes a `mica_media` row
+ * any more — retention expires it, a purge or the orphan sweep erases it — and its file is kept
+ * with it, for evidence. Before, MICA-243 and MICA-292 released the file through
+ * `mica_media_delete_url` from every one of those paths.
  *
- * MICA-243 wired retention and the media-only purge. Three other deletes skipped it — the
- * whole-phone `shell:characterDeleted` purge, the orphan sweep, and the `ON DELETE CASCADE`
- * from `players` — so a deleted character's photos stayed publicly reachable at their URLs.
- * And the release filtered by the host configured **now**, so after an owner changed it the
- * old host's photos were neither released nor counted.
+ * So each path is driven with a delete URL configured, and asked two things: that the rows were
+ * moved by a status change, and that nothing went to the host at all. `fetch` is the only way
+ * this server reaches the host, so a spy on it that is never called is the proof.
  *
- * What each block is careful to prove:
- *
- * - **Order, not just occurrence.** The URLs have to be read before the rows go, so the
- *   collect is asserted to come before the `DELETE`, and the reference check after it.
- * - **A file another player's copy still names is never requested**, on every new path —
- *   that is the failure that costs somebody a photo rather than storage.
- * - **A former host's file is counted and never requested**: the delete URL configured now
- *   is the current host's, and the log names the host and a count, never a URL.
- *
- * `Database` is mocked, so the SQL is inspected, never run; `pnpm test:migrations` runs the
- * orphan sweep and the purge against MariaDB with these statements in them.
+ * `Database` is mocked, so the SQL is inspected, never run; `pnpm test:migrations` and
+ * `pnpm test:schema` run these paths against MariaDB.
  */
 const { dbMock, localHandlers } = vi.hoisted(() => {
   const local = new Map<string, Function[]>();
@@ -41,11 +33,11 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { __setResourceLookup } from '../lib/FrameworkBridge';
 import {
-  releaseHostedImages,
+  recordedImageHosts,
   rememberImageHost,
-  reportRelease,
   resetMediaHostForTests,
-  uploadImage
+  uploadImage,
+  warnRetiredDeleteUrl
 } from '../lib/mediaHost';
 import { purgeOwnedRows, sweepOrphanedRows } from '../lib/orphanSweep';
 import { resetRetentionForTests } from '../lib/contentRetention';
@@ -53,38 +45,29 @@ import { pruneExpiredMedia, purgeMediaForCitizen } from '../services/Media';
 import '../services/index';
 
 const SHELL_CHARACTER_DELETED = 'mica:server:shell:characterDeleted';
-
-/** On the current host, owned only by the deleted character. */
-const MINE = 'https://img.example.test/p/mine.webp';
-/** On the current host, and a proximity copy on another player's row still names it. */
-const SHARED = 'https://img.example.test/p/shared.webp';
-/** On the host the owner used before `img.example.test`. */
-const OLD = 'https://old.example.test/p/old.webp';
-/** A hotlink `AddMedia` stored: not ours, never counted. */
-const GIF = 'https://giphy.test/a.gif';
-
-const DELETE_TEMPLATE = 'https://api.example.test/files/{name}';
+const MEDIA_CHARACTER_DELETED = 'mica:server:media:characterDeleted';
 
 const withConvars = (values: Record<string, string>) => {
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
     name in values ? values[name] : fallback;
 };
 
+/** Hosting configured, the retired delete URL included: it must do nothing. */
 const hosting = (extra: Record<string, string> = {}) =>
   withConvars({
     mica_media_upload_url: 'https://api.example.test/upload',
     mica_media_image_host: 'img.example.test',
-    mica_media_delete_url: DELETE_TEMPLATE,
+    mica_media_delete_url: 'https://api.example.test/files/{name}',
+    mica_media_retention: '1',
     ...extra
   });
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
-const statements = (): string[] => dbMock.query.mock.calls.map((call: any[]) => String(call[0]));
-const isCollect = (sql: string) => sql.startsWith('SELECT DISTINCT t.`url` FROM `mica_media` t');
-const isReferenceCheck = (sql: string) =>
-  sql.startsWith('SELECT DISTINCT `url` FROM `mica_media` WHERE `url` IN');
-const isLedgerRead = (sql: string) => sql.startsWith('SELECT `id` FROM `mica_schema_migrations`');
+const statements = (): string[] =>
+  dbMock.query.mock.calls.map((call: any[]) => String(call[0]).replace(/\s+/g, ' '));
+const mediaErase = (sql: string) =>
+  sql.startsWith('UPDATE `mica_media` SET `status` = ?, `updated_at` = `updated_at` WHERE');
 
 /** Every string console.* was handed. */
 const logged = (): string =>
@@ -93,82 +76,40 @@ const logged = (): string =>
     .map(String)
     .join('\n');
 
-/** One of the deleted character's media rows; `reported` is an open report naming it. */
-interface Row {
-  url: string;
-  reported?: boolean;
-  id?: number;
-}
-
-/** Whether a statement carries retention's open-report hold on the row (MICA-167). */
-const holdsReports = (sql: string) =>
-  sql.includes('FROM `mica_reports` r WHERE r.`target_table` = ?') &&
-  sql.includes("r.`status` = 'active' AND r.`resolution` = 'pending'");
-
 /**
- * A database holding the deleted character's media `rows`, which the collect and the delete
- * act on as MariaDB would: a statement carrying the open-report hold skips a reported row,
- * one without it takes every row. The delete removes what it matched, so the reference check
- * afterwards sees what survived. `SHARED` is also on another player's row throughout, and the
- * ledger has recorded `old.example.test` as an image host. Answers the live rows.
+ * A database with media rows to move: an erase moves two and then none, a retention select
+ * serves two ids, an owner table that answers, and a grace long over.
  */
-const mediaRows = (input: (string | Row)[], options: { collectFails?: boolean } = {}) => {
-  const rows: Row[] = input.map((r, i) => ({
-    id: i + 1,
-    ...(typeof r === 'string' ? { url: r } : r)
-  }));
-  // The purge and the sweep plan by id and then name those ids (MICA-168, MICA-300); the
-  // media-only purge names none and takes every row it matches.
-  const matched = (sql: string, params: unknown[] = []) => {
-    const ids = new Set(params.filter((p) => typeof p === 'number'));
-    return rows.filter(
-      (r) => (ids.size === 0 || ids.has(r.id!)) && !(r.reported && holdsReports(sql))
-    );
-  };
+const database = () => {
+  const erased = new Map<string, number>();
   dbMock.single.mockImplementation(async (sql: string) => {
     if (sql.includes('AS total')) return { total: 120 };
     if (sql.includes('AS matched')) return { matched: 3 };
-    // The owner column's live collation (MICA-299); orphanSweep.test.ts covers the rest.
     if (sql.includes('AS collation')) {
       return { collation: 'utf8mb4_unicode_ci', charset: 'utf8mb4' };
     }
     throw new Error(`unexpected single(): ${sql}`);
   });
-  dbMock.scalar.mockResolvedValue(null);
-  dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
-    if (sql.includes('AS `go`') && sql.includes('FROM mica_media t')) {
-      return rows.map((r) => ({
-        id: r.id,
-        go: r.reported ? 0 : 1,
-        held: r.reported ? 1 : 0,
-        ex: 0
-      }));
+  dbMock.scalar.mockResolvedValue(0);
+  dbMock.query.mockImplementation(async (raw: string, params: unknown[] = []) => {
+    const sql = raw.replace(/\s+/g, ' ');
+    if (sql.includes('information_schema')) return [{ n: 1 }];
+    if (sql.startsWith('SELECT m.`id` AS `id`, TIMESTAMPDIFF')) {
+      return [{ id: 'retention:mica_media:1d', age: 3 * 24 * 60 * 60 }];
     }
-    if (isCollect(sql)) {
-      if (options.collectFails) throw new Error('collect failed');
-      return matched(sql, params).map(({ url }) => ({ url }));
-    }
-    if (isReferenceCheck(sql)) {
-      const live = new Set([SHARED, ...rows.map((r) => r.url)]);
-      return params.filter((url) => live.has(url as string)).map((url) => ({ url }));
-    }
-    if (isLedgerRead(sql)) return [{ id: 'mediahost:old.example.test' }];
+    if (sql.startsWith('SELECT t.`id` FROM `mica_media` t')) return [{ id: 1 }, { id: 2 }];
     if (sql.startsWith('SELECT DISTINCT')) return [{ owner: 'CID_A' }];
-    if (sql.startsWith('DELETE FROM mica_media')) {
-      const gone = matched(sql, params);
-      for (const row of gone) rows.splice(rows.indexOf(row), 1);
-      return { affectedRows: gone.length };
+    if (sql.startsWith('UPDATE `mica_media`')) {
+      // Each erase statement moves its rows once; the loop stops on the next.
+      const key = `${sql}|${JSON.stringify(params.slice(1))}`;
+      const moved = erased.has(key) ? 0 : 2;
+      erased.set(key, moved);
+      return { affectedRows: moved };
     }
-    if (sql.trimStart().startsWith('DELETE')) return { affectedRows: 1 };
+    if (sql.startsWith('UPDATE')) return { affectedRows: 0 };
     return [];
   });
-  return rows;
 };
-
-const isMediaPurge = (sql: string) =>
-  sql.startsWith('DELETE FROM mica_media WHERE mica_media.`citizenid` = ?');
-
-const requested = (): string[] => fetchMock.mock.calls.map((call: any[]) => String(call[0]));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -178,6 +119,7 @@ beforeEach(() => {
   hosting();
   resetMediaHostForTests();
   resetRetentionForTests();
+  database();
   // qbx_core, so the orphan sweep has an owner table to ask.
   __setResourceLookup((name) => (name === 'qbx_core' ? { GetPlayer: () => null } : undefined));
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -190,228 +132,84 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('shell:characterDeleted releases the character’s hosted photos', () => {
-  it('reads the URLs before deleting the rows, and releases after', async () => {
-    mediaRows([MINE]);
+describe('no path deletes a hosted file (MICA-428)', () => {
+  it("a deleted character's purge erases the media rows and asks the host for nothing", async () => {
+    const { erased, failures } = await purgeOwnedRows('CID_Z');
 
-    await purgeOwnedRows('CID_Z');
-
-    const all = statements();
-    const collect = all.findIndex(isCollect);
-    const remove = all.findIndex(isMediaPurge);
-    const check = all.findIndex(isReferenceCheck);
-    expect(collect).toBeGreaterThanOrEqual(0);
-    expect(collect).toBeLessThan(remove);
-    expect(remove).toBeLessThan(check);
-    // Bound by the character, then by the planned id, then the report hold's table.
-    expect(dbMock.query.mock.calls[collect][1]).toEqual(['CID_Z', 1, 'mica_media']);
-    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
-  });
-
-  it('never requests a file another player’s copy still names', async () => {
-    mediaRows([MINE, SHARED]);
-
-    await purgeOwnedRows('CID_Z');
-
-    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
-  });
-
-  it('is what the registered hook runs', async () => {
-    mediaRows([MINE]);
-
-    localHandlers.get(SHELL_CHARACTER_DELETED)![0]('CID_Z');
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-
-    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
-  });
-
-  it('leaves the media rows alone when it cannot read what they name', async () => {
-    mediaRows([MINE], { collectFails: true });
-
-    const { failures } = await purgeOwnedRows('CID_Z');
-
-    expect(failures.map((f) => f.table)).toContain('mica_media');
-    expect(statements().some(isMediaPurge)).toBe(false);
+    expect(failures).toEqual([]);
+    expect(erased).toBeGreaterThan(0);
+    const erase = dbMock.query.mock.calls.find(([sql]) =>
+      mediaErase(String(sql).replace(/\s+/g, ' '))
+    )!;
+    expect(erase[1]).toEqual(['erased', 'CID_Z', 'erased']);
     expect(fetchMock).not.toHaveBeenCalled();
   });
-});
 
-describe('the orphan sweep releases what the swept rows named', () => {
-  it('reads the orphans’ URLs with the sweep’s own predicate, before the delete', async () => {
-    mediaRows([MINE, SHARED]);
+  it('nor does the hook that runs it', async () => {
+    localHandlers.get(SHELL_CHARACTER_DELETED)![0]('CID_Z');
+    await vi.waitFor(() => expect(logged()).toMatch(/erased \d+ row\(s\) for deleted character/));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
-    const result = await sweepOrphanedRows();
+  it('nor the media-only purge, or its hook', async () => {
+    expect(await purgeMediaForCitizen('CID_Z')).toBe(2);
+    localHandlers.get(MEDIA_CHARACTER_DELETED)![0]('CID_Y');
+    await vi.waitFor(() =>
+      expect(logged()).toMatch(/\[micamedia\] erased \d+ row\(s\) for deleted character/)
+    );
+    expect(statements().some(mediaErase)).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('nor the orphan sweep', async () => {
+    const result = await sweepOrphanedRows({
+      only: [{ table: 'mica_media', column: 'citizenid' }],
+      label: 'micamedia'
+    });
 
     expect(result.skipped).toBeNull();
-    const all = statements();
-    const collect = all.findIndex(isCollect);
-    const remove = all.findIndex((sql) =>
-      sql.startsWith('DELETE FROM mica_media WHERE NOT EXISTS')
-    );
-    expect(collect).toBeGreaterThanOrEqual(0);
-    expect(collect).toBeLessThan(remove);
-    expect(all[collect]).toContain(
-      'NOT EXISTS (SELECT 1 FROM players ow WHERE ow.citizenid = ' +
-        'CONVERT(t.`citizenid` USING utf8mb4) COLLATE utf8mb4_unicode_ci)'
-    );
-    // Only the file nothing else names.
-    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
-  });
-
-  it('releases through the media-only sweep too', async () => {
-    const { pruneOrphanedMedia } = await import('../services/Media');
-    mediaRows([MINE]);
-
-    await pruneOrphanedMedia();
-
-    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
-  });
-
-  it('skips the media table, and deletes nothing from it, when the collect fails', async () => {
-    mediaRows([MINE], { collectFails: true });
-
-    const result = await sweepOrphanedRows();
-
-    expect(result.failures.map((f) => f.table)).toContain('mica_media');
-    expect(statements().some((sql) => sql.startsWith('DELETE FROM mica_media'))).toBe(false);
+    expect(result.erased).toBeGreaterThan(0);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('nor the retention prune, which expires the rows instead', async () => {
+    expect(await pruneExpiredMedia()).toBe(2);
+
+    const expire = dbMock.query.mock.calls.find(([sql]) =>
+      String(sql).startsWith('UPDATE `mica_media` SET `status` = ?')
+    )!;
+    expect(expire[1].slice(0, 3)).toEqual(['expired', 1, 2]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('and nothing anywhere sends an HTTP DELETE, or a DELETE statement', async () => {
+    await purgeOwnedRows('CID_Z');
+    await pruneExpiredMedia();
+    await sweepOrphanedRows();
+
+    expect(statements().some((sql) => /\bDELETE\b/.test(sql))).toBe(false);
+    for (const [, init] of fetchMock.mock.calls) expect(init?.method).not.toBe('DELETE');
   });
 });
 
-/**
- * Review of MICA-292: once the purge and the sweep delete the hosted file, a player under an
- * open report could delete their character and destroy the reported photo. Retention never
- * could (MICA-167); these now hold the same rows by the same predicate.
- */
-describe('a photo under an open report is kept as evidence', () => {
-  const EVIDENCE = 'https://img.example.test/p/evidence.webp';
-  const EVIDENCE_DELETE = 'https://api.example.test/files/evidence.webp';
+describe('the retired delete URL', () => {
+  it('is said once at start when an owner still sets it, and does nothing', () => {
+    warnRetiredDeleteUrl();
+    warnRetiredDeleteUrl();
 
-  it('survives shell:characterDeleted, row and file, while the rest go', async () => {
-    const rows = mediaRows([MINE, { url: EVIDENCE, reported: true }]);
-
-    await purgeOwnedRows('CID_Z');
-
-    expect(rows.map((r) => r.url)).toEqual([EVIDENCE]);
-    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
-  });
-
-  it('survives the media-only purge too', async () => {
-    const rows = mediaRows([MINE, { url: EVIDENCE, reported: true }]);
-
-    await purgeMediaForCitizen('CID_Z');
-
-    expect(rows.map((r) => r.url)).toEqual([EVIDENCE]);
-    expect(requested()).not.toContain(EVIDENCE_DELETE);
-  });
-
-  it('survives the orphan sweep', async () => {
-    const rows = mediaRows([MINE, { url: EVIDENCE, reported: true }]);
-
-    await sweepOrphanedRows();
-
-    expect(rows.map((r) => r.url)).toEqual([EVIDENCE]);
-    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
-  });
-
-  it('is released by the next orphan sweep once the report resolves', async () => {
-    const rows = mediaRows([{ url: EVIDENCE, reported: true }]);
-    await purgeOwnedRows('CID_Z');
-    expect(requested()).toEqual([]);
-
-    // The report is resolved. The character is already gone, so the row is an orphan now.
-    rows[0].reported = false;
-    await sweepOrphanedRows();
-
-    expect(rows).toEqual([]);
-    expect(requested()).toEqual([EVIDENCE_DELETE]);
-  });
-});
-
-describe('a photo on a former image host', () => {
-  it('is counted by host and never requested', async () => {
-    mediaRows([]);
-
-    const outcome = await releaseHostedImages([OLD, GIF, MINE]);
-
-    expect(outcome.formerHost).toEqual({ 'old.example.test': 1 });
-    expect(outcome.deleted).toBe(1);
-    // Never the old host's file, through the current host's delete URL or any other.
-    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
-  });
-
-  it('is not counted while a row still names it', async () => {
-    mediaRows([]);
-    dbMock.query.mockImplementation(async (sql: string) => {
-      if (isLedgerRead(sql)) return [{ id: 'mediahost:old.example.test' }];
-      if (isReferenceCheck(sql)) return [{ url: OLD }];
-      return [];
-    });
-
-    expect((await releaseHostedImages([OLD])).formerHost).toEqual({});
-  });
-
-  it('is counted even with no image host configured at all any more', async () => {
-    withConvars({});
-    mediaRows([]);
-
-    expect((await releaseHostedImages([OLD])).formerHost).toEqual({ 'old.example.test': 1 });
+    const lines = (console.warn as any).mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(lines.filter((l: string) => l.includes('mica_media_delete_url'))).toEqual([
+      '[micamedia] mica_media_delete_url is set but no longer used: micaOS keeps every hosted ' +
+        'photo for as long as its row, which is for good (MICA-428). Nothing is deleted from ' +
+        'the image host.'
+    ]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('is logged with its host and count, and never its URL', () => {
-    reportRelease('micamedia', {
-      deleted: 0,
-      failed: 0,
-      unconfigured: 0,
-      formerHost: { 'old.example.test': 2 }
-    });
-
-    expect(logged()).toMatch(/2 hosted photo\(s\) on old\.example\.test, a former image host/);
-    expect(logged()).not.toContain(OLD);
-  });
-
-  it('a hotlink on an unrecorded host is neither counted nor requested', async () => {
-    mediaRows([]);
-
-    const outcome = await releaseHostedImages([GIF]);
-
-    expect(outcome).toEqual({ deleted: 0, failed: 0, unconfigured: 0, formerHost: {} });
-    expect(statements().some(isReferenceCheck)).toBe(false);
-  });
-
-  it('is counted when retention prunes its row, which it was not before', async () => {
-    hosting({ mica_media_retention: '30' });
-    let served = false;
-    dbMock.query.mockImplementation(async (sql: string) => {
-      if (sql.includes('information_schema.')) return [{ n: 1 }];
-      if (sql.startsWith('SELECT `id`, TIMESTAMPDIFF')) {
-        return [{ id: 'retention:mica_media:30d', age: 2 * 24 * 60 * 60 }];
-      }
-      if (sql.startsWith('SELECT t.`id` FROM `mica_media`')) {
-        if (served) return [];
-        served = true;
-        return [{ id: 1 }];
-      }
-      if (isCollect(sql)) return [{ url: OLD }];
-      if (isLedgerRead(sql)) return [{ id: 'mediahost:old.example.test' }];
-      if (sql.startsWith('DELETE FROM `mica_media`')) return { affectedRows: 1 };
-      return [];
-    });
-
-    expect(await pruneExpiredMedia()).toBe(1);
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(logged()).toMatch(/1 hosted photo\(s\) on old\.example\.test, a former image host/);
-  });
-
-  it('is counted by the media-only purge as well', async () => {
-    mediaRows([OLD]);
-
-    await purgeMediaForCitizen('CID_Z');
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(logged()).toMatch(/on old\.example\.test, a former image host/);
+  it('says nothing when it is unset — the positive twin', () => {
+    hosting({ mica_media_delete_url: '' });
+    warnRetiredDeleteUrl();
+    expect(console.warn).not.toHaveBeenCalled();
   });
 });
 
@@ -444,15 +242,11 @@ describe('recording which hosts were image hosts', () => {
     ]);
   });
 
-  it('considers a host this process remembered when the ledger cannot be written', async () => {
+  it('keeps a host this process remembered when the ledger cannot be written', async () => {
     dbMock.query.mockRejectedValue(new Error('no ledger'));
     await rememberImageHost('old.example.test');
-    withConvars({ mica_media_image_host: 'img.example.test' });
 
-    const outcome = await releaseHostedImages([OLD]);
-
-    // The reference check failed too, so it is reported as failed rather than guessed at.
-    expect(outcome.failed).toBe(1);
+    expect([...(await recordedImageHosts())]).toContain('old.example.test');
     expect(logged()).toMatch(/run micaschema apply/);
   });
 

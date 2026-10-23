@@ -117,7 +117,7 @@ vi.mock('../lib/Database', () => ({
             (p) => p.conversation_id === conversation_id && p.device_id === device_id
           )
         ) {
-          throw new Error("Duplicate entry for key 'conversation_device_unique'");
+          throw new Error("Duplicate entry for key 'conversation_live_device'");
         }
         db.participants.push({
           conversation_id,

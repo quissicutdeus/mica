@@ -135,8 +135,13 @@ const hasActivePhoto = (profileId: number) =>
 const install = () => {
   dbMock.single.mockImplementation(async (raw: string, params: any[] = []) => {
     const sql = one(raw);
-    if (sql.includes("FROM `mica_spark` WHERE `citizenid` = ? AND `status` <> 'deleted'")) {
-      const p = w.profiles.find((x) => x.citizenid === params[0] && x.status !== 'deleted');
+    if (
+      sql.includes(
+        "FROM `mica_spark` WHERE `citizenid` = ? AND `status` NOT IN ('deleted', 'expired', 'erased')"
+      )
+    ) {
+      const hidden = ['deleted', 'expired', 'erased'];
+      const p = w.profiles.find((x) => x.citizenid === params[0] && !hidden.includes(x.status));
       return p ? projectProfile(p) : null;
     }
     if (sql.includes('FROM `mica_spark` s JOIN `mica_accounts` a') && sql.includes('s.`id` = ?')) {
@@ -391,7 +396,10 @@ const install = () => {
       const values = params.slice(0, columns.length);
       const [id, citizenid] = params.slice(columns.length);
       const a = w.accounts.find((x) => x.id === id && x.citizenid === citizenid);
-      if (!a || (sql.includes("`status` != 'moderated'") && a.status === 'moderated')) return false;
+      const refused = ['moderated', 'erased', 'expired'];
+      if (!a || (sql.includes("`status` NOT IN ('moderated'") && refused.includes(a.status))) {
+        return false;
+      }
       columns.forEach((column, i) => (a[column] = values[i]));
       return true;
     }
@@ -404,8 +412,10 @@ const install = () => {
       Object.assign(p, { age, bio, looking_for: lookingFor });
       return true;
     }
-    if (sql.startsWith("UPDATE `mica_reports` SET `target_prior_status` = 'deleted'")) {
-      w.ownerDeletions.push([params[0], params[1]]);
+    if (sql.startsWith('UPDATE `mica_reports` SET `target_prior_status` = ?')) {
+      // A player's own remove records `deleted`; only a purge records `erased` (MICA-428).
+      expect(params[0]).toBe('deleted');
+      w.ownerDeletions.push([params[1], params[2]]);
       return true;
     }
     if (sql.startsWith("UPDATE `mica_spark` SET `status` = 'deleted'")) {
@@ -1016,6 +1026,13 @@ describe('unmatch, block, remove', () => {
     seed([{ ...ME, status: 'moderated' }]);
     expect(await call('spark:remove', {})).toBe(true);
     expect(profileById(10)!.status).toBe('moderated');
+  });
+
+  it('remove leaves an erased profile erased, and records nothing over it (MICA-428)', async () => {
+    seed([{ ...ME, status: 'erased' }]);
+    await call('spark:remove', {});
+    expect(profileById(10)!.status).toBe('erased');
+    expect(w.ownerDeletions).toEqual([]);
   });
 
   it("remove records the owner's deletion on a taken-down profile's takedowns (MICA-426)", async () => {

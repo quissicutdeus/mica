@@ -7,7 +7,6 @@ import { announceSkip, resolveOwner, type SkipReason } from './sweep/owner';
 import { citizenScope, orphanScope } from './sweep/scope';
 import {
   purgePlanned,
-  type CascadeOptions,
   type PurgeException,
   type PurgeOptions,
   type PurgeResult,
@@ -15,12 +14,12 @@ import {
 } from './sweep/purge';
 import { traceOf } from './sqlErrors';
 
-export { cascadeEdges, ownedTables, registerOwnedExternal, type OwnedTable } from './sweep/tables';
+export { ownedTables, type OwnedTable } from './sweep/tables';
 export { OWNER_OVERRIDE_CONVAR, type SkipReason } from './sweep/owner';
 export { orphanScope } from './sweep/scope';
 export {
   __setPurgeHookForTests,
-  type CascadeOptions,
+  registerSharedRows,
   type PurgeException,
   type PurgeOptions,
   type PurgeResult,
@@ -28,12 +27,14 @@ export {
 } from './sweep/purge';
 
 /**
- * Delete the rows a character left behind, on a schema where nothing else will.
+ * Erase the rows a character left behind, on a schema where nothing else will. Nothing is
+ * deleted since MICA-428: the rows move to `erased` and stay, for staff and for evidence.
  *
  * ## Read this before changing anything below, or in `lib/sweep/`
  *
- * **A sweep that reads "I cannot see the owner table" as "everything is an orphan" deletes
- * every row on the server.** That is not a hypothetical failure mode; it is the *default*
+ * **A sweep that reads "I cannot see the owner table" as "everything is an orphan" erases
+ * every row on the server** — kept, but hidden from every player, with what each row's status
+ * was overwritten. That is not a hypothetical failure mode; it is the *default*
  * one, because "no rows came back" and "the question could not be asked" are the same shape
  * to almost every query interface, and the deletion looks like a success in the log. Every
  * guard here and in `lib/sweep/` exists to keep those two apart, and the rule they all serve is:
@@ -69,40 +70,39 @@ export {
 
 /**
  * Where the parts live. This file is the entry point every caller imports, and holds the two
- * public deletes; the guards it rests on are in `lib/sweep/`, split along the same lines this
+ * public erases; the guards it rests on are in `lib/sweep/`, split along the same lines this
  * file was always read in:
  *
  * - `sql.ts` — `identifier`, the check every interpolated name goes through.
- * - `tables.ts` — which tables are owned (`ownedTables`), the keys between them
- *   (`cascadeEdges`), and what their rows name outside the database (`registerOwnedExternal`).
+ * - `tables.ts` — which tables are owned (`ownedTables`), and which can be erased
+ *   (`hasStatus`).
  * - `owner.ts` — the owner table, confirmed usable or refused (`resolveOwner`), the
  *   `mica_orphan_owner_table` override, and the line said when a sweep is skipped.
- * - `scope.ts` — whose rows a delete is for: a named citizen, or every orphan.
- * - `purge.ts` — `purgePlanned`, the one delete behind all three callers.
+ * - `scope.ts` — whose rows an erase is for: a named citizen, or every orphan.
+ * - `purge.ts` — `purgePlanned`, the one write behind all three callers, and the shared rows
+ *   it leaves live while others are in them (`registerSharedRows`).
  */
 
 export interface SweepResult {
-  /** Rows removed across every table swept. */
-  removed: number;
+  /** Rows erased across every table swept. */
+  erased: number;
   /**
-   * Orphaned rows left on purpose: under an open report, hanging off one that is, or the
-   * parent of a row that stays. The next sweep takes what is no longer held.
+   * Orphaned rows left as they were on purpose: under a takedown, or kept by an exception.
    */
   kept: number;
-  /** Per-table counts, for the tables that gave up rows. */
+  /** Per-table counts, for the tables that had rows erased. */
   byTable: Record<string, number>;
   /** Set when nothing was attempted. `null` means the sweep ran. */
   skipped: SkipReason | null;
   /**
-   * Tables that could not be planned or deleted from, or kept whole because a table their rows
-   * hang off could not be planned; `*` when no plan could be made at all. One failing must not
-   * stop the others.
+   * Tables that could not be erased from; `*` when the sweep stopped as a whole. One failing
+   * must not stop the others.
    */
   failures: SweepFailure[];
 }
 
 const skip = (reason: SkipReason): SweepResult => ({
-  removed: 0,
+  erased: 0,
   kept: 0,
   byTable: {},
   skipped: reason,
@@ -115,11 +115,6 @@ export interface SweepOptions {
   /** Console prefix, so `micamedia prune` still sounds like itself. */
   label?: string;
   /**
-   * Which child tables go with their parent (`CascadeOptions`). Absent, none do, which keeps
-   * any parent a child row still references: the safe answer for a caller that has not said.
-   */
-  cascade?: CascadeOptions;
-  /**
    * What the sweep keeps though its owner is gone (`PurgeException`). It has to be the same
    * list the character-deleted purge keeps: with no foreign key onto the owner any more, the
    * sweep is what would otherwise take those rows as orphans at the next start (MICA-300).
@@ -128,21 +123,20 @@ export interface SweepOptions {
 }
 
 /**
- * Delete every row whose owner no longer exists. **A hard delete.**
+ * Erase every row whose owner no longer exists (MICA-428: a status change, never a delete).
  *
- * Since MICA-300 the same plan as the character-deleted purge and a player's own delete
- * (`purgePlanned`), for every orphaned owner at once: an orphan under an open report stays,
- * and so does what hangs off it and the parents of anything that stays — a live player's
- * reply keeps the dead player's post it answers. The next sweep takes what is no longer held.
+ * The same write as the character-deleted purge and a player's own delete (`purgePlanned`),
+ * for every orphaned owner at once. A row under a takedown stays `moderated`, and a reopen
+ * restores `erased`. Another player's row that references an orphan's — a reply under its
+ * post — is not theirs and is left as it is.
  *
  * Never rejects. Every refusal is a `skipped` reason and every per-table failure is a
  * `failures` entry, because this runs at resource start where a rejection is a stack trace
  * on a server that is otherwise fine — and because a table that does not exist on one
  * install must not stop the others from being swept.
  *
- * Tables are swept **sequentially**, children first. Issuing twenty-two concurrent deletes at
- * boot is the availability problem the chunking exists to avoid, arrived at from the other
- * direction.
+ * Tables are swept **sequentially**. Issuing thirty concurrent updates at boot is the
+ * availability problem the chunking exists to avoid, arrived at from the other direction.
  */
 export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<SweepResult> => {
   const label = options.label ?? 'mica';
@@ -160,27 +154,23 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
   try {
     // log-identity-ok: the owner table and column, a schema name, not a player
     const done = await purgePlanned(orphanScope(owner, match, label), tables, {
-      cascade: options.cascade,
       except: options.except
     });
     return { ...done, skipped: null };
   } catch (error) {
-    // Everything that throws here does so before any DELETE: a plan that cannot be made at all
-    // (a cycle, a key not on `id`), or the evidence it keeps that could not be recorded and
-    // hidden (MICA-426). The error says which.
-    console.error(`[${label}] orphan sweep stopped before deleting anything:`, traceOf(error));
-    return { removed: 0, kept: 0, byTable: {}, skipped: null, failures: [{ table: '*', error }] };
+    // Only the test seam throws here; a table's own failure is caught per table.
+    console.error(`[${label}] orphan sweep stopped:`, traceOf(error));
+    return { erased: 0, kept: 0, byTable: {}, skipped: null, failures: [{ table: '*', error }] };
   }
 };
 
 /**
- * Remove one named character's rows. **A hard delete.** Three callers, one plan
- * (`purgePlanned`), each keeping what an open report holds, what hangs off that, and anything
- * whose deletion would cascade into a row that stays:
+ * Erase one named character's rows (MICA-428: a status change, never a delete). Three
+ * callers, one write (`purgePlanned`), each leaving a takedown's row `moderated`:
  *
  * - **The character-deleted purge** (`lib/shell.ts`, MICA-300): the framework has deleted the
- *   character, so everything they owned goes, the device rows included — except the pending
- *   reports they filed and their rows in the moderation ledger (`CHARACTER_EXCEPT`).
+ *   character, so everything they owned is erased — except the pending reports they filed,
+ *   their rows in the moderation ledger, and the device rows (`CHARACTER_EXCEPT`).
  * - **A player's own delete** (MICA-168, `services/Privacy.ts`), keeping more by `except`.
  * - **The media-only purge** (`services/Media.ts`), restricted to `mica_media` by `only`.
  *
@@ -190,22 +180,20 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
  * misread, and requiring a readable owner table would make the immediate cleanup fail on
  * exactly the servers that need it most — the ones where the character's row is already gone.
  *
- * A table with a registered `OwnedExternal` has what its deleted rows name released after
- * (MICA-292) — a deleted character's hosted photos go from the host, unless another row still
- * names them.
+ * A hosted file a row names is kept while the row is (MICA-428): nothing is released.
  */
 export async function purgeOwnedRows(
   citizenid: string,
   options: PurgeOptions = {}
 ): Promise<PurgeResult> {
   const owner = typeof citizenid === 'string' ? citizenid.trim() : '';
-  if (owner.length === 0) return { removed: 0, kept: 0, failures: [] };
+  if (owner.length === 0) return { erased: 0, kept: 0, failures: [] };
   const purpose = options.purpose ?? "for a player's own delete";
   // log-identity-ok: the citizenid is bound in SQL; the scope's label and purpose are logged
-  const { removed, kept, failures } = await purgePlanned(
+  const { erased, kept, failures } = await purgePlanned(
     citizenScope(owner, purpose),
     options.only ?? ownedTables(),
     options
   );
-  return { removed, kept, failures };
+  return { erased, kept, failures };
 }

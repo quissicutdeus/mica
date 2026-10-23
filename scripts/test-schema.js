@@ -31,16 +31,17 @@ let checksRun = 0;
 /**
  * The repository checks (52), plus MICA-233's: for each of three import sources on each of
  * two framework shapes, fifteen checks and the seeded schema's one. Plus MICA-167's
- * retention scenario on each shape: twenty-one checks (MICA-390's five deleteThread ones
- * among them) and the seeded schema's one. Plus MICA-292's evidence hold on the purges and
- * the sweep, ten checks and the seeded schema's one, on qb and on ESX with `users` on each of
- * two collations (MICA-299). Plus MICA-275's line membership, eleven checks on each shape.
- * Plus MICA-293's hosted quota and drop race, sixteen checks and the seeded schema's one on
- * each shape. Plus MICA-168's player export and
- * delete, twelve checks and the seeded schema's one on each shape, and its cascade guard, ten
- * and the seeded schema's one on each shape. Plus MICA-300's deleted character, cleaned up by
- * the hook (thirteen and the seeded schema's one) and by the sweep (seventeen and the seeded
- * schema's one), on each shape, and two that `mica.sql` refuses an es_extended database. Plus
+ * retention scenario on each shape: twenty-four checks (MICA-390's deleteThread ones among
+ * them) and the seeded schema's one. Plus MICA-292's purges and sweep over media, twelve
+ * checks and the seeded schema's one, on qb and on ESX with `users` on each of two collations
+ * (MICA-299). Plus MICA-275's line membership, eleven checks on each shape. Plus MICA-293's
+ * hosted quota and drop race, fourteen checks and the seeded schema's one on each shape. Plus
+ * MICA-168's player export and delete, twelve checks and the seeded schema's one on each
+ * shape, and its erase over shared rows, twelve and the seeded schema's one on each shape. Plus
+ * MICA-300's deleted character, cleaned up by the hook (ten and the seeded schema's one) and by
+ * the sweep (twelve and the seeded schema's one), on each shape, and two that `mica.sql`
+ * refuses an es_extended database. Since MICA-428 every one of those reads a status where it
+ * once read a row's absence: nothing is deleted. Plus
  * MICA-165's keyed import and content backfill, eleven and the seeded schema's one on each
  * shape, and a keyed micaseed on qb. Plus MICA-306's first-start schema, below. Plus
  * `uniqueAfterDelete: 'revive'` on Hodlr and Battery, the seeded schema's one and eighteen on
@@ -51,15 +52,15 @@ let checksRun = 0;
  * (BLIND_INDEX_CHECKS), on each shape.
  */
 const IMPORT_CHECKS = 16;
-const RETENTION_CHECKS = 22;
-const EVIDENCE_CHECKS = 11;
+const RETENTION_CHECKS = 25;
+const EVIDENCE_CHECKS = 13;
 const LINE_CHECKS = 11;
-const HOSTED_CHECKS = 17;
+const HOSTED_CHECKS = 15;
 const PRIVACY_CHECKS = 13;
-const CASCADE_CHECKS = 11;
-/** MICA-300: the seeded schema's one and thirteen, on each shape; the sweep adds four more. */
-const HOOK_CHECKS = 14;
-const SWEEP_CHECKS = 18;
+const CASCADE_CHECKS = 13;
+/** MICA-300: the seeded schema's one and ten, on each shape; the sweep adds two more. */
+const HOOK_CHECKS = 11;
+const SWEEP_CHECKS = 13;
 /** MICA-300: the media-only hook, the seeded schema's one and five, on each shape. */
 const MEDIA_HOOK_CHECKS = 6;
 /** MICA-165: the content backfill and a keyed import, the seeded schema's one and ten. */
@@ -79,13 +80,13 @@ const BLIND_INDEX_CHECKS = 7;
  */
 const BOOTSTRAP_CHECKS = 23;
 /**
- * MICA-414: the revive on a real MariaDB, the seeded schema's one and eighteen: Hodlr's eight
+ * MICA-414: the revive on a real MariaDB, the seeded schema's one and nineteen: Hodlr's nine
  * (both rows soft-deleted, no duplicate key, the same id, one row `active` with the new value,
  * `created_at` refreshed, another citizen's deleted row left alone, an unnamed column back to
- * DEFAULT) and Battery's ten, which add that another owner's create under the key is still
- * refused and leaves the deleted row deleted.
+ * DEFAULT, and since MICA-428 an erased row never revived) and Battery's ten, which add that
+ * another owner's create under the key is still refused and leaves the deleted row deleted.
  */
-const REVIVE_CHECKS = 19;
+const REVIVE_CHECKS = 20;
 /**
  * MICA-426: a takedown and a restore on a real `ON UPDATE` column, the Messages reads and a
  * retention prune (the seeded schema's one and ten), and a moderated row through a player's own
@@ -283,7 +284,7 @@ const loadServerModule = async () => {
     `export { purgeMediaForCitizen } from '${root}/server/services/Media.ts';`,
     // MICA-293: the hosted-row quota and the drop's copy, from the same declaration.
     `export { hostedUrlPrefixes, media, NOMINAL_HOSTED_BYTES, storedBytesOf, usedBytesQuery } from '${root}/server/services/Media.ts';`,
-    `export { releaseHostedImages, resetMediaHostForTests } from '${root}/server/lib/mediaHost.ts';`,
+    `export { resetMediaHostForTests } from '${root}/server/lib/mediaHost.ts';`,
     `export { orphanScope, purgeOwnedRows, sweepOrphanedRows } from '${root}/server/lib/orphanSweep.ts';`,
     `import '${root}/server/services/Messages.ts';`,
     // MICA-390: a thread's hard delete keeps a reported DM by the same hold retention does.
@@ -658,7 +659,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
 /**
  * MICA-275: a phone's membership of a thread with a line, on a real engine.
  *
- * `conversation_device_unique` is on `(conversation_id, device_id)` and still holds a row
+ * `conversation_live_device` is on `(conversation_id, live_device)` and still holds a row
  * after the player leaves, so rejoining by inserting a second row is a duplicate-key error
  * no mock can show. `ensureLineParticipant` reopens the left row instead; these checks hold
  * it to that, and to never reopening a moderated one. The declared repository opens the
@@ -727,6 +728,50 @@ const runLineMembership = async ({
     `${framework}: the same row is reopened, active, not a second one`,
     reopened.map((m) => [m.id, m.status, m.left_at]),
     [[first[0]?.id, 'active', null]]
+  );
+
+  /**
+   * MICA-428 review: a dead character's erased membership must not hold the phone's seat. B
+   * opens a thread with a line on phone D and hands D to G; G's character is deleted, and the
+   * real purge erases G's membership but keeps the thread, which is B's. The handover to N
+   * leaves the erased row naming G, its real member. Before the key was over `live_device`,
+   * N opening the line again met G's row under `(conversation_id, device_id)` for good.
+   */
+  const phoneD = 'phone428d';
+  const [gone, next] = ['GONE428', 'NEXT428'];
+  const bus = { name: 'Night Bus', number: '5550124' };
+  const seats = async (id) =>
+    (
+      await connection.query(
+        'SELECT citizenid, status, left_at IS NOT NULL AS gone FROM mica_messages_participants WHERE conversation_id = ? ORDER BY id',
+        [id]
+      )
+    )[0].map((m) => `${m.citizenid} ${m.status} ${Number(m.gone)}`);
+  const busThread = (await modules.openLineThread(declared, ownerB, phoneD, bus)).id;
+  await declared.transferParticipants(phoneD, gone);
+  const purged = await modules.purgeOwnedRows(gone);
+  check(`${framework}: a dead holder's purge fails nothing`, purged.failures, []);
+  const [[busRow]] = await connection.query(
+    'SELECT status FROM mica_messages_conversations WHERE id = ?',
+    [busThread]
+  );
+  check(
+    `${framework}: it erases their membership, left, and keeps the thread its creator owns`,
+    [await seats(busThread), busRow?.status],
+    [[`${gone} erased 1`], 'active']
+  );
+  await declared.transferParticipants(phoneD, next);
+  let rejoin = null;
+  try {
+    rejoin = (await modules.openLineThread(declared, next, phoneD, bus)).id;
+  } catch (error) {
+    rejoin = String(error?.message ?? error);
+  }
+  check(`${framework}: the phone's next holder opens the same thread`, rejoin, busThread);
+  check(
+    `${framework}: beside the erased membership, which still names its real member`,
+    await seats(busThread),
+    [`${gone} erased 1`, `${next} active 0`]
   );
 
   check(`${framework}: lineKeyOf answers the line's key`, await declared.lineKeyOf(threadId), key);
@@ -1020,14 +1065,18 @@ const runImportVariant = async ({ connection, schemaFile, hasPlayers, modules, s
 /**
  * The real retention prune against a real engine, on each framework shape.
  *
- * What the unit suite cannot show: that MariaDB accepts the holds *inside the DELETE* — the
- * conversation and thread holds read the table being deleted from through a DISTINCT derived
+ * What the unit suite cannot show: that MariaDB accepts the holds *inside the UPDATE* — the
+ * conversation and thread holds read the table being updated through a DISTINCT derived
  * table, which is MySQL's error 1093 if it is ever merged — and that each hold keeps exactly
- * the rows it should. Run under `NO_BACKSLASH_ESCAPES`, the sql_mode that once made the grace
- * markers invisible to their own `LIKE`.
+ * the rows it should shown. Run under `NO_BACKSLASH_ESCAPES`, the sql_mode that once made the
+ * grace markers invisible to their own `LIKE`.
+ *
+ * Nothing is deleted since MICA-428: an expired row moves to `expired` and stays, its children
+ * with it. So every check reads what is still **shown** (`active`) beside what is still
+ * **there** (every row), and the second never shrinks.
  *
  * Everything is seeded as of 2020 unless it says NOW(), so every row is past every default
- * window and only a hold keeps it.
+ * window and only a hold keeps it shown.
  */
 const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   const framework = hasPlayers ? 'qb' : 'esx';
@@ -1045,6 +1094,10 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
 
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
   const ids = async (table) => (await q(`SELECT id FROM ${table} ORDER BY id`)).map((r) => r.id);
+  const shown = async (table) =>
+    (await q(`SELECT id FROM ${table} WHERE status = 'active' ORDER BY id`)).map((r) => r.id);
+  const statusOf = async (table, id) =>
+    (await q(`SELECT status FROM ${table} WHERE id = ?`, [id]))[0]?.status;
   const policy = (table) => modules.retentionPolicies().find((p) => p.table === table);
   const prune = async (table) => {
     try {
@@ -1132,19 +1185,19 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
       true
     );
 
-    step(`${label} — first start: the grace announces and deletes nothing`);
+    step(`${label} — first start: the grace announces and hides nothing`);
     const firstRun = [];
     for (const table of ['mica_media', 'mica_messages', 'mica_blabber_dms']) {
       firstRun.push(await prune(table));
     }
-    check(`${label}: the first start deletes nothing`, firstRun, [0, 0, 0]);
-    check(`${label}: every message is still there`, await ids('mica_messages'), [1, 2, 3, 5, 6]);
+    check(`${label}: the first start hides nothing`, firstRun, [0, 0, 0]);
+    check(`${label}: every message is still shown`, await shown('mica_messages'), [1, 2, 3, 5, 6]);
     check(
-      `${label}: every photo is still there`,
-      await ids('mica_media'),
+      `${label}: every photo is still shown`,
+      await shown('mica_media'),
       [10, 11, 12, 14, 15, 16]
     );
-    check(`${label}: every DM is still there`, await ids('mica_blabber_dms'), [1, 2, 3, 4, 5]);
+    check(`${label}: every DM is still shown`, await shown('mica_blabber_dms'), [1, 2, 3, 4, 5]);
     check(
       `${label}: one marker per table, named for its window`,
       (
@@ -1157,12 +1210,12 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
       ]
     );
     check(
-      `${label}: a restart inside the grace still deletes nothing`,
+      `${label}: a restart inside the grace still hides nothing`,
       await prune('mica_messages'),
       0
     );
 
-    step(`${label} — 25 hours later: exactly the unheld rows go`);
+    step(`${label} — 25 hours later: exactly the unheld rows expire, and every row stays`);
     await q(
       "UPDATE mica_schema_migrations SET applied_at = NOW() - INTERVAL 25 HOUR WHERE id LIKE 'retention:%'"
     );
@@ -1172,35 +1225,41 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
       1
     );
     check(
-      `${label}: a reported message holds its whole conversation`,
-      await ids('mica_messages'),
+      `${label}: a reported message holds its whole conversation shown`,
+      await shown('mica_messages'),
       [1, 2, 3, 6]
     );
     check(
-      `${label}: a pruned message takes its reactions`,
-      await q('SELECT id FROM mica_messages_reactions'),
-      []
+      `${label}: the expired message is kept, as expired`,
+      [await ids('mica_messages'), await statusOf('mica_messages', 5)],
+      [[1, 2, 3, 5, 6], 'expired']
     );
     check(
-      `${label}: media: the unattached photo and the one on the pruned message`,
+      `${label}: an expired message keeps its reactions (MICA-429)`,
+      (await q('SELECT id FROM mica_messages_reactions')).length,
+      1
+    );
+    check(
+      `${label}: media: the unattached photo and the one on the expired message`,
       await prune('mica_media'),
       2
     );
     check(
-      `${label}: a photo on a live message, listing or blab, or under a report, stays`,
-      await ids('mica_media'),
+      `${label}: a photo on a shown message, listing or blab, or under a report, stays shown`,
+      await shown('mica_media'),
       [11, 12, 14, 15]
     );
+    check(`${label}: every photo is kept`, await ids('mica_media'), [10, 11, 12, 14, 15, 16]);
     check(`${label}: DMs: only the thread nobody reported`, await prune('mica_blabber_dms'), 1);
     check(
       `${label}: a reported DM holds its thread, a reported account holds its DMs`,
-      await ids('mica_blabber_dms'),
+      await shown('mica_blabber_dms'),
       [1, 2, 3, 5]
     );
     check(
-      `${label}: a pruned DM takes its reactions`,
-      await q('SELECT id FROM mica_account_reactions'),
-      []
+      `${label}: an expired DM is kept, and keeps its reactions`,
+      [await ids('mica_blabber_dms'), (await q('SELECT id FROM mica_account_reactions')).length],
+      [[1, 2, 3, 4, 5], 1]
     );
     await q(
       "UPDATE mica_reports SET resolution = 'dismissed' WHERE target_table = 'mica_messages'"
@@ -1210,8 +1269,9 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
       await prune('mica_messages'),
       3
     );
+    check(`${label}: a second prune moves nothing more`, await prune('mica_messages'), 0);
 
-    step(`${label} — deleteThread (MICA-390): a reported DM holds its thread, or it all goes`);
+    step(`${label} — deleteThread (MICA-390): a reported DM holds its thread, or it all hides`);
     // DM 1 (1->2) is under an open report; 2 (2->1) is the same thread; 3 and 5 are not in it.
     await q(
       `INSERT INTO mica_blabber_dms (id, citizenid, from_account, to_account, body) VALUES
@@ -1224,8 +1284,8 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
     );
     check(`${label}: a reported DM holds the whole thread`, await modules.deleteThread(2, 1), 0);
     check(
-      `${label}: every DM in the held thread stays`,
-      await ids('mica_blabber_dms'),
+      `${label}: every DM in the held thread stays shown`,
+      await shown('mica_blabber_dms'),
       [1, 2, 3, 5, 6, 7]
     );
     await q(
@@ -1236,11 +1296,15 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
       await modules.deleteThread(2, 1),
       4
     );
-    check(`${label}: the other threads stay`, await ids('mica_blabber_dms'), [3, 5]);
+    check(`${label}: the other threads stay shown`, await shown('mica_blabber_dms'), [3, 5]);
     check(
-      `${label}: a deleted DM takes its reactions`,
-      await q('SELECT id FROM mica_account_reactions'),
-      []
+      `${label}: the thread is kept, deleted, its reactions with it (MICA-428)`,
+      [
+        await statusOf('mica_blabber_dms', 6),
+        (await ids('mica_blabber_dms')).length,
+        (await q('SELECT id FROM mica_account_reactions')).length
+      ],
+      ['deleted', 7, 3]
     );
   } finally {
     await connection.query('SET SESSION sql_mode = @mica_saved_sql_mode');
@@ -1251,13 +1315,14 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
 
 /**
  * The character purges and the orphan sweep against a real engine, on each framework shape:
- * a photo under an open report outlives its character until the report resolves.
+ * since MICA-428 they erase rather than delete, so every photo outlives its character — the
+ * reported one included, hidden like the rest — and only a takedown's `moderated` one keeps its
+ * status.
  *
  * Seeded the way the retention variant seeds its reported photo, but for a character who is
- * then purged and then deleted. What the unit suite cannot show is that MariaDB evaluates
- * retention's `openReportHold` inside these statements — the purge's plain
- * `DELETE … WHERE citizenid = ?` and the sweep's `DELETE … WHERE NOT EXISTS … LIMIT` — and
- * that it keeps exactly the reported row.
+ * then purged and then deleted. What the unit suite cannot show is that MariaDB runs these
+ * statements — the purge's `UPDATE … WHERE citizenid = ? … LIMIT` and the sweep's
+ * `UPDATE … WHERE NOT EXISTS … LIMIT` — and moves exactly the rows it should.
  *
  * On qb this used to need `fk_media_citizenid` dropped by hand first, or deleting the character
  * took the reported photo inside MariaDB, hold or no hold. `mica.sql` has no such key since
@@ -1286,6 +1351,10 @@ const runEvidenceVariant = async ({
 
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
   const media = async () => (await q('SELECT id FROM mica_media ORDER BY id')).map((row) => row.id);
+  const shown = async () =>
+    (await q("SELECT id FROM mica_media WHERE status = 'active' ORDER BY id")).map((r) => r.id);
+  const statuses = async () =>
+    (await q('SELECT id, status FROM mica_media ORDER BY id')).map((r) => `${r.id} ${r.status}`);
   const photo = (id, owner) =>
     q('INSERT INTO mica_media (id, citizenid, url) VALUES (?, ?, ?)', [
       id,
@@ -1293,6 +1362,8 @@ const runEvidenceVariant = async ({
       `https://img.example.test/p/${id}.webp`
     ]);
 
+  // A takedown's row through these purges is the moderated-purge variant's, whose bundle loads
+  // the Reports service that records it.
   step(`${label} — A's photo 20 is reported, 21 is not; 22 is B's`);
   await photo(20, A);
   await photo(21, A);
@@ -1303,11 +1374,13 @@ const runEvidenceVariant = async ({
   );
 
   await modules.purgeMediaForCitizen(A);
-  check(`${label}: the media purge keeps the reported photo only`, await media(), [20, 22]);
+  check(`${label}: the media purge hides every photo of A's, and only A's`, await shown(), [22]);
+  check(`${label}: and keeps every one`, await statuses(), ['20 erased', '21 erased', '22 active']);
 
-  await photo(21, A);
+  await photo(23, A);
   await modules.purgeOwnedRows(A);
-  check(`${label}: the whole-phone purge keeps the reported photo only`, await media(), [20, 22]);
+  check(`${label}: the whole-phone purge erases the new one too`, await shown(), [22]);
+  check(`${label}: and deletes nothing`, await media(), [20, 21, 22, 23]);
 
   // The character is deleted; 24 is a row the purge never saw, an ordinary orphan.
   await photo(24, A);
@@ -1324,21 +1397,22 @@ const runEvidenceVariant = async ({
     swept.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`),
     []
   );
-  check(
-    `${label}: the sweep keeps the reported orphan and takes the other`,
-    await media(),
-    [20, 22]
-  );
+  check(`${label}: the sweep erases the orphan, and keeps it`, await statuses(), [
+    '20 erased',
+    '21 erased',
+    '22 active',
+    '23 erased',
+    '24 erased'
+  ]);
 
-  await q("UPDATE mica_reports SET resolution = 'dismissed' WHERE target_table = 'mica_media'");
-  const resolved = await modules.sweepOrphanedRows();
-  check(`${label}: the sweep after the report resolves ran`, resolved.skipped, null);
+  const again = await modules.sweepOrphanedRows();
+  check(`${label}: a second sweep ran`, again.skipped, null);
   check(
     `${label}: and no table failed either time`,
-    resolved.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`),
+    again.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`),
     []
   );
-  check(`${label}: and takes the photo the report held`, await media(), [22]);
+  check(`${label}: and moves nothing already erased`, again.erased, 0);
 
   // MICA-299. The comparison is collated on micaOS's side so the owner's primary key still
   // answers each probe; collating the owner's side would scan the character table per row.
@@ -1489,11 +1563,15 @@ const runModerationVariant = async ({ connection, schemaFile, hasPlayers, module
   } finally {
     modules.resetRetentionForTests();
   }
-  check(`${label}: the prune takes the two unmoderated texts`, pruned, 2);
+  check(`${label}: the prune expires the two unmoderated texts`, pruned, 2);
   check(
-    `${label}: and keeps the moderated one`,
+    `${label}: and leaves the moderated one, keeping all three (MICA-428)`,
     (await q('SELECT id, status FROM mica_messages ORDER BY id')).map((r) => [r.id, r.status]),
-    [[2, 'moderated']]
+    [
+      [1, 'expired'],
+      [2, 'moderated'],
+      [3, 'expired']
+    ]
   );
 };
 
@@ -1542,15 +1620,16 @@ const runLogSaltVariant = async ({ connection, schemaFile, hasPlayers, modules }
 
 /**
  * MICA-293, on each shape: a hosted photo counts against the quota, and a proximity drop
- * cannot hand a recipient a file retention already released.
+ * cannot hand a recipient a live copy of a photo retention already expired.
  *
  * The quota half proves what no unit suite can: that `usedBytesQuery`'s SQL and
  * `storedBytesOf` agree to the byte over every kind of row — inline, hosted with and without
  * a recorded size, on a former host, a hotlink elsewhere, a deleted row — and that the insert
  * predicate refuses a capture the hosted rows leave no room for.
  *
- * The race half runs both orders of the drop's copy and retention's delete-then-release,
- * statement by statement, on the harness's one connection. That is the interleaving the fix
+ * The race half runs both orders of the drop's copy and retention's expiry (MICA-428: the row
+ * moves to `expired` and stays, its file with it), statement by statement, on the harness's one
+ * connection. That is the interleaving the fix
  * is about — whether the copy selects its source in the same statement — and not a test of
  * InnoDB's locking between two connections, which the harness cannot drive.
  */
@@ -1567,8 +1646,8 @@ const runHostedVariant = async ({ connection, schemaFile, hasPlayers, modules })
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
   const previousConvar = globalThis.GetConvar;
   const previousConvarInt = globalThis.GetConvarInt;
-  // An image host, no upload URL (so nothing is posted) and no delete URL (so a release
-  // counts what it would delete as `unconfigured` rather than requesting it).
+  // An image host and no upload URL, so nothing is posted; nothing is ever deleted from it
+  // (MICA-428).
   globalThis.GetConvar = (name, fallback) =>
     name === 'mica_media_image_host' ? 'img.example.test' : fallback;
   let quotaMb = 1;
@@ -1644,14 +1723,13 @@ const runHostedVariant = async ({ connection, schemaFile, hasPlayers, modules })
       );
       return (await q('SELECT * FROM mica_media WHERE id = ?', [insertId]))[0];
     };
-    const retention = async (id, url) => {
-      await q('DELETE FROM mica_media WHERE id = ?', [id]);
-      return await modules.releaseHostedImages([url]);
-    };
+    // What the prune does to one row since MICA-428: `active` to `expired`, kept.
+    const retention = (id) =>
+      q("UPDATE mica_media SET status = 'expired', updated_at = updated_at WHERE id = ?", [id]);
     const copy = (row) => modules.media.repo.copyToPlayers([B], row);
     const naming = async (url) =>
-      (await q('SELECT citizenid FROM mica_media WHERE url = ?', [url])).map(
-        (row) => row.citizenid
+      (await q('SELECT citizenid, status FROM mica_media WHERE url = ? ORDER BY id', [url])).map(
+        (row) => `${row.citizenid} ${row.status}`
       );
 
     for (const quota of ['on', 'off']) {
@@ -1659,31 +1737,28 @@ const runHostedVariant = async ({ connection, schemaFile, hasPlayers, modules })
       const first = `https://img.example.test/p/copied-${quota}.webp`;
       const second = `https://img.example.test/p/raced-${quota}.webp`;
 
-      step(`${label}, quota ${quota} — the copy lands, then retention deletes and releases`);
+      step(`${label}, quota ${quota} — the copy lands, then retention expires the source`);
       const kept = await source(first);
       check(`${label} (quota ${quota}): the copy is written`, await copy(kept), [B]);
+      await retention(kept.id);
       check(
-        `${label} (quota ${quota}): the release keeps the file B's copy names`,
-        await retention(kept.id, first),
-        { deleted: 0, failed: 0, unconfigured: 0, formerHost: {} }
+        `${label} (quota ${quota}): B's copy stays live, and the source is kept expired`,
+        await naming(first),
+        [`${A} expired`, `${B} active`]
       );
 
-      step(`${label}, quota ${quota} — retention deletes and releases, then the copy runs`);
+      step(`${label}, quota ${quota} — retention expires the source, then the copy runs`);
       const read = await source(second);
-      check(
-        `${label} (quota ${quota}): the release finds the file unreferenced`,
-        await retention(read.id, second),
-        { deleted: 0, failed: 0, unconfigured: 1, formerHost: {} }
-      );
+      await retention(read.id);
       check(
         `${label} (quota ${quota}): the copy from the stale read writes nothing`,
         await copy(read),
         []
       );
       check(
-        `${label} (quota ${quota}): and no row names the released file`,
+        `${label} (quota ${quota}): and no live row names the hidden photo`,
         await naming(second),
-        []
+        [`${A} expired`]
       );
     }
 
@@ -1707,8 +1782,9 @@ const runHostedVariant = async ({ connection, schemaFile, hasPlayers, modules })
  *
  * The unit suite asserts the export's SQL as text. What only MariaDB can say is that every
  * owned table's derived column list names columns that exist in the committed DDL, that
- * `LENGTH(col) AS col_bytes` sizes a blob and a base64 column, and that the delete keeps a
- * reported row and counts it as kept.
+ * `LENGTH(col) AS col_bytes` sizes a blob and a base64 column, and that the delete erases every
+ * row it may (MICA-428: a status change, every row kept, a reported one hidden with the rest)
+ * and counts what it left live.
  */
 const runPrivacyVariant = async ({ connection, schemaFile, hasPlayers, privacy }) => {
   const framework = hasPlayers ? 'qb' : 'esx';
@@ -1818,17 +1894,37 @@ const runPrivacyVariant = async ({ connection, schemaFile, hasPlayers, privacy }
     "INSERT INTO mica_import_ledger (citizenid, source, source_table, source_key, target_table, target_id) VALUES (?, 'npwd', 'npwd_notes', '1', 'mica_notes', 1)",
     [A]
   );
+  // What is still live of A's records; the ledger has no status and is never touched.
   const records = async () => [
     (await q('SELECT COUNT(*) AS n FROM mica_audit_logs WHERE citizenid = ?', [A]))[0].n,
-    (await q('SELECT target_id FROM mica_reports WHERE citizenid = ? ORDER BY id', [A])).map(
-      (r) => r.target_id
-    ),
-    (await q('SELECT from_label FROM mica_invoices WHERE citizenid = ?', [A])).map(
-      (r) => r.from_label
-    ),
-    (await q('SELECT COUNT(*) AS n FROM mica_import_ledger WHERE citizenid = ?', [A]))[0].n,
-    (await q('SELECT COUNT(*) AS n FROM mica_lockscreen WHERE citizenid = ?', [A]))[0].n
+    (
+      await q(
+        "SELECT target_id FROM mica_reports WHERE citizenid = ? AND status = 'active' ORDER BY id",
+        [A]
+      )
+    ).map((r) => r.target_id),
+    (
+      await q("SELECT from_label FROM mica_invoices WHERE citizenid = ? AND status <> 'erased'", [
+        A
+      ])
+    ).map((r) => r.from_label),
+    (
+      await q(
+        "SELECT COUNT(*) AS n FROM mica_import_ledger WHERE citizenid = ? AND status <> 'erased'",
+        [A]
+      )
+    )[0].n,
+    (
+      await q(
+        "SELECT COUNT(*) AS n FROM mica_lockscreen WHERE citizenid = ? AND status <> 'erased'",
+        [A]
+      )
+    )[0].n
   ];
+  const mediaOf = async (owner) =>
+    (await q('SELECT id, status FROM mica_media WHERE citizenid = ? ORDER BY id', [owner])).map(
+      (r) => `${r.id} ${r.status}`
+    );
 
   step(`${label} — A deletes everything they may`);
   await q(
@@ -1837,49 +1933,55 @@ const runPrivacyVariant = async ({ connection, schemaFile, hasPlayers, privacy }
   );
   const purged = await privacy.selfServicePurge(A);
   check(
-    `${label}: the delete ran everywhere and counted the held photo`,
+    `${label}: the delete ran everywhere, and counted the report and invoice it left live`,
     [purged.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`), purged.kept],
-    [[], 1]
+    [[], 2]
   );
   check(
-    `${label}: only the reported photo and B's rows remain`,
+    `${label}: every photo and note of A's is kept, erased, the reported one too; B's untouched`,
     [
-      (await q('SELECT id FROM mica_media WHERE citizenid = ?', [A])).map((r) => r.id),
-      (await q('SELECT COUNT(*) AS n FROM mica_notes WHERE citizenid = ?', [A]))[0].n,
-      (await q('SELECT title FROM mica_notes WHERE citizenid = ?', [B])).map((r) => r.title)
+      await mediaOf(A),
+      (
+        await q("SELECT COUNT(*) AS n FROM mica_notes WHERE citizenid = ? AND status <> 'erased'", [
+          A
+        ])
+      )[0].n,
+      (await q("SELECT title FROM mica_notes WHERE citizenid = ? AND status = 'active'", [B])).map(
+        (r) => r.title
+      )
     ],
-    [[20], 0, ['b note']]
+    [['20 erased', '21 erased'], 0, ['b note']]
   );
   check(
-    `${label}: the ledger, pending report, open invoice, import ledger and device lock stay`,
+    `${label}: the ledger, pending report, open invoice, import ledger and device lock stay live`,
     await records(),
     [1, [9], ['open'], 1, 1]
   );
 
-  step(`${label} — the character itself is deleted`);
+  step(`${label} — a purge with no exceptions`);
   const characterPurge = await privacy.purgeOwnedRows(A);
   check(
-    `${label}: the character-deleted purge still takes every record, the held photo aside`,
+    `${label}: it erases every record but the ledger, which has no status, and deletes nothing`,
     [
       characterPurge.failures.length,
       await records(),
-      (await q('SELECT id FROM mica_media WHERE citizenid = ?', [A])).map((r) => r.id)
+      await mediaOf(A),
+      (await q('SELECT COUNT(*) AS n FROM mica_reports WHERE citizenid = ?', [A]))[0].n
     ],
-    [0, [0, [], [], 0, 0], [20]]
+    [0, [1, [], [], 0, 0], ['20 erased', '21 erased'], 2]
   );
 };
 
 /**
- * MICA-426 on each shape: what a purge keeps for evidence survives a player's own delete and the
- * character-deleted purge's plan, while the player's other rows go — and is hidden, never left
- * live. Media, the reportable table every character owns rows in, and a Blabber post with the
- * account it keeps.
+ * MICA-426 and MICA-428 on each shape: a player's own delete and the character-deleted purge erase
+ * every row the player owns — kept, hidden from everyone — but a takedown's `moderated` one, which
+ * stays as it is and has its takedown told the owner erased it, so a reopen puts back `erased`.
+ * Media, the reportable table every character owns rows in, and a Blabber post with its account.
  *
- * - A moderated row stays moderated, and its takedown is told the owner deleted it, so the reopen
- *   puts it back `deleted` (MICA-426 review).
- * - A row under a pending report moves to `deleted`, so a takedown after the delete records
- *   `deleted` and its reopen puts back nothing showing (round three).
- * - The account a held post keeps moves to `deleted` too, rather than staying public.
+ * - A moderated row stays moderated, and its takedown records `erased`, read after the erase.
+ * - A row under a pending report is erased with the rest, so a takedown after the delete records
+ *   `erased` and its reopen puts back nothing showing.
+ * - The account and the post move to `erased` whatever references them (MICA-428's comment).
  *
  * The seeded schema's one and nine (PURGE_MODERATED_CHECKS).
  */
@@ -1892,8 +1994,8 @@ const runModeratedPurgeVariant = async ({ connection, schemaFile, hasPlayers, pr
   await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'moderated_purge' });
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
   const mediaOf = async (owner) =>
-    (await q('SELECT id FROM mica_media WHERE citizenid = ? ORDER BY id', [owner])).map(
-      (r) => r.id
+    (await q('SELECT id, status FROM mica_media WHERE citizenid = ? ORDER BY id', [owner])).map(
+      (r) => `${r.id} ${r.status}`
     );
   const statusOf = async (table, id) =>
     (await q(`SELECT status FROM ${table} WHERE id = ?`, [id]))[0]?.status ?? null;
@@ -1918,8 +2020,7 @@ const runModeratedPurgeVariant = async ({ connection, schemaFile, hasPlayers, pr
   ]);
   await q('INSERT INTO mica_blabber (id, citizenid, account_id) VALUES (700, ?, 1)', [A]);
   // The takedowns that moderated 30 and 33, each recording the photo was live before it, and the
-  // pending reports on 35 and post 700. All filed by B: a resolved report A filed is A's own row,
-  // and A's delete takes it.
+  // pending reports on 35 and post 700. All filed by B: a report A filed is A's own row.
   await q(
     `INSERT INTO mica_reports (citizenid, target_table, target_id, resolution, target_prior_status)
      VALUES (?, 'mica_media', 30, 'actioned', 'active'), (?, 'mica_media', 33, 'actioned', 'active'),
@@ -1936,49 +2037,54 @@ const runModeratedPurgeVariant = async ({ connection, schemaFile, hasPlayers, pr
 
   const purged = await privacy.selfServicePurge(A);
   check(
-    `${label}: the player's own delete ran everywhere and kept what the holds keep`,
+    `${label}: the player's own delete ran everywhere and left the takedown's row as it was`,
     [purged.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`), purged.kept],
-    [[], 4]
+    [[], 1]
   );
   check(
-    `${label}: it kept the held photos and took the rest, B's untouched`,
+    `${label}: every photo of A's is kept and erased but the moderated one; B's untouched`,
     [
       await mediaOf(A),
-      (await q('SELECT COUNT(*) AS n FROM mica_notes WHERE citizenid = ?', [A]))[0].n,
+      (
+        await q("SELECT COUNT(*) AS n FROM mica_notes WHERE citizenid = ? AND status <> 'erased'", [
+          A
+        ])
+      )[0].n,
       await mediaOf(B)
     ],
-    [[30, 35], 0, [33]]
+    [['30 moderated', '31 erased', '32 erased', '35 erased'], 0, ['33 moderated']]
   );
   check(
-    `${label}: the moderated photo's takedown now records its owner's deletion; B's is untouched`,
+    `${label}: the moderated photo's takedown now records its owner's erasure; B's is untouched`,
     [await priorOf(30), await priorOf(33)],
-    ['deleted', 'active']
+    ['erased', 'active']
   );
   check(
-    `${label}: what the pending reports hold is hidden, the account its post keeps too`,
-    [
-      await statusOf('mica_media', 30),
-      await statusOf('mica_media', 35),
-      await statusOf('mica_blabber', 700),
-      await statusOf('mica_accounts', 1)
-    ],
-    ['moderated', 'deleted', 'deleted', 'deleted']
+    `${label}: the reported post and its account are erased too, whatever references them`,
+    [await statusOf('mica_blabber', 700), await statusOf('mica_accounts', 1)],
+    ['erased', 'erased']
   );
 
   step(`${label} — the pending report on 35 actioned after the delete, then reopened`);
   const recorded = await privacy.moderateTarget('mica_media', 35, 'ADMIN1', 'harness');
   const reopened = await privacy.restoreTarget('mica_media', 35, recorded, 'ADMIN1', 'harness');
   check(
-    `${label}: the takedown records deleted, and the reopen puts back deleted`,
+    `${label}: the takedown records erased, and the reopen puts back erased`,
     [recorded, reopened, await statusOf('mica_media', 35)],
-    ['deleted', true, 'deleted']
+    ['erased', true, 'erased']
   );
 
-  step(`${label} — the character-deleted purge's plan, over a fresh live sibling`);
+  step(`${label} — the purge again, over a fresh live sibling`);
   await photo(34, A, 'active');
   const character = await privacy.purgeOwnedRows(A);
   check(`${label}: the purge ran everywhere`, character.failures.length, 0);
-  check(`${label}: and kept the held photos only`, await mediaOf(A), [30, 35]);
+  check(`${label}: and erased the new one, leaving the moderated one`, await mediaOf(A), [
+    '30 moderated',
+    '31 erased',
+    '32 erased',
+    '34 erased',
+    '35 erased'
+  ]);
 
   step(`${label} — the report on 30 reopened: the photo is restored as its owner left it`);
   const restored = await privacy.restoreTarget(
@@ -1989,17 +2095,20 @@ const runModeratedPurgeVariant = async ({ connection, schemaFile, hasPlayers, pr
     'harness'
   );
   check(
-    `${label}: the restore puts back deleted, not active`,
+    `${label}: the restore puts back erased, not active`,
     [restored, await statusOf('mica_media', 30)],
-    [true, 'deleted']
+    [true, 'erased']
   );
-  // Nothing holds them any more, so the next purge takes them like any other row.
-  await q("UPDATE mica_reports SET resolution = 'dismissed' WHERE resolution = 'pending'");
   await privacy.purgeOwnedRows(A);
   check(
-    `${label}: once nothing holds them, the next purge takes the rows and the account`,
-    [await mediaOf(A), await statusOf('mica_blabber', 700), await statusOf('mica_accounts', 1)],
-    [[], null, null]
+    `${label}: nothing is ever deleted: every row is still there`,
+    [
+      (await q('SELECT COUNT(*) AS n FROM mica_media')).n ??
+        (await q('SELECT COUNT(*) AS n FROM mica_media'))[0].n,
+      await statusOf('mica_blabber', 700),
+      await statusOf('mica_accounts', 1)
+    ],
+    [6, 'erased', 'erased']
   );
 };
 
@@ -2087,32 +2196,55 @@ const seedCascadeScenario = async ({ q, A, B, label }) => {
 };
 
 /**
- * MICA-168's cascade guard: a player's own delete must not follow `ON DELETE CASCADE` into rows
- * it would never delete itself — another player's messages in a thread the player created, a
- * reply under the player's post, a post the report hold is keeping.
+ * MICA-168's cascade scenario, through MICA-428's erase: a player's own delete is one status
+ * change per table, so nothing cascades and no other player's row is reached. What is left to
+ * prove on an engine is what it leaves shown:
  *
- * A thread A created holds B's message and A's two (one with B's reaction). A's account has a
- * reported post, a post with B's replies under it (one of them reported), an unanswered post,
- * and a post with A's own reply under it.
+ * - every row of B's stays live, B's reply under A's post and B's message in A's thread included;
+ * - the thread A created stays live while B is still in it (`registerSharedRows`);
+ * - every row of A's is kept and erased — the reported post and message too, and the post a
+ *   report lands on mid-purge — and every attachment row is left as it was;
+ * - and no hosted file is requested, a delete URL configured or not.
  */
 const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }) => {
   const framework = hasPlayers ? 'qb' : 'esx';
   const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
   const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
-  const label = `privacy cascade guard on ${framework}`;
+  const label = `privacy erase over shared rows on ${framework}`;
 
   await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'cascade' });
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
   const ids = async (sql, params = []) => (await q(sql, params)).map((r) => r.id);
+  const statuses = async (table, owner) =>
+    (await q(`SELECT id, status FROM ${table} WHERE citizenid = ? ORDER BY id`, [owner])).map(
+      (r) => `${r.id} ${r.status}`
+    );
 
   await seedCascadeScenario({ q, A, B, label });
+  // MICA-428 review: B's two Dark Chat channels. A was kicked from 80 — which, as a real removal
+  // does, set its left time — and is a member of 81.
+  await q(
+    "INSERT INTO mica_darkchat (id, citizenid, name, code) VALUES (80, ?, 'k', 'k1'), (81, ?, 'l', 'l1')",
+    [B, B]
+  );
+  await q(
+    `INSERT INTO mica_darkchat_members (id, channel_id, citizenid, alias, handle, status, left_at)
+     VALUES (90, 80, ?, 'a1', 'h1', 'removed', '2020-01-01 00:00:00'),
+            (91, 81, ?, 'a2', 'h2', 'active', NULL)`,
+    [A, A]
+  );
+  const before = {
+    attachments: (await q('SELECT COUNT(*) AS n FROM mica_blabber_attachments'))[0].n,
+    photos: (await q('SELECT COUNT(*) AS n FROM mica_messages_attachments'))[0].n,
+    reactions: (await q('SELECT COUNT(*) AS n FROM mica_messages_reactions'))[0].n
+  };
 
   step(`${label} — A deletes everything they may`);
-  // An image host with a delete URL, and a fetch that records instead of requesting, so a
-  // released file is a request seen here.
+  // An image host with the retired delete URL, and a fetch that records instead of requesting,
+  // so any request at all is seen here.
   const previousConvar = globalThis.GetConvar;
   const previousFetch = globalThis.fetch;
-  const released = [];
+  const requested = [];
   globalThis.GetConvar = (name, fallback) =>
     name === 'mica_media_image_host'
       ? 'img.example.test'
@@ -2120,7 +2252,7 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
         ? 'https://img.example.test/delete?u={url}'
         : fallback;
   globalThis.fetch = async (target) => {
-    released.push(decodeURIComponent(String(target)));
+    requested.push(decodeURIComponent(String(target)));
     return { ok: true, status: 200 };
   };
   privacy.__setPurgeHookForTests(async () => {
@@ -2143,77 +2275,73 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
     []
   );
   check(
-    `${label}: every row of B's survives`,
+    `${label}: every row of B's stays live`,
     [
-      await ids('SELECT id FROM mica_messages_conversations'),
-      await ids('SELECT id FROM mica_messages_participants WHERE citizenid = ?', [B]),
-      await ids('SELECT id FROM mica_messages WHERE citizenid = ?', [B]),
-      (await q('SELECT message_id FROM mica_messages_reactions WHERE citizenid = ?', [B])).map(
-        (r) => r.message_id
-      ),
-      await ids('SELECT id FROM mica_accounts WHERE citizenid = ?', [B]),
-      await ids('SELECT id FROM mica_blabber WHERE citizenid = ? ORDER BY id', [B])
+      await statuses('mica_messages_participants', B),
+      await statuses('mica_messages', B),
+      await statuses('mica_accounts', B),
+      await statuses('mica_blabber', B)
     ],
-    [[50], [61], [500], [502], [71], [710, 711]]
+    [['61 active'], ['500 active'], ['71 active'], ['710 active', '711 active']]
   );
   check(
-    `${label}: A's held post survives`,
-    await ids('SELECT id FROM mica_blabber WHERE id = 700'),
-    [700]
+    `${label}: the thread A started stays live for B; it and A's kick are what was left as it was`,
+    [await statuses('mica_messages_conversations', A), purged.kept],
+    [['50 active'], 2]
   );
   check(
-    `${label}: the held post's and the held message's attachments survive`,
+    `${label}: A is out of it: their membership and messages are erased`,
+    [await statuses('mica_messages_participants', A), await statuses('mica_messages', A)],
+    [['60 erased'], ['501 erased', '502 erased', '503 erased']]
+  );
+  check(
+    `${label}: every post of A's is erased, the reported ones and the one reported mid-purge too`,
+    await statuses('mica_blabber', A),
+    ['700 erased', '701 erased', '702 erased', '704 erased', '705 erased', '706 erased']
+  );
+  check(`${label}: and their account, whatever references it`, await statuses('mica_accounts', A), [
+    '70 erased'
+  ]);
+  check(`${label}: every photo of A's is kept, erased`, await statuses('mica_media', A), [
+    '30 erased',
+    '31 erased',
+    '32 erased',
+    '33 erased'
+  ]);
+  check(
+    `${label}: no attachment or reaction row is touched`,
     [
-      (await q('SELECT media_id FROM mica_blabber_attachments WHERE blab_id = 700')).map(
-        (r) => r.media_id
-      ),
-      (await q('SELECT photo_id FROM mica_messages_attachments WHERE message_id = 503')).map(
-        (r) => r.photo_id
+      (await q('SELECT COUNT(*) AS n FROM mica_blabber_attachments'))[0].n,
+      (await q('SELECT COUNT(*) AS n FROM mica_messages_attachments'))[0].n,
+      (await q('SELECT COUNT(*) AS n FROM mica_messages_reactions'))[0].n
+    ],
+    [before.attachments, before.photos, before.reactions]
+  );
+  check(`${label}: and nothing is requested of the image host`, requested, []);
+  check(
+    `${label}: a kick keeps removed and its own left time; a membership is erased and left`,
+    (
+      await q(
+        "SELECT id, status, left_at IS NOT NULL AS gone, left_at = '2020-01-01 00:00:00' AS kept " +
+          'FROM mica_darkchat_members WHERE citizenid = ? ORDER BY id',
+        [A]
       )
-    ],
-    [[30], [31]]
+    ).map((r) => `${r.id} ${r.status} ${Number(r.gone)} ${Number(r.kept)}`),
+    ['90 removed 1 1', '91 erased 1 0']
+  );
+
+  step(`${label} — B leaves the thread: the next orphan-free purge erases it`);
+  await q("UPDATE mica_messages_participants SET status = 'left' WHERE id = 61");
+  await privacy.selfServicePurge(A);
+  check(
+    `${label}: with no other member, A's thread is erased too`,
+    await statuses('mica_messages_conversations', A),
+    ['50 erased']
   );
   check(
-    `${label}: a post reported after the plan keeps its attachment`,
-    (await q('SELECT media_id FROM mica_blabber_attachments WHERE blab_id = 706')).map(
-      (r) => r.media_id
-    ),
-    [33]
-  );
-  check(
-    `${label}: and so do their photos, while the unattached one goes`,
-    await ids('SELECT id FROM mica_media WHERE citizenid = ? ORDER BY id', [A]),
-    [30, 31, 33]
-  );
-  check(
-    `${label}: only the unattached photo's file is released`,
-    [30, 31, 32, 33].map((id) => released.some((url) => url.includes(hosted(id)))),
-    [false, false, true, false]
-  );
-  check(
-    `${label}: the post reported mid-purge survives`,
-    await ids('SELECT id FROM mica_blabber WHERE id = 706'),
-    [706]
-  );
-  check(
-    `${label}: A's own unheld, unanswered rows are gone`,
-    [
-      await ids('SELECT id FROM mica_messages_participants WHERE citizenid = ?', [A]),
-      await ids('SELECT id FROM mica_messages WHERE id = 501'),
-      await ids('SELECT id FROM mica_blabber WHERE id IN (702, 704, 705)')
-    ],
-    [[], [], []]
-  );
-  check(
-    `${label}: the parents kept for B's sake stay, and are counted as kept`,
-    [
-      await ids('SELECT id FROM mica_messages WHERE citizenid = ?', [A]),
-      await ids('SELECT id FROM mica_blabber WHERE citizenid = ? ORDER BY id', [A]),
-      await ids('SELECT id FROM mica_accounts WHERE citizenid = ?', [A]),
-      await ids('SELECT id FROM mica_messages_conversations WHERE citizenid = ?', [A]),
-      purged.kept
-    ],
-    [[502, 503], [700, 701, 706], [70], [50], 13]
+    `${label}: and every row is still there`,
+    await ids('SELECT id FROM mica_blabber ORDER BY id'),
+    [700, 701, 702, 704, 705, 706, 710, 711]
   );
 };
 
@@ -2362,10 +2490,11 @@ const runCharacterDeletedVariant = async ({
     [true, before]
   );
 
-  // An image host with a delete URL, and a fetch that records instead of requesting.
+  // An image host with the retired delete URL, and a fetch that records instead of requesting,
+  // so any request at all is seen here (MICA-428: there must be none).
   const previousConvar = globalThis.GetConvar;
   const previousFetch = globalThis.fetch;
-  const released = [];
+  const requested = [];
   globalThis.GetConvar = (name, fallback) =>
     name === 'mica_media_image_host'
       ? 'img.example.test'
@@ -2373,7 +2502,7 @@ const runCharacterDeletedVariant = async ({
         ? 'https://img.example.test/delete?u={url}'
         : fallback;
   globalThis.fetch = async (target) => {
-    released.push(decodeURIComponent(String(target)));
+    requested.push(decodeURIComponent(String(target)));
     return { ok: true, status: 200 };
   };
   const runSweep = () =>
@@ -2389,18 +2518,31 @@ const runCharacterDeletedVariant = async ({
     via === 'hook'
       ? fireAndWait(
           () => hooks.get('mica:server:shell:characterDeleted').forEach((fn) => fn(A)),
-          /\[mica\] purge(d \d+| for a deleted character failed)/
+          /\[mica\] (erased \d+ row\(s\) for deleted character|purge for a deleted character failed)/
         )
       : runSweep();
-  /** A's kept rows, and C's post that A's pending report holds. */
+  const statuses = async (table, owner) =>
+    (await q(`SELECT id, status FROM ${table} WHERE citizenid = ? ORDER BY id`, [owner])).map(
+      (r) => `${r.id} ${r.status}`
+    );
+  const live = async (table) =>
+    Number(
+      (
+        await q(`SELECT COUNT(*) AS n FROM ${table} WHERE citizenid = ? AND status <> 'erased'`, [
+          A
+        ])
+      )[0].n
+    );
+  /** A's ledger row, A's still-pending reports, and C's posts still shown. */
   const keptForA = async () => [
     (await q('SELECT COUNT(*) AS n FROM mica_audit_logs WHERE citizenid = ?', [A]))[0].n,
     (
-      await q("SELECT target_id FROM mica_reports WHERE citizenid = ? AND resolution = 'pending'", [
-        A
-      ])
+      await q(
+        "SELECT target_id FROM mica_reports WHERE citizenid = ? AND resolution = 'pending' AND status = 'active'",
+        [A]
+      )
     ).map((r) => r.target_id),
-    await ids('SELECT id FROM mica_blabber WHERE citizenid = ?', [C])
+    await ids("SELECT id FROM mica_blabber WHERE citizenid = ? AND status = 'active'", [C])
   ];
 
   try {
@@ -2423,91 +2565,76 @@ const runCharacterDeletedVariant = async ({
       []
     );
     check(
-      `${label}: every row of B's survives, B's reports included`,
+      `${label}: every row of B's stays live, B's reports included`,
       [
-        await ids('SELECT id FROM mica_messages_conversations'),
-        await ids('SELECT id FROM mica_messages_participants WHERE citizenid = ?', [B]),
-        await ids('SELECT id FROM mica_messages WHERE citizenid = ?', [B]),
+        await statuses('mica_messages_participants', B),
+        await statuses('mica_messages', B),
         (await q('SELECT message_id FROM mica_messages_reactions WHERE citizenid = ?', [B])).map(
           (r) => r.message_id
         ),
-        await ids('SELECT id FROM mica_accounts WHERE citizenid = ?', [B]),
-        await ids('SELECT id FROM mica_blabber WHERE citizenid = ? ORDER BY id', [B]),
+        await statuses('mica_accounts', B),
+        await statuses('mica_blabber', B),
         (
-          await q('SELECT target_id FROM mica_reports WHERE citizenid = ? ORDER BY target_id', [B])
+          await q(
+            "SELECT target_id FROM mica_reports WHERE citizenid = ? AND status = 'active' ORDER BY target_id",
+            [B]
+          )
         ).map((r) => r.target_id)
       ],
-      [[50], [61], [500], [502], [71], [710, 711], [503, 700, 706, 710]]
-    );
-    check(
-      `${label}: A's held post survives`,
-      await ids('SELECT id FROM mica_blabber WHERE id = 700'),
-      [700]
-    );
-    check(
-      `${label}: the held post's and the held message's attachments survive`,
       [
-        (await q('SELECT media_id FROM mica_blabber_attachments WHERE blab_id = 700')).map(
+        ['61 active'],
+        ['500 active'],
+        [502],
+        ['71 active'],
+        ['710 active', '711 active'],
+        [503, 700, 706, 710]
+      ]
+    );
+    check(
+      `${label}: the thread A started stays live while B is in it (MICA-428)`,
+      await statuses('mica_messages_conversations', A),
+      ['50 active']
+    );
+    check(
+      `${label}: A's membership, messages, posts and account are erased, the reported ones too`,
+      [
+        await statuses('mica_messages_participants', A),
+        await statuses('mica_messages', A),
+        await statuses('mica_blabber', A),
+        await statuses('mica_accounts', A)
+      ],
+      [
+        ['60 erased'],
+        ['501 erased', '502 erased', '503 erased'],
+        ['700 erased', '701 erased', '702 erased', '704 erased', '705 erased', '706 erased'],
+        ['70 erased']
+      ]
+    );
+    check(
+      `${label}: every photo of A's is kept, erased, and no attachment row is touched`,
+      [
+        await statuses('mica_media', A),
+        (await q('SELECT media_id FROM mica_blabber_attachments ORDER BY media_id')).map(
           (r) => r.media_id
         ),
-        (await q('SELECT photo_id FROM mica_messages_attachments WHERE message_id = 503')).map(
-          (r) => r.photo_id
-        )
+        (await q('SELECT photo_id FROM mica_messages_attachments')).map((r) => r.photo_id)
       ],
-      [[30], [31]]
+      [['30 erased', '31 erased', '32 erased', '33 erased'], [30, 33], [31]]
     );
+    check(`${label}: and nothing is requested of the image host`, requested, []);
     check(
-      `${label}: a post reported mid-${via} survives, with its attachment`,
+      `${label}: A's ledger row, pending report and device stay live; invoice and import go`,
       [
-        await ids('SELECT id FROM mica_blabber WHERE id = 706'),
-        (await q('SELECT media_id FROM mica_blabber_attachments WHERE blab_id = 706')).map(
-          (r) => r.media_id
-        )
+        Number(
+          (await q('SELECT COUNT(*) AS n FROM mica_audit_logs WHERE citizenid = ?', [A]))[0].n
+        ),
+        await live('mica_reports'),
+        await live('mica_invoices'),
+        await live('mica_import_ledger'),
+        await live('mica_lockscreen'),
+        await live('mica_devices')
       ],
-      [[706], [33]]
-    );
-    check(
-      `${label}: so do their photos, while the unattached one goes`,
-      await ids('SELECT id FROM mica_media WHERE citizenid = ? ORDER BY id', [A]),
-      [30, 31, 33]
-    );
-    check(
-      `${label}: only the unattached photo's file is released`,
-      [30, 31, 32, 33].map((id) => released.some((url) => url.includes(hosted(id)))),
-      [false, false, true, false]
-    );
-    check(
-      `${label}: A's own unheld, unanswered rows are gone`,
-      [
-        await ids('SELECT id FROM mica_messages_participants WHERE citizenid = ?', [A]),
-        await ids('SELECT id FROM mica_messages WHERE id = 501'),
-        await ids('SELECT id FROM mica_blabber WHERE id IN (702, 704, 705)')
-      ],
-      [[], [], []]
-    );
-    check(
-      `${label}: the parents kept for B's sake stay`,
-      [
-        await ids('SELECT id FROM mica_messages WHERE citizenid = ? ORDER BY id', [A]),
-        await ids('SELECT id FROM mica_blabber WHERE citizenid = ? ORDER BY id', [A]),
-        await ids('SELECT id FROM mica_accounts WHERE citizenid = ?', [A]),
-        await ids('SELECT id FROM mica_messages_conversations WHERE citizenid = ?', [A])
-      ],
-      [[502, 503], [700, 701, 706], [70], [50]]
-    );
-    const count = async (table) =>
-      Number((await q(`SELECT COUNT(*) AS n FROM ${table} WHERE citizenid = ?`, [A]))[0].n);
-    check(
-      `${label}: A's ledger row and pending report stay; invoice, import record and device go`,
-      [
-        await count('mica_audit_logs'),
-        await count('mica_reports'),
-        await count('mica_invoices'),
-        await count('mica_import_ledger'),
-        await count('mica_lockscreen'),
-        await count('mica_devices')
-      ],
-      [1, 1, 0, 0, 0, 0]
+      [1, 1, 0, 0, 1, 1]
     );
 
     if (via === 'hook') {
@@ -2520,48 +2647,32 @@ const runCharacterDeletedVariant = async ({
       );
     }
     check(
-      `${label}: the sweep keeps A's ledger row and pending report, which still holds C's post`,
-      await keptForA(),
-      [1, [720], [720]]
+      `${label}: the sweep keeps A's ledger row and pending report, and erases C's post`,
+      [...(await keptForA()), await ids('SELECT id FROM mica_blabber WHERE citizenid = ?', [C])],
+      [1, [720], [], [720]]
     );
 
     if (via === 'sweep') {
       step(`${label} — every report resolves, and the next sweep runs`);
       await q("UPDATE mica_reports SET resolution = 'dismissed'");
-      released.length = 0;
       const again = await runHook();
       check(
-        `${label}: the second sweep ran and nothing failed`,
+        `${label}: the second sweep ran, nothing failed, and it erased only A's resolved report`,
         [
-          again.some((line) => /orphan sweep finished/.test(line)),
+          again.some((line) =>
+            /orphan sweep finished: erased 1 row\(s\) \(mica_reports 1\)/.test(line)
+          ),
           again.filter((line) => /failed/.test(line))
         ],
         [true, []]
       );
       check(
-        `${label}: it takes what the reports held, and keeps only what B's rows reference`,
-        [
-          await ids('SELECT id FROM mica_blabber WHERE citizenid = ? ORDER BY id', [A]),
-          await ids('SELECT id FROM mica_messages WHERE citizenid = ? ORDER BY id', [A]),
-          await ids('SELECT id FROM mica_media WHERE citizenid = ?', [A]),
-          await ids('SELECT id FROM mica_blabber_attachments WHERE citizenid = ?', [A]),
-          await ids('SELECT id FROM mica_accounts WHERE citizenid = ?', [A]),
-          await ids('SELECT id FROM mica_messages_conversations WHERE citizenid = ?', [A])
-        ],
-        [[701], [502], [], [], [70], [50]]
-      );
-      check(
-        `${label}: and releases the files they named`,
-        [30, 31, 33].map((id) => released.some((url) => url.includes(hosted(id)))),
-        [true, true, true]
-      );
-      check(
-        `${label}: A's resolved report goes, and C's post with it; the ledger row never does`,
+        `${label}: A's report is kept, erased; the ledger row never is`,
         [
           ...(await keptForA()),
           (await q('SELECT COUNT(*) AS n FROM mica_reports WHERE citizenid = ?', [A]))[0].n
         ],
-        [1, [], [], 0]
+        [1, [], [], 1]
       );
       step(`${label} — one more sweep`);
       await runSweep();
@@ -2602,10 +2713,9 @@ const runWrongFileRefused = async ({ connection }) => {
 
 /**
  * MICA-300: the media-only hook, `mica:server:media:characterDeleted`, kept for the owners wired
- * to it. It used to `DELETE FROM mica_media WHERE citizenid = ?`, and every attachment row naming
- * one of those photos went with it by cascade — the photo on a reported message included. It
- * plans now, restricted to `mica_media`: a photo any attachment still names stays, and only the
- * unattached one goes, file and all.
+ * to it. It used to delete the character's media rows, and every attachment row naming one went
+ * with it by cascade. Since MICA-428 it erases them: every photo kept, every attachment row left
+ * as it was, no file requested, and nothing but media touched.
  */
 const runMediaHookVariant = async ({ connection, schemaFile, hasPlayers, hooks }) => {
   const framework = hasPlayers ? 'qb' : 'esx';
@@ -2615,17 +2725,20 @@ const runMediaHookVariant = async ({ connection, schemaFile, hasPlayers, hooks }
 
   await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'media_hook' });
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
-  const ids = async (sql, params = []) => (await q(sql, params)).map((r) => r.id);
   await seedCascadeScenario({ q, A, B, label });
   const others = async () => [
-    await ids('SELECT id FROM mica_blabber WHERE citizenid = ? ORDER BY id', [A]),
-    await ids('SELECT id FROM mica_messages WHERE citizenid = ? ORDER BY id', [A])
+    (await q('SELECT id, status FROM mica_blabber WHERE citizenid = ? ORDER BY id', [A])).map(
+      (r) => `${r.id} ${r.status}`
+    ),
+    (await q('SELECT id, status FROM mica_messages WHERE citizenid = ? ORDER BY id', [A])).map(
+      (r) => `${r.id} ${r.status}`
+    )
   ];
   const before = await others();
 
   const previousConvar = globalThis.GetConvar;
   const previousFetch = globalThis.fetch;
-  const released = [];
+  const requested = [];
   globalThis.GetConvar = (name, fallback) =>
     name === 'mica_media_image_host'
       ? 'img.example.test'
@@ -2633,14 +2746,14 @@ const runMediaHookVariant = async ({ connection, schemaFile, hasPlayers, hooks }
         ? 'https://img.example.test/delete?u={url}'
         : fallback;
   globalThis.fetch = async (target) => {
-    released.push(decodeURIComponent(String(target)));
+    requested.push(decodeURIComponent(String(target)));
     return { ok: true, status: 200 };
   };
   try {
     step(`${label} — the media-only hook fires for A`);
     const lines = await fireAndWait(
       () => hooks.get('mica:server:media:characterDeleted').forEach((fn) => fn(A)),
-      /\[micamedia\] purge(d \d+| for a deleted character failed)/
+      /\[micamedia\] (erased \d+ row\(s\) for deleted character|purge for a deleted character failed)/
     );
     check(
       `${label}: it ran and nothing failed`,
@@ -2648,7 +2761,7 @@ const runMediaHookVariant = async ({ connection, schemaFile, hasPlayers, hooks }
       []
     );
     check(
-      `${label}: the reported message's and the reported post's photos keep their attachments`,
+      `${label}: every attachment row stays as it was`,
       [
         (await q('SELECT photo_id FROM mica_messages_attachments WHERE message_id = 503')).map(
           (r) => r.photo_id
@@ -2660,15 +2773,13 @@ const runMediaHookVariant = async ({ connection, schemaFile, hasPlayers, hooks }
       [[31], [30]]
     );
     check(
-      `${label}: a photo an attachment names stays; only the unattached one goes`,
-      await ids('SELECT id FROM mica_media WHERE citizenid = ? ORDER BY id', [A]),
-      [30, 31, 33]
+      `${label}: every photo of A's is kept, erased`,
+      (await q('SELECT id, status FROM mica_media WHERE citizenid = ? ORDER BY id', [A])).map(
+        (r) => `${r.id} ${r.status}`
+      ),
+      ['30 erased', '31 erased', '32 erased', '33 erased']
     );
-    check(
-      `${label}: only the unattached photo's file is released`,
-      [30, 31, 32, 33].map((id) => released.some((url) => url.includes(hosted(id)))),
-      [false, false, true, false]
-    );
+    check(`${label}: and nothing is requested of the image host`, requested, []);
     check(`${label}: and nothing but media was touched`, await others(), before);
   } finally {
     globalThis.GetConvar = previousConvar;
@@ -3755,7 +3866,9 @@ const runReviveVariant = async ({ connection, schemaFile, hasPlayers, modules })
       second: 3,
       fallback: 0,
       extra: () => ({}),
-      remove: (repo, id, owner) => repo.delete(id, owner)
+      remove: (repo, id, owner) => repo.delete(id, owner),
+      // The key is over `live_citizen`, which an erased holding does not carry (MICA-428).
+      erasable: true
     },
     {
       label: `revive on ${framework}: battery`,
@@ -3824,6 +3937,28 @@ const runReviveVariant = async ({ connection, schemaFile, hasPlayers, modules })
       [again, reset.status, reset[c.column]],
       [idA, 'active', c.fallback]
     );
+
+    if (c.erasable) {
+      // A privacy delete erased the holding: kept as evidence, never revived or overwritten.
+      await q('UPDATE `' + c.table + "` SET status = 'erased' WHERE id = ?", [idA]);
+      const fresh = await c.repo.create({ citizenid: A, [c.column]: c.second, ...c.extra(A) });
+      check(
+        `${c.label}: an erased row is never revived: a fresh one is written beside it`,
+        [
+          fresh !== idA,
+          (await q(`SELECT * FROM \`${c.table}\` WHERE citizenid = ? ORDER BY id`, [A])).map(
+            (r) => [r.status, r[c.column]]
+          )
+        ],
+        [
+          true,
+          [
+            ['erased', c.fallback],
+            ['active', c.second]
+          ]
+        ]
+      );
+    }
 
     if (c.foreign) {
       // A's row is deleted again; B naming A's phone is not A, so the key still refuses it.

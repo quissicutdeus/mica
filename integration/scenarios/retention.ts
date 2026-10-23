@@ -14,6 +14,9 @@ import { sleep } from '../lib/wait';
  * Age-based retention (MICA-167) and the character-deleted purge (MICA-168, MICA-300), on
  * fixture rows, through the two doors a server owner has: `micamedia prune` from the console and
  * the `mica:server:shell:characterDeleted` event another server resource fires.
+ *
+ * Since MICA-428 neither deletes: retention moves a row to `expired`, the purge to `erased`, and
+ * every row stays. So each check reads a row's status, and every row is still there.
  */
 
 const RETENTION_CONVAR = 'mica_media_retention';
@@ -34,6 +37,12 @@ const mediaRow = async (citizenid: string, ageDays: number): Promise<number> =>
     [citizenid, ageDays, ageDays]
   );
 
+/** A row's status, or null when the row is gone — which nothing may make it since MICA-428. */
+const statusOf = async (table: string, id: number): Promise<string | null> => {
+  const row = await db.row(`SELECT \`status\` FROM \`${table}\` WHERE \`id\` = ?`, [id]);
+  return row ? String(row.status) : null;
+};
+
 const exists = async (table: string, id: number): Promise<boolean> =>
   (await db.count(`SELECT COUNT(*) FROM \`${table}\` WHERE \`id\` = ?`, [id])) === 1;
 
@@ -52,8 +61,8 @@ const openReport = async (
 
 export const retentionScenarios: Scenario[] = [
   {
-    // MICA-167: `micamedia prune` removes media older than the window — and keeps what an open
-    // report holds, what a live message still shows, and what is younger than the window.
+    // MICA-167, MICA-428: `micamedia prune` expires media older than the window — and leaves
+    // shown what an open report holds, what a live message still shows, and what is younger.
     id: 'retention-micamedia-prune-keeps-held-media',
     mode: 'standalone',
     tickets: ['MICA-167', 'MICA-292'],
@@ -99,10 +108,16 @@ export const retentionScenarios: Scenario[] = [
         const expired = Number(/prune finished: (\d+) expired/.exec(done)?.[1] ?? -1);
         assert(expired >= 1, `the prune expired ${expired} rows, not at least 1: ${done}`);
 
-        assert(!(await exists('mica_media', aged)), 'aged, unheld media survived the prune');
-        assert(await exists('mica_media', reported), 'media under an open report was pruned');
-        assert(await exists('mica_media', attached), 'media a live message shows was pruned');
-        assert(await exists('mica_media', young), 'media younger than the window was pruned');
+        const aged_ = await statusOf('mica_media', aged);
+        assert(aged_ === 'expired', `aged, unheld media is ${aged_}, not expired and kept`);
+        for (const [id, what] of [
+          [reported, 'media under an open report'],
+          [attached, 'media a live message shows'],
+          [young, 'media younger than the window']
+        ] as const) {
+          const status = await statusOf('mica_media', id);
+          assert(status === 'active', `${what} is ${status}, not active`);
+        }
         assert(
           (await db.count('SELECT COUNT(*) FROM `mica_messages_attachments` WHERE `photo_id` = ?', [
             attached
@@ -116,9 +131,9 @@ export const retentionScenarios: Scenario[] = [
     }
   },
   {
-    // MICA-168, MICA-300: a deleted character's rows go — content, media, the device's number,
-    // a resolved report — while their pending report, their moderation-ledger rows and their
-    // media under somebody else's open report stay.
+    // MICA-168, MICA-300, MICA-428: a deleted character's rows are erased — content, media, a
+    // resolved report, the photo somebody else reported too — and kept; their pending report,
+    // their moderation-ledger row and the device's number stay live.
     id: 'purge-character-deleted-keeps-held-rows',
     mode: 'standalone',
     tickets: ['MICA-168', 'MICA-300', 'MICA-292'],
@@ -163,29 +178,42 @@ export const retentionScenarios: Scenario[] = [
       emit('mica:server:shell:characterDeleted', gone);
       const said = await tap.waitFor(
         mark,
-        new RegExp(`^\\[mica\\] (purged \\d+ row\\(s\\)|purge for) .*${token}`),
+        new RegExp(
+          `^\\[mica\\] (erased \\d+ row\\(s\\) for deleted character|purge for) .*${token}`
+        ),
         30_000,
         signal,
         "the purge's summary"
       );
-      assert(said.startsWith('[mica] purged'), said);
+      assert(said.startsWith('[mica] erased'), said);
       await sleep(250);
 
-      assert(!(await exists('mica_notes', note)), "the deleted character's note survived");
-      assert(!(await exists('mica_contacts', contact)), "the deleted character's contact survived");
-      assert(!(await exists('mica_media', plainMedia)), "the deleted character's photo survived");
+      for (const [table, id, what] of [
+        ['mica_notes', note, 'note'],
+        ['mica_contacts', contact, 'contact'],
+        ['mica_media', plainMedia, 'photo'],
+        ['mica_media', heldMedia, 'photo under an open report'],
+        ['mica_reports', ownResolved, 'resolved report']
+      ] as const) {
+        const status = await statusOf(table, id);
+        assert(status === 'erased', `the deleted character's ${what} is ${status}, not erased`);
+      }
+      const number = (
+        await db.rows('SELECT `status` FROM `mica_phone_numbers` WHERE `citizenid` = ?', [gone])
+      ).map((row) => String(row.status));
       assert(
-        (await db.count('SELECT COUNT(*) FROM `mica_phone_numbers` WHERE `citizenid` = ?', [
-          gone
-        ])) === 0,
-        "the deleted character's number survived"
+        number.length === 1 && number[0] === 'active',
+        `the device's number is ${JSON.stringify(number)}, not one live row: the phone may outlive its character`
       );
-      assert(!(await exists('mica_reports', ownResolved)), 'their resolved report survived');
-      assert(await exists('mica_reports', ownPending), 'their pending report was purged');
-      assert(await exists('mica_audit_logs', audit), 'their moderation-ledger row was purged');
-      assert(await exists('mica_media', heldMedia), 'their photo under an open report was purged');
-      assert(await exists('mica_reports', heldReport), "the other player's report was purged");
-      assert(await exists('mica_media', othersMedia), "the other player's photo was purged");
+      for (const [table, id, what] of [
+        ['mica_reports', ownPending, 'their pending report'],
+        ['mica_reports', heldReport, "the other player's report"],
+        ['mica_media', othersMedia, "the other player's photo"]
+      ] as const) {
+        const status = await statusOf(table, id);
+        assert(status === 'active', `${what} is ${status}, not active`);
+      }
+      assert(await exists('mica_audit_logs', audit), 'their moderation-ledger row is gone');
     }
   }
 ];

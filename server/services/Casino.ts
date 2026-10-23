@@ -711,7 +711,8 @@ const readOwnCrashRound = async (
   const [row] = await Database.query<CashoutRow[]>(
     'SELECT `id`, `stake`, `payout`, `multiplier`, `status`, `crash_point` ' +
       'FROM `mica_casino_rounds` ' +
-      "WHERE `id` = ? AND `citizenid` = ? AND `game` = 'crash' AND `status` <> 'deleted'",
+      // Not one the player deleted, nor one a purge erased (MICA-428).
+      "WHERE `id` = ? AND `citizenid` = ? AND `game` = 'crash' AND `status` NOT IN ('deleted', 'erased')",
     [roundId, citizenid]
   );
   return row ?? null;
@@ -862,7 +863,8 @@ app.registerEvent('history', async (_source, _cbId, data, citizenid) => {
   const rows = await Database.query<HistoryRow[]>(
     'SELECT `id`, `game`, `status`, `stake`, `payout`, `multiplier`, `crash_point`, `result`, ' +
       '`created_at` FROM `mica_casino_rounds` ' +
-      "WHERE `citizenid` = ? AND `status` <> 'deleted'" +
+      // Erased rounds are kept for staff and hidden from the player too (MICA-428).
+      "WHERE `citizenid` = ? AND `status` NOT IN ('deleted', 'erased')" +
       (cursor === null ? '' : ' AND `id` < ?') +
       ' ORDER BY `id` DESC LIMIT ?',
     params

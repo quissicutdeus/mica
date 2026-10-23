@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { EXPIRED } from '../lib/statuses';
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
@@ -95,7 +96,8 @@ export const directMessages = defineService<DirectMessage, typeof dmsContract>({
   },
   table: 'mica_blabber_dms',
   access: { read: 'owner', write: 'owner' },
-  statuses: ['active', 'deleted', 'moderated'],
+  // `expired`: the retention window passed (MICA-428), never a player's own delete.
+  statuses: ['active', 'deleted', 'moderated', EXPIRED],
   /** A body is bound to the two accounts it passed between (MICA-165). */
   encryptionScope: ['from_account', 'to_account'],
   schema: {
@@ -147,23 +149,15 @@ export const directMessages = defineService<DirectMessage, typeof dmsContract>({
  * abandoned alt-account chatter go. `0` keeps DMs forever.
  *
  * A thread here is not a row — it is every DM between two accounts — so a thread whose DMs
- * have all been pruned simply stops appearing in the inbox, with nothing left behind. Its
- * reactions live in `mica_account_reactions`, keyed by table name rather than a foreign key,
- * which is why they are named here and not found from a declaration. An open report on a DM
- * holds its whole thread, and one on an account holds every DM that account sent or received.
+ * have all expired simply stops appearing in the inbox; every row is kept (MICA-428), and so are
+ * the reactions on them in `mica_account_reactions` (MICA-429). An open report on a DM holds its
+ * whole thread, and one on an account holds every DM that account sent or received.
  */
 registerRetention({
   label: 'micadms',
   table: directMessages.resolved.table,
   convar: 'mica_dm_retention',
   days: () => parseRetentionDays(GetConvar('mica_dm_retention', ''), 90, 'mica_dm_retention'),
-  dependents: [
-    {
-      table: 'mica_account_reactions',
-      column: 'target_id',
-      scope: { column: 'target_table', value: directMessages.resolved.table }
-    }
-  ],
   holds: [
     {
       // An open report on an account holds every DM it sent or received.
@@ -176,7 +170,7 @@ registerRetention({
     {
       // An open report on one DM holds the whole thread between those two accounts, either
       // direction. Through a DISTINCT derived table because it reads this table, which the
-      // prune's DELETE targets (MySQL error 1093).
+      // prune's UPDATE targets (MySQL error 1093).
       sql: (row) =>
         'EXISTS (SELECT 1 FROM (SELECT DISTINCT d.`from_account` AS `a`, d.`to_account` AS `b` ' +
         'FROM `mica_reports` r JOIN `mica_blabber_dms` d ON d.`id` = r.`target_id` ' +
@@ -592,12 +586,12 @@ app.registerEvent('read', async (source, cbId, data, citizenid) => {
 });
 
 /** Ids per statement in `deleteThread`, the retention prune's batch. */
-const DELETE_BATCH = 500;
+const THREAD_BATCH = 500;
 
 /**
  * True while an open report names any DM between the two accounts, either direction. Bound as
  * `[table, a, b, b, a]`. Through a `DISTINCT` derived table because it reads the table the
- * delete targets (MySQL error 1093) — the shape retention's thread hold above uses.
+ * update targets (MySQL error 1093) — the shape retention's thread hold above uses.
  */
 const THREAD_HELD =
   'EXISTS (SELECT 1 FROM (SELECT DISTINCT r.`id` FROM `mica_reports` r ' +
@@ -607,15 +601,15 @@ const THREAD_HELD =
   'OR (d.`from_account` = ? AND d.`to_account` = ?))) held)';
 
 /**
- * Hard-delete every DM between two accounts, both directions, and the reactions on them —
- * unless an open report names any one of them, in which case **the whole thread stays**, as
- * retention holds it: a reported DM without the messages around it is evidence without its
- * context. Answers how many DMs went, `0` for a held thread.
+ * Delete every live DM between two accounts, both directions: `active` to `deleted`, kept for
+ * staff and hidden from both players (MICA-428; nothing is removed, and the reactions on them
+ * stay, MICA-429) — unless an open report names any one of them, in which case **the whole
+ * thread stays live**, as retention holds it: a reported DM without the messages around it is
+ * evidence without its context. Answers how many DMs went, `0` for a held thread.
  *
- * **A moderated DM stays, alone** (MICA-426). A takedown is a decision already made, so the
- * context around it is no longer what a reviewer needs; the row is what the ledger and the
- * actioned report point at, and what a reopen would put back. The rest of the thread goes, as
- * the app's rule says it does. The kept row's takedowns are recorded as the thread's deletion
+ * **A moderated DM stays `moderated`** (MICA-426). A takedown is a decision already made; the
+ * row is what the ledger and the actioned report point at, and what a reopen would put back.
+ * The rest of the thread goes, as the app's rule says it does. The kept row's takedowns are recorded as the thread's deletion
  * (`recordOwnerDeletion`), so a reopen puts it back `deleted` — evidence still, and never one
  * lone line resurfacing in a conversation that has ended. Before the deletes and again after
  * them (`recordModerated` below), so neither a reopen nor a takedown running alongside slips by.
@@ -625,9 +619,9 @@ const THREAD_HELD =
  * (`reachability.test.ts`), and this is a server-side call an app's service makes once its own
  * rule has decided. The ids are the caller's to have checked; nothing here asks who owns them.
  *
- * Selected first and deleted by id, with the hold asked again in each delete, so a report filed
- * between the two still wins for every row not yet gone. Reactions go only for the ids actually
- * gone, as the prune does.
+ * Selected first and moved by id, with the hold asked again in each update, so a report filed
+ * between the two still wins for every row not yet moved. `updated_at` is pinned: a delete is
+ * not an edit.
  */
 export const deleteThread = async (a: number, b: number): Promise<number> => {
   for (const id of [a, b]) {
@@ -638,7 +632,7 @@ export const deleteThread = async (a: number, b: number): Promise<number> => {
   const table = directMessages.resolved.table;
   const held = [table, a, b, b, a];
 
-  // The thread's moderated lines, recorded as deleted with it. Asked before the deletes, so a
+  // The thread's moderated lines, recorded as deleted with it. Asked before the updates, so a
   // reopen already running finishes first, and again after them, so a takedown that lands while
   // they run is recorded too. Not in a thread an open report holds: that thread stays, live,
   // and its moderated line is put back the way its siblings still are.
@@ -661,7 +655,7 @@ export const deleteThread = async (a: number, b: number): Promise<number> => {
     `SELECT t.\`id\` FROM \`mica_blabber_dms\` t
      WHERE ((t.\`from_account\` = ? AND t.\`to_account\` = ?)
         OR (t.\`from_account\` = ? AND t.\`to_account\` = ?))
-       AND t.\`status\` <> 'moderated' AND NOT ${THREAD_HELD}
+       AND t.\`status\` = 'active' AND NOT ${THREAD_HELD}
      ORDER BY t.\`id\``,
     [a, b, b, a, ...held]
   );
@@ -670,24 +664,18 @@ export const deleteThread = async (a: number, b: number): Promise<number> => {
     .filter((id) => Number.isSafeInteger(id) && id > 0);
 
   let removed = 0;
-  for (let start = 0; start < ids.length; start += DELETE_BATCH) {
-    const batch = ids.slice(start, start + DELETE_BATCH);
+  for (let start = 0; start < ids.length; start += THREAD_BATCH) {
+    const batch = ids.slice(start, start + THREAD_BATCH);
     const marks = batch.map(() => '?').join(', ');
     const result = await Database.query<{ affectedRows?: number }>(
-      `DELETE FROM \`mica_blabber_dms\` WHERE \`id\` IN (${marks})
+      `UPDATE \`mica_blabber_dms\` SET \`status\` = 'deleted', \`updated_at\` = \`updated_at\`
+       WHERE \`id\` IN (${marks})
          AND ((\`from_account\` = ? AND \`to_account\` = ?)
            OR (\`from_account\` = ? AND \`to_account\` = ?))
-         AND \`status\` <> 'moderated' AND NOT ${THREAD_HELD}`,
+         AND \`status\` = 'active' AND NOT ${THREAD_HELD}`,
       [...batch, a, b, b, a, ...held]
     );
     removed += Number(result?.affectedRows ?? 0) || 0;
-    await Database.query(
-      `DELETE FROM \`mica_account_reactions\`
-       WHERE \`target_table\` = ? AND \`target_id\` IN (${marks})
-         AND NOT EXISTS (SELECT 1 FROM \`mica_blabber_dms\` p
-                         WHERE p.\`id\` = \`mica_account_reactions\`.\`target_id\`)`,
-      [table, ...batch]
-    );
   }
 
   await recordModerated();

@@ -86,6 +86,7 @@ import { conversations } from '../services/Conversations';
 import {
   conversationForReader,
   participantForReader,
+  type ConversationRepository,
   type ConversationRow,
   type ParticipantRow
 } from '../repositories/ConversationRepository';
@@ -791,8 +792,9 @@ describe('the reader projections', () => {
  * A picture an admin moderated after it was sent stops showing (MICA-339); one its sender
  * deleted from their own gallery does not, because the recipient already received it. The stub
  * cannot run a join, so the attachment read here applies whatever status predicate the
- * statement carries to two pictures, one `deleted` and one `moderated`: a predicate of
- * `= 'active'` drops both and fails, `<> 'moderated'` keeps the first. Checked on MariaDB 11 too.
+ * statement carries to four pictures, `deleted`, `moderated`, `expired` and `erased`: a predicate
+ * of `= 'active'` drops all and fails, `NOT IN ('moderated', 'expired', 'erased')` keeps the
+ * first (MICA-428). Checked on MariaDB 11 too.
  */
 describe('a moderated picture leaves the thread, a deleted one stays', () => {
   const repo = () => messages.repo as unknown as MessageRepository;
@@ -805,14 +807,19 @@ describe('a moderated picture leaves the thread, a deleted one stays', () => {
       data: 'deleted-by-owner',
       status: 'deleted'
     },
-    { id: 2, message_id: 7, media_id: 21, kind: 'photo', data: 'moderated', status: 'moderated' }
+    { id: 2, message_id: 7, media_id: 21, kind: 'photo', data: 'moderated', status: 'moderated' },
+    { id: 3, message_id: 7, media_id: 22, kind: 'photo', data: 'expired', status: 'expired' },
+    { id: 4, message_id: 7, media_id: 23, kind: 'photo', data: 'erased', status: 'erased' }
   ];
 
   /** The rows a statement's `p.status` predicate admits, read off the statement itself. */
   const admittedBy = (sql: string) => {
-    const not = /p\.status <> '(\w+)'/.exec(sql)?.[1];
+    const list = /p\.status NOT IN \(([^)]*)\)/.exec(sql)?.[1];
+    const not = list ? [...list.matchAll(/'(\w+)'/g)].map((m) => m[1]) : null;
     const only = /p\.status = '(\w+)'/.exec(sql)?.[1];
-    return PICTURES.filter((row) => (not ? row.status !== not : only ? row.status === only : true));
+    return PICTURES.filter((row) =>
+      not ? !not.includes(row.status) : only ? row.status === only : true
+    );
   };
 
   it('shows a picture its sender deleted from their gallery, and hides a moderated one', async () => {
@@ -827,13 +834,50 @@ describe('a moderated picture leaves the thread, a deleted one stays', () => {
     expect(rows[0].attachments?.map((a) => a.media?.data)).toEqual(['deleted-by-owner']);
   });
 
-  it("asks a line page's attachment flag of every picture but a moderated one", async () => {
+  it("asks a line page's attachment flag of every picture but a hidden one", async () => {
     await repo().findLinePage(1, { limit: 20, cursor: null });
 
     const sql = String(dbMock.query.mock.calls.at(-1)?.[0]);
     expect(sql).toMatch(
-      /EXISTS \(SELECT 1 FROM mica_messages_attachments a\s+JOIN mica_media p ON p\.id = a\.photo_id AND p\.status <> 'moderated'\s+WHERE a\.message_id = m\.id\)/
+      /EXISTS \(SELECT 1 FROM mica_messages_attachments a\s+JOIN mica_media p ON p\.id = a\.photo_id AND p\.status NOT IN \('moderated', 'expired', 'erased'\)\s+WHERE a\.message_id = m\.id\)/
     );
     expect(admittedBy(sql).map((row) => row.status)).toEqual(['deleted']);
+  });
+});
+
+/**
+ * MICA-428 review (Gregor): a phone's memberships move to its next holder, and the walk used to
+ * move every one on the phone — a dead character's erased membership, an expired or a taken-down
+ * one included — so evidence came to name somebody who was never in the thread. The statement is
+ * applied to a membership in every status, as MariaDB would apply its `WHERE`.
+ */
+describe('a handover moves only memberships the holder can see (MICA-428)', () => {
+  it('leaves an erased, expired or taken-down membership naming its real member', async () => {
+    const rows = ['active', 'left', 'removed', 'erased', 'expired', 'moderated'].map((status) => ({
+      device_id: 'PHONE_X',
+      citizenid: 'CIT_GONE',
+      status
+    }));
+    dbMock.update.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      const [to, phone, other] = params as string[];
+      const excluded = /status NOT IN \(([^)]*)\)/.exec(String(sql))?.[1] ?? '';
+      for (const row of rows) {
+        if (row.device_id !== phone || row.citizenid === other) continue;
+        if (excluded.includes(`'${row.status}'`)) continue;
+        row.citizenid = to;
+      }
+      return true;
+    });
+
+    await (conversations.repo as ConversationRepository).transferParticipants('PHONE_X', 'CIT_NEW');
+
+    expect(rows.map((r) => `${r.status}:${r.citizenid}`)).toEqual([
+      'active:CIT_NEW',
+      'left:CIT_NEW',
+      'removed:CIT_NEW',
+      'erased:CIT_GONE',
+      'expired:CIT_GONE',
+      'moderated:CIT_GONE'
+    ]);
   });
 });

@@ -68,13 +68,24 @@ export const highscores = defineService<Highscore, typeof highscoresContract>({
   access: { read: 'owner', write: 'owner' },
   schema: {
     app: { type: 'string', length: 32, notNull: true, clientWritable: false },
-    score: { type: 'int', notNull: true, clientWritable: false }
+    score: { type: 'int', notNull: true, clientWritable: false },
+    /**
+     * The citizenid while the score is not erased (MICA-428): what the one-score-per-game key
+     * is over, so `upsertBest` never raises an erased score and starts a fresh one beside it.
+     * Restated, frozen, by `0015_hidden_rows_are_kept`.
+     */
+    live_citizen: {
+      type: 'string',
+      citizenId: true,
+      clientWritable: false,
+      generatedAs: "CASE WHEN `status` <> 'erased' THEN `citizenid` ELSE NULL END"
+    }
   },
-  indexes: [{ name: 'citizenid_app', columns: ['citizenid', 'app'], unique: true }],
+  indexes: [{ name: 'live_citizen_app', columns: ['live_citizen', 'app'], unique: true }],
   uniqueAfterDelete: {
     optOut:
       'No generic create or delete: `upsertBest` is an INSERT … ON DUPLICATE KEY UPDATE, and ' +
-      "nothing writes 'deleted' to a score, so there is no deleted row to collide with."
+      "nothing writes 'deleted' to a score; an erased one holds no key."
   },
   options: {
     disableGet: true,

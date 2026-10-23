@@ -448,7 +448,7 @@ describe('lineThread (MICA-307)', () => {
     const selectList = read.sql.slice(0, read.sql.indexOf('EXISTS'));
     expect(selectList).not.toMatch(/mica_media/);
     expect(read.sql).toContain(
-      "JOIN mica_media p ON p.id = a.photo_id AND p.status <> 'moderated'"
+      "JOIN mica_media p ON p.id = a.photo_id AND p.status NOT IN ('moderated', 'expired', 'erased')"
     );
   });
 

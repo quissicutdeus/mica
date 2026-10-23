@@ -125,14 +125,15 @@ const seededOn = async (phone: string, owner?: string) => {
 };
 
 /**
- * Delete the contacts `createContacts` wrote: on a seed number, and named as the seed names them.
+ * Erase the contacts `createContacts` wrote: on a seed number, and named as the seed names them.
+ * `erased`, never removed (MICA-428).
  *
  * Matched on the whole seeded contact, not just its number. This was once `WHERE phone IN
  * (...)` alone, which deleted any row on a seed number whoever owned it: a player who had saved
  * 5550101 themselves lost that contact at the next `micaseed clear`. The name and the number
  * are sealed now (MICA-431, MICA-432): the seed's rows on the number are found by its blind
- * index, opened, compared by name here, and deleted by id. A row that does not open is not the
- * seed's to delete.
+ * index, opened, compared by name here, and erased by id. A row that does not open is not the
+ * seed's to erase.
  */
 const clearSeedContacts = async (): Promise<void> => {
   for (const character of SEED_CHARACTERS) {
@@ -157,7 +158,8 @@ const clearSeedContacts = async (): Promise<void> => {
       .map((row) => Number(row.id));
     if (ids.length === 0) continue;
     await Database.query(
-      `DELETE FROM mica_contacts WHERE id IN (${ids.map(() => '?').join(', ')})`,
+      `UPDATE mica_contacts SET status = 'erased', updated_at = updated_at ` +
+        `WHERE id IN (${ids.map(() => '?').join(', ')}) AND status NOT IN ('moderated', 'erased')`,
       ids
     );
   }
@@ -169,7 +171,8 @@ const createContacts = async (owner: string): Promise<number> => {
   for (const character of SEED_CHARACTERS) {
     const on = await seededOn(character.phone, owner);
     const existing = await Database.query<{ id: number }[]>(
-      `SELECT id FROM mica_contacts WHERE ${on.sql} LIMIT 1`,
+      // Not one `micaseed clear` erased (MICA-428): a re-seed after a clear adds it again.
+      `SELECT id FROM mica_contacts WHERE ${on.sql} AND status <> 'erased' LIMIT 1`,
       on.params
     );
     if (existing?.length) continue;
@@ -212,6 +215,7 @@ const createConversations = async (owner: string): Promise<number> => {
          FROM mica_messages_participants p
          JOIN mica_messages_participants q ON q.conversation_id = p.conversation_id
         WHERE p.citizenid = ? AND q.citizenid = ?
+          AND p.status <> 'erased' AND q.status <> 'erased'
         LIMIT 1`,
       [owner, character.citizenid]
     );
@@ -271,17 +275,20 @@ export const seedFor = async (owner: string): Promise<SeedResult> => {
 };
 
 /**
- * Remove everything the seed created, everywhere.
+ * Erase everything the seed created, everywhere: `erased`, kept and hidden (MICA-428). Nothing
+ * is deleted, and a `moderated` row stays as it is.
  *
  * Scoped by the seed citizenids rather than by owner: the rows are only ever reachable
- * through a seeded character, and leaving orphaned `players` rows behind would break the
- * next `seedFor`.
+ * through a seeded character.
  *
- * Every delete here has to be narrow enough that it cannot reach a real row. The
- * citizenid list is a hard-coded constant, never a query, and the `players` delete
- * additionally requires the seed license. The contacts delete is the one that has to
- * work harder, because a contact row is owned by a real player and carries no marker
- * saying the seed wrote it — see below.
+ * **The seed characters' `players` rows stay.** That table is the framework's, not micaOS's,
+ * and a `players` row has no status to move. Left in place, they are what the next `seedFor`
+ * reads to skip creating them again, and what keeps the orphan sweep off the seed's rows.
+ *
+ * Every update here has to be narrow enough that it cannot reach a real row. The citizenid
+ * list is a hard-coded constant, never a query. The contacts are the ones that have to work
+ * harder, because a contact row is owned by a real player and carries no marker saying the
+ * seed wrote it — see below.
  */
 export const clearSeed = async (): Promise<void> => {
   const ids = SEED_CHARACTERS.map((c) => c.citizenid);
@@ -296,25 +303,22 @@ export const clearSeed = async (): Promise<void> => {
 
   if (conversationIds.length > 0) {
     const convPlaceholders = conversationIds.map(() => '?').join(',');
-    // Children first: both tables carry a foreign key onto the conversation.
-    await Database.query(
-      `DELETE FROM mica_messages WHERE conversation_id IN (${convPlaceholders})`,
-      conversationIds
+    const erase = (table: string, column: string, also = '') =>
+      Database.query(
+        `UPDATE ${table} SET status = 'erased', updated_at = updated_at${also}
+          WHERE ${column} IN (${convPlaceholders}) AND status NOT IN ('moderated', 'erased')`,
+        conversationIds
+      );
+    await erase('mica_messages', 'conversation_id');
+    // Marked left as well, as the purge's erase does (`leaving`, MICA-428): membership is read
+    // as `left_at IS NULL`, so a membership erased but not left keeps the player in the thread.
+    await erase(
+      'mica_messages_participants',
+      'conversation_id',
+      ', left_at = COALESCE(left_at, CURRENT_TIMESTAMP)'
     );
-    await Database.query(
-      `DELETE FROM mica_messages_participants WHERE conversation_id IN (${convPlaceholders})`,
-      conversationIds
-    );
-    await Database.query(
-      `DELETE FROM mica_messages_conversations WHERE id IN (${convPlaceholders})`,
-      conversationIds
-    );
+    await erase('mica_messages_conversations', 'id');
   }
 
   await clearSeedContacts();
-
-  await Database.query(`DELETE FROM players WHERE license = ? AND citizenid IN (${placeholders})`, [
-    SEED_LICENSE,
-    ...ids
-  ]);
 };

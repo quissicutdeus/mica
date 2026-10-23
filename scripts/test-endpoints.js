@@ -88,7 +88,7 @@ const FLOW_CHECKS = {
   qbMail: { standalone: 10, qb: 10 },
   devices: { standalone: 27, qb: 31 },
   reports: { standalone: 14, qb: 14 },
-  privacy: { standalone: 24, qb: 24 },
+  privacy: { standalone: 25, qb: 25 },
   leftThread: { standalone: 15, qb: 15 },
   characterSwitch: { standalone: 0, qb: 18 }
 };
@@ -1966,21 +1966,25 @@ const runDevices = async (shape, live) => {
 };
 
 /**
- * MICA-168: a player's export is their own rows, and their delete removes them while another
+ * MICA-168: a player's export is their own rows, and their delete hides them while another
  * player's — including their messages in a thread the deleter started — stay as they were.
- * Last, because it deletes 1's data.
+ * Since MICA-428 the delete erases rather than removes: every row is kept, and none is shown to
+ * anyone, the player's own export included. Last, because it erases 1's data.
  */
 const runPrivacy = async (shape, live) => {
   const { kind } = shape;
   const { A, B } = live;
   const OWNED = ['mica_settings', 'mica_contacts', 'mica_phone_call_log', 'mica_messages'];
-  const counts = async (person) => {
+  /** A person's rows in each table: not erased, or with `all`, every row there is. */
+  const counts = async (person, all = false) => {
     const out = {};
     for (const table of OWNED) {
       out[table] = (
-        await shape.rows(`SELECT COUNT(*) AS n FROM \`${table}\` WHERE \`citizenid\` = ?`, [
-          shape.citizenOf(person)
-        ])
+        await shape.rows(
+          `SELECT COUNT(*) AS n FROM \`${table}\` WHERE \`citizenid\` = ?` +
+            (all ? '' : " AND `status` <> 'erased'"),
+          [shape.citizenOf(person)]
+        )
       )[0].n;
     }
     return out;
@@ -2021,14 +2025,16 @@ const runPrivacy = async (shape, live) => {
     ['server.privacy.confirmRequired', aRows]
   );
   const numberBefore = await shape.numberOf(PEOPLE[1]);
+  const allBefore = await counts(PEOPLE[1], true);
   const deleted = await shape.call(A, 'privacy', 'delete', { confirm: 'DELETE' });
   check(`${kind}: the delete completes`, [deleted?.complete, deleted?.failed], [true, []]);
   const aAfter = await counts(PEOPLE[1]);
   check(
-    `${kind}: 1's settings, contacts and call log are gone`,
+    `${kind}: 1's settings, contacts and call log are erased`,
     [aAfter.mica_settings, aAfter.mica_contacts, aAfter.mica_phone_call_log],
     [0, 0, 0]
   );
+  check(`${kind}: and every row of 1's is kept`, await counts(PEOPLE[1], true), allBefore);
   check(
     `${kind}: 1 keeps the phone number, which is the device's`,
     await shape.numberOf(PEOPLE[1]),

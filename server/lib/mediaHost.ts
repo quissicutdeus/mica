@@ -25,14 +25,10 @@
  *   configured host exactly, on the default port, with no credentials, no whitespace and
  *   nothing that could close a CSS `url('…')` — and it must fit `mica_media.url`. A host
  *   that answers anything else is treated as a failed upload.
- * - **A hosted file outlives no row that names it.** Deletion (`releaseHostedImages`) is
- *   asked only for a URL no remaining row references — a proximity drop copies the URL onto
- *   each recipient's row, so the sender's row expiring must not pull the picture out from
- *   under theirs. Every path that hard-deletes `mica_media` rows reads their URLs first and
- *   hands them here after (MICA-292): retention, both character purges and the orphan sweep.
- *   The one it cannot is a database-level `ON DELETE CASCADE` from the owner table — gone
- *   since MICA-300, but still on a qb database that has not run `micaschema apply` since —
- *   which `ownerForeignKeys.ts` says out loud at every start, hosted photos included.
+ * - **A hosted file is never deleted** (MICA-428). Nothing deletes a `mica_media` row any
+ *   more — retention expires it, a purge erases it — and the file is kept with the row, for
+ *   evidence. `mica_media_delete_url`, which once released a file no row named, is retired
+ *   (`warnRetiredDeleteUrl`).
  *
  * `server/tsconfig.json` has neither `dom` nor `@types/node` in scope (see
  * `DiscordWebhook.ts`), so the few runtime globals used here are declared below at the
@@ -42,7 +38,7 @@
 
 import { Database } from './Database';
 import { SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
-import { reasonOf, traceOf } from './sqlErrors';
+import { reasonOf } from './sqlErrors';
 
 export const UPLOAD_URL_CONVAR = 'mica_media_upload_url';
 export const UPLOAD_HEADER_CONVAR = 'mica_media_upload_header';
@@ -63,10 +59,6 @@ export const DEFAULT_RESPONSE_PATH = 'url';
  * slower shutter rather than a capture that times out and is lost on the client.
  */
 export const UPLOAD_TIMEOUT_MS = 8_000;
-/** Delete requests are background work, but one hung request must not hold a prune forever. */
-export const DELETE_TIMEOUT_MS = 8_000;
-/** Delete requests in flight at once during a prune. */
-export const DELETE_CONCURRENCY = 8;
 /** `mica_media.url` is `varchar(512)`; a longer URL would be truncated into a broken one. */
 export const MAX_HOSTED_URL_LENGTH = 512;
 
@@ -530,181 +522,18 @@ export const uploadImage = async (dataUri: unknown): Promise<HostedImage | null>
   }
 };
 
-/** The delete request for one hosted URL, or `null` when the template cannot produce one. */
-const deleteRequestUrl = (template: string, url: string): string | null => {
-  const name = new URL(url).pathname.split('/').filter(Boolean).at(-1) ?? '';
-  const built = template
-    .replaceAll('{url}', encodeURIComponent(url))
-    .replaceAll('{name}', encodeURIComponent(name));
-  return parseHttps(built) ? built : null;
-};
-
-export interface ReleaseOutcome {
-  /** Deleted on the host. */
-  deleted: number;
-  /** The host refused, or the request failed. Left on the host. */
-  failed: number;
-  /** No delete endpoint configured. Left on the host. */
-  unconfigured: number;
-  /**
-   * On an image host micaOS used before the current one, keyed by host. Left there: the
-   * delete URL configured now is the current host's, and handing it another host's file
-   * would at best do nothing and at worst delete an unrelated file of the same name.
-   */
-  formerHost: Record<string, number>;
-}
-
-/** URLs per reference check, so a large release is several bounded statements, not one. */
-export const RELEASE_CHECK_BATCH = 500;
-
 /**
- * Ask the host to delete files no row references any more. MICA-243's half of retention.
- *
- * Only URLs that pass `validateHostedUrl` are deleted — a hotlinked GIF `AddMedia` stored from
- * somebody else's CDN is not ours to delete. Of those, only URLs no remaining `mica_media`
- * row names: a proximity drop copies a URL onto every recipient's row, and the sender's copy
- * aging out first must not take the picture from theirs. Callers call this **after** their
- * delete, so the rows that went are already gone from that check.
- *
- * An `https:` URL on a host micaOS recorded as an image host earlier (`rememberImageHost`),
- * but that is not the current one, goes through the same check and, unreferenced, is counted
- * under `formerHost` and never requested (MICA-292): the delete URL configured now belongs to
- * the current host, and guessing one for the old host is how an unrelated file gets deleted.
- *
- * With no `mica_media_delete_url` the files are counted and left, and the caller says so —
- * a host with no delete API is a real configuration, and silence would read as a clean-up.
- *
- * Never throws: a host outage must not fail the prune whose rows are already deleted.
+ * `mica_media_delete_url` is retired (MICA-428): nothing is ever deleted, so a hosted file is
+ * kept for as long as its row is, and that is for good. An owner who still sets it is told
+ * once, at start, that it does nothing, rather than left believing files are being cleaned up.
+ * Never throws.
  */
-export const releaseHostedImages = async (
-  candidates: readonly unknown[]
-): Promise<ReleaseOutcome> => {
-  const outcome: ReleaseOutcome = { deleted: 0, failed: 0, unconfigured: 0, formerHost: {} };
-  const distinct = [
-    ...new Set(candidates.filter((c): c is string => typeof c === 'string' && c !== ''))
-  ];
-  const current = imageHost();
-  const hosted = distinct.filter((url) => validateHostedUrl(url, current) !== null);
-
-  // The ledger is asked only when some https URL is not the current host's, so a release of
-  // nothing but current-host photos costs no extra statement.
-  const former = new Map<string, string>();
-  const onCurrentHost = new Set(hosted);
-  const others = distinct.filter((url) => !onCurrentHost.has(url));
-  if (others.some((url) => parseHttps(url) !== null)) {
-    const recorded = await recordedImageHosts();
-    for (const url of others) {
-      const host = parseHttps(url)?.hostname.toLowerCase();
-      if (host && host !== current && recorded.has(host)) former.set(url, host);
-    }
-  }
-  const considered = [...hosted, ...former.keys()];
-  if (considered.length === 0) return outcome;
-
-  const still = new Set<string>();
-  try {
-    for (let i = 0; i < considered.length; i += RELEASE_CHECK_BATCH) {
-      const batch = considered.slice(i, i + RELEASE_CHECK_BATCH);
-      const rows = await Database.query<{ url: string }[]>(
-        `SELECT DISTINCT \`url\` FROM \`mica_media\` ` +
-          `WHERE \`url\` IN (${batch.map(() => '?').join(', ')})`,
-        batch
-      );
-      for (const row of Array.isArray(rows) ? rows : []) still.add(String(row.url));
-    }
-  } catch (error) {
-    // Unsure what is still referenced, so nothing is deleted: a file left behind costs
-    // storage, a file deleted under a live row costs somebody a photo.
-    console.error(
-      '[micamedia] could not check which hosted photos are still in use:',
-      traceOf(error)
-    );
-    outcome.failed = considered.length;
-    return outcome;
-  }
-
-  for (const [url, host] of former) {
-    if (!still.has(url)) outcome.formerHost[host] = (outcome.formerHost[host] ?? 0) + 1;
-  }
-  const unreferenced = hosted.filter((url) => !still.has(url));
-  if (unreferenced.length === 0) return outcome;
-
-  const template = clean(GetConvar(DELETE_URL_CONVAR, ''));
-  if (!template) {
-    outcome.unconfigured = unreferenced.length;
-    return outcome;
-  }
-  if (!parseHttps(template.replaceAll('{url}', 'x').replaceAll('{name}', 'x'))) {
-    warnOnce(
-      `delete:${template}`,
-      `[micamedia] ${DELETE_URL_CONVAR} must be an https:// address; hosted photos are left ` +
-        'on the host until it is fixed.'
-    );
-    outcome.unconfigured = unreferenced.length;
-    return outcome;
-  }
-
-  const header = parseHeader();
-  const headers: Record<string, string> = {};
-  if (header) headers[header.name] = header.value;
-
-  const deleteOne = async (url: string): Promise<void> => {
-    const target = deleteRequestUrl(template, url);
-    if (!target) {
-      outcome.failed += 1;
-      return;
-    }
-    try {
-      const response = await fetch(target, {
-        method: 'DELETE',
-        headers,
-        signal: AbortSignal.timeout(DELETE_TIMEOUT_MS),
-        // Same reason as the upload: the header must not follow a redirect off the host.
-        redirect: 'error'
-      });
-      // 404 is success here: the file is already gone, which is the state asked for.
-      if (response.ok || response.status === 404) outcome.deleted += 1;
-      else outcome.failed += 1;
-    } catch {
-      outcome.failed += 1;
-    }
-  };
-
-  for (let i = 0; i < unreferenced.length; i += DELETE_CONCURRENCY) {
-    await Promise.all(unreferenced.slice(i, i + DELETE_CONCURRENCY).map(deleteOne));
-  }
-  return outcome;
-};
-
-/**
- * Say what a release did, in the one line an owner reads. Silent when nothing was hosted.
- *
- * `unconfigured` is a warning rather than a note: those files are on somebody's bill and
- * nothing will ever remove them unless an owner acts.
- */
-export const reportRelease = (label: string, outcome: ReleaseOutcome): void => {
-  if (outcome.deleted > 0) {
-    console.log(`[${label}] deleted ${outcome.deleted} hosted photo(s) from the image host.`);
-  }
-  if (outcome.failed > 0) {
-    console.warn(
-      `[${label}] ${outcome.failed} hosted photo(s) could not be deleted from the image host ` +
-        'and are left there; their rows are already gone.'
-    );
-  }
-  if (outcome.unconfigured > 0) {
-    console.warn(
-      `[${label}] ${outcome.unconfigured} hosted photo(s) no longer belong to any row but ` +
-        `${DELETE_URL_CONVAR} is not set, so they are left on the image host.`
-    );
-  }
-  for (const [host, count] of Object.entries(outcome.formerHost)) {
-    // Host and count only, never the URLs: they are the addresses of a deleted character's
-    // photos, and a console is often piped somewhere more public than the database.
-    console.warn(
-      `[${label}] ${count} hosted photo(s) on ${host}, a former image host, no longer belong ` +
-        `to any row. micaOS only deletes from the current one (${IMAGE_HOST_CONVAR}), so ` +
-        `they are left on ${host}; remove them there if they should not stay reachable.`
-    );
-  }
+export const warnRetiredDeleteUrl = (): void => {
+  if (clean(GetConvar(DELETE_URL_CONVAR, '')) === '') return;
+  warnOnce(
+    'delete-url-retired',
+    `[micamedia] ${DELETE_URL_CONVAR} is set but no longer used: micaOS keeps every hosted ` +
+      'photo for as long as its row, which is for good (MICA-428). Nothing is deleted from ' +
+      'the image host.'
+  );
 };

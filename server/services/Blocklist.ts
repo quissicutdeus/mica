@@ -39,13 +39,24 @@ export const blocklist = defineService<BlockedNumber>({
   deviceOwned: true,
   access: { read: 'owner', write: 'owner' },
   schema: {
-    number: { type: 'string', length: 32, notNull: true, clientFilterable: true }
+    number: { type: 'string', length: 32, notNull: true, clientFilterable: true },
+    /**
+     * The phone while the block is not erased (MICA-428): what the key is over, so an erased
+     * block holds no key and is never revived or overwritten. Restated, frozen, by
+     * `0015_hidden_rows_are_kept`.
+     */
+    live_device: {
+      type: 'string',
+      length: 32,
+      clientWritable: false,
+      generatedAs: "CASE WHEN `status` <> 'erased' THEN `device_id` ELSE NULL END"
+    }
   },
   // One row per (blocking phone, blocked number) — enforced by the database rather than a
   // find-then-insert a double-tap on "Block" could race. Per phone since MICA-282
   // (`0002_phone_data_follows_the_phone` swaps the old `citizenid_number_unique` for it);
   // the *enforcement* in `isBlocked`/`blockedBy` stays by citizen — see their notes.
-  indexes: [{ name: 'device_number_unique', columns: ['device_id', 'number'], unique: true }],
+  indexes: [{ name: 'live_device_number', columns: ['live_device', 'number'], unique: true }],
   /**
    * Was `'revive'` (MICA-318, MICA-321), for the generic block-unblock-block-again. With no
    * generic `create` there is nothing to revive through, and a decision that cannot happen

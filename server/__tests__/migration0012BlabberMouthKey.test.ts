@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { dbMock } = vi.hoisted(() => ({
@@ -94,12 +96,21 @@ describe('0012_blabber_mouths_unique_while_live', () => {
     expect(dbMock.query).not.toHaveBeenCalled();
   });
 
-  it('restates the expression the declaration has today', () => {
-    const declared = blabber.resolved.fields.find((f) => f.name === 'mouth_key')?.def;
-    expect(declared).toMatchObject({
-      type: 'int',
-      generatedAs: "CASE WHEN `status` <> 'deleted' THEN `mouth_of` ELSE NULL END"
-    });
+  /**
+   * 0012 is frozen as it shipped, over "not deleted"; MICA-428's 0015 narrowed the key to
+   * "active or moderated" and restates today's declaration (`migration0015HiddenRows.test.ts`).
+   */
+  it('restates the expression as it shipped, and the key the declaration still has', () => {
+    const source = readFileSync(
+      join(__dirname, '..', 'migrations', '0012_blabber_mouths_unique_while_live.ts'),
+      'utf8'
+    ).replace(/['"\s+]+/g, '');
+    expect(source).toContain(
+      "`mouth_key`int(11)GENERATEDALWAYSAS(CASEWHEN`status`<>'deleted'THEN`mouth_of`ELSENULLEND)VIRTUAL".replace(
+        /'/g,
+        ''
+      )
+    );
     expect(blabber.resolved.indexes).toContainEqual(
       expect.objectContaining({ name: 'account_mouth_key', columns: ['account_id', 'mouth_key'] })
     );

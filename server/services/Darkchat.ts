@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { ERASED } from '../lib/statuses';
 import { randomBytes } from 'node:crypto';
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
@@ -21,6 +22,7 @@ import {
 } from '../lib/contentCipher';
 import { RETENTION_BATCH } from '../lib/contentRetention';
 import { onBeforeSelfServiceDelete } from './Privacy';
+import { registerSharedRows } from '../lib/orphanSweep';
 import { defineContract, responseType } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
 import type { DarkchatChannel, DarkchatJoined, DarkchatMember } from '@mica/shared/types';
@@ -224,7 +226,8 @@ export const darkchat = defineService<ChannelRow, typeof darkchatContract>({
          */
         status: {
           type: 'enum',
-          values: ['active', 'left', 'removed'],
+          // `erased` (MICA-428): a purge hides a gone owner's memberships, never deletes them.
+          values: ['active', 'left', 'removed', ERASED],
           notNull: true,
           default: 'active'
         },
@@ -916,14 +919,26 @@ onBeforeSelfServiceDelete('darkchat', async (citizenid) => {
   for (const row of rows ?? []) await leaveChannel(Number(row.channel_id), citizenid);
 });
 
+/**
+ * A channel the erased player opened stays live while anyone else is still in it (MICA-428),
+ * for the character-deleted purge and the orphan sweep, which run no hook to hand it on.
+ */
+registerSharedRows(CHANNELS, {
+  members: MEMBERS,
+  column: 'channel_id',
+  owner: 'citizenid',
+  leftAt: 'left_at',
+  kicked: 'removed'
+});
+
 // ---------------------------------------------------------------------------------------------
-// The sweep's member and channel half (`sweepDarkchat` in `DarkchatMessages.ts` runs it)
+// The sweep's batching (`sweepDarkchat` in `DarkchatMessages.ts` runs it)
 // ---------------------------------------------------------------------------------------------
 
-/** Batches per table per run: 20,000 rows. A larger backlog drains over the next runs. */
+/** Batches per run: 20,000 rows. A larger backlog drains over the next runs. */
 export const SWEEP_MAX_BATCHES = 40;
 
-/** A breath between batches, so player writes into the table run between two deletes. */
+/** A breath between batches, so player writes into the table run between two updates. */
 const SWEEP_YIELD_MS = 50;
 
 const affectedRows = (result: unknown): number => {
@@ -935,15 +950,18 @@ const affectedRows = (result: unknown): number => {
 };
 
 /**
- * Select ids, then delete exactly those ids with every condition asked again, in batches of
+ * Select ids, then move exactly those ids with every condition asked again, in batches of
  * `RETENTION_BATCH`, at most `SWEEP_MAX_BATCHES` of them, with a breath between. Answers the
- * rows removed. The delete re-checks, so whatever changed between the two statements wins.
+ * rows moved. The update re-checks, so whatever changed between the two statements wins.
+ *
+ * Member and channel rows are no longer swept (MICA-428): a `left` or `removed` member and a
+ * `deleted` channel are already hidden, and nothing is deleted.
  */
-export const deleteInBatches = async (
+export const updateInBatches = async (
   select: { sql: string; params: readonly unknown[] },
-  remove: (ids: readonly number[]) => { sql: string; params: readonly unknown[] }
+  move: (ids: readonly number[]) => { sql: string; params: readonly unknown[] }
 ): Promise<number> => {
-  let removed = 0;
+  let moved = 0;
   for (let batch = 0; batch < SWEEP_MAX_BATCHES; batch += 1) {
     const rows = await Database.query<{ id: number }[]>(select.sql, [...select.params]);
     const ids = (Array.isArray(rows) ? rows : [])
@@ -951,60 +969,10 @@ export const deleteInBatches = async (
       .filter((id) => Number.isSafeInteger(id) && id > 0)
       .slice(0, RETENTION_BATCH);
     if (ids.length === 0) break;
-    const statement = remove(ids);
-    removed += affectedRows(await Database.query(statement.sql, [...statement.params]));
+    const statement = move(ids);
+    moved += affectedRows(await Database.query(statement.sql, [...statement.params]));
     if (ids.length < RETENTION_BATCH) break;
     await new Promise<void>((resolve) => setTimeout(resolve, SWEEP_YIELD_MS));
   }
-  return removed;
-};
-
-const marks = (ids: readonly number[]): string => ids.map(() => '?').join(', ');
-
-/**
- * Forget who stood behind an alias once nothing needs it, run after the messages half so the
- * rows it frees are already gone. Children before parents, and nothing taken by cascade:
- *
- * - **A `left` member row** whose `left_at` is past the window and that no message row still
- *   names. A reported message the hold kept keeps its author row, and with it the alias staff
- *   read. Its messages were all written before it left, so they are past the window too.
- * - **A `removed` member row only once its channel is deleted.** In a live channel it is what
- *   refuses the removed citizen's rejoin, so it stays; in a deleted one it refuses nothing.
- * - **A deleted channel** with no member row and no message row left, so the delete cascades
- *   into nothing a hold kept.
- */
-export const sweepMembersAndChannels = async (
-  hours: number
-): Promise<{ members: number; channels: number }> => {
-  const unreferenced = (row: string) =>
-    `NOT EXISTS (SELECT 1 FROM \`mica_darkchat_messages\` x WHERE x.\`author_member_id\` = ${row}.\`id\`)`;
-  const gone = (row: string) =>
-    `${row}.\`left_at\` < NOW() - INTERVAL ? HOUR AND ${unreferenced(row)} AND (${row}.\`status\` = 'left' OR (${row}.\`status\` = 'removed' AND EXISTS (SELECT 1 FROM \`${CHANNELS}\` c WHERE c.\`id\` = ${row}.\`channel_id\` AND c.\`status\` = 'deleted')))`;
-
-  const members = await deleteInBatches(
-    {
-      sql: `SELECT m.\`id\` FROM \`${MEMBERS}\` m WHERE ${gone('m')} ORDER BY m.\`left_at\`, m.\`id\` LIMIT ${RETENTION_BATCH}`,
-      params: [hours]
-    },
-    (ids) => ({
-      sql: `DELETE FROM \`${MEMBERS}\` WHERE \`id\` IN (${marks(ids)}) AND ${gone(`\`${MEMBERS}\``)} LIMIT ${RETENTION_BATCH}`,
-      params: [...ids, hours]
-    })
-  );
-
-  const empty = (row: string) =>
-    `${row}.\`status\` = 'deleted' ` +
-    `AND NOT EXISTS (SELECT 1 FROM \`${MEMBERS}\` m WHERE m.\`channel_id\` = ${row}.\`id\`) ` +
-    `AND NOT EXISTS (SELECT 1 FROM \`mica_darkchat_messages\` x WHERE x.\`channel_id\` = ${row}.\`id\`)`;
-  const channels = await deleteInBatches(
-    {
-      sql: `SELECT c.\`id\` FROM \`${CHANNELS}\` c WHERE ${empty('c')} ORDER BY c.\`id\` LIMIT ${RETENTION_BATCH}`,
-      params: []
-    },
-    (ids) => ({
-      sql: `DELETE FROM \`${CHANNELS}\` WHERE \`id\` IN (${marks(ids)}) AND ${empty(`\`${CHANNELS}\``)} LIMIT ${RETENTION_BATCH}`,
-      params: [...ids]
-    })
-  );
-  return { members, channels };
+  return moved;
 };

@@ -9,7 +9,7 @@
  * in the sweep is interpolated. All of them come from `defineService` declarations and from
  * frozen literals in `FrameworkBridge`, none of which a payload can reach, so this cannot
  * fire today. It is here because the property "no caller supplies one of these" is invisible
- * at the point where the string is concatenated into a `DELETE`, and the next person to add
+ * at the point where the string is concatenated into an `UPDATE`, and the next person to add
  * a parameter to `sweepOrphanedRows` will read that line, not this argument.
  */
 export const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;

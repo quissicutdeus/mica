@@ -40,6 +40,7 @@ import '../services/GlimpseComments';
 import '../services/Marketplace';
 import '../services/Spark';
 import { REPORTABLE, recordOwnerDeletion } from '../lib/moderation';
+import { media } from '../services/Media';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 /**
@@ -68,7 +69,10 @@ interface ReportRow {
  * A reported row. `updated_at` is a counter standing in for the timestamp: every `UPDATE` that
  * does not name the column in its `SET` bumps it, as `ON UPDATE CURRENT_TIMESTAMP` would.
  */
-let targets: Map<string, { id: number; status: string; updated_at: number }[]>;
+let targets: Map<
+  string,
+  { id: number; status: string; updated_at: number; citizenid?: string; device_id?: string }[]
+>;
 let reports: ReportRow[];
 /**
  * Where a test parks a statement to interleave two handlers. A read answers from the state when
@@ -153,11 +157,11 @@ beforeEach(() => {
     }
     if (
       text ===
-      "UPDATE `mica_reports` SET `target_prior_status` = 'deleted' WHERE `target_table` = ? " +
+      'UPDATE `mica_reports` SET `target_prior_status` = ? WHERE `target_table` = ? ' +
         "AND `target_id` = ? AND `resolution` = 'actioned' AND `status` = 'active'"
     ) {
       await hold?.('owner', params);
-      const [table, targetId] = params as [string, number];
+      const [status, table, targetId] = params as [string, string, number];
       const standing = reports.filter(
         (r) =>
           r.target_table === table &&
@@ -165,7 +169,7 @@ beforeEach(() => {
           r.resolution === 'actioned' &&
           r.status === 'active'
       );
-      for (const r of standing) r.target_prior_status = 'deleted';
+      for (const r of standing) r.target_prior_status = status;
       return standing.length > 0;
     }
     const move =
@@ -179,6 +183,22 @@ beforeEach(() => {
       row.status = to;
       if (!move[2]) row.updated_at += 1;
       return true;
+    }
+    // A phone's handover (MICA-282), its status guard applied as MariaDB would (MICA-428).
+    const handover =
+      /^UPDATE `(\w+)` SET `citizenid` = \?, `updated_at` = `updated_at` WHERE `device_id` = \? AND `citizenid` <> \?(?: AND `status` NOT IN \(([^)]*)\))?$/.exec(
+        text
+      );
+    if (handover) {
+      const [holder, phone] = params as [string, string];
+      const moved = (targets.get(handover[1]) ?? []).filter(
+        (r) =>
+          r.device_id === phone &&
+          r.citizenid !== holder &&
+          !(handover[2] ?? '').includes(`'${r.status}'`)
+      );
+      for (const r of moved) r.citizenid = holder;
+      return moved.length;
     }
     throw new Error(`stand-in: unexpected update: ${text}`);
   });
@@ -635,6 +655,29 @@ describe('a takedown and a reopen leave the row as it was (MICA-426)', () => {
   });
 });
 
+/**
+ * MICA-428 review: the handover leaves a taken-down row naming the character who wrote it, so a
+ * takedown reopened after the phone changed hands comes back under that author — not the
+ * phone's new holder, who never wrote it. Right for evidence, and deliberate.
+ */
+describe('a takedown reopened after its phone changed hands (MICA-428)', () => {
+  it('comes back under its real author, while the live row beside it moved', async () => {
+    row('mica_media', 60, 'active');
+    row('mica_media', 61, 'active');
+    for (const r of targets.get('mica_media')!)
+      Object.assign(r, { citizenid: 'CIT_A', device_id: 'PHONE_X' });
+    fileReport(1, 'mica_media', 60);
+    await moderate(1);
+
+    await media.repo.transferDeviceRows('PHONE_X', 'CIT_B');
+    await reopen(1);
+
+    expect(target('mica_media', 60)).toMatchObject({ status: 'active', citizenid: 'CIT_A' });
+    // The positive twin: the handover ran, and moved what the new holder may see.
+    expect(target('mica_media', 61)).toMatchObject({ status: 'active', citizenid: 'CIT_B' });
+  });
+});
+
 describe("an owner's deletion during a takedown wins the restore (MICA-426)", () => {
   it('reopens a row its owner deleted while it was moderated to deleted', async () => {
     row('mica_spark', 40, 'active');
@@ -648,6 +691,17 @@ describe("an owner's deletion during a takedown wins the restore (MICA-426)", ()
 
     await reopen(1);
     expect(statusOf('mica_spark', 40)).toBe('deleted');
+  });
+
+  it('a purge records erased, and the reopen puts back erased (MICA-428)', async () => {
+    row('mica_spark', 40, 'active');
+    fileReport(1, 'mica_spark', 40);
+    await moderate(1);
+
+    await recordOwnerDeletion('mica_spark', [40], 'erased');
+    expect(reports[0].target_prior_status).toBe('erased');
+    await reopen(1);
+    expect(statusOf('mica_spark', 40)).toBe('erased');
   });
 
   it('a row nobody deleted still comes back live — the positive twin', async () => {

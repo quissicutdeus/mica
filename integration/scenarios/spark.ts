@@ -235,10 +235,12 @@ const matchesOf = async (who: Dater): Promise<SparkMatch[]> => {
   return result;
 };
 
-const dmRows = async (a: Dater, b: Dater): Promise<number> =>
+/** DMs between two accounts, either direction: live ones, or with `all`, every row kept. */
+const dmRows = async (a: Dater, b: Dater, all = false): Promise<number> =>
   await db.count(
     'SELECT COUNT(*) FROM `mica_blabber_dms` ' +
-      'WHERE (`from_account` = ? AND `to_account` = ?) OR (`from_account` = ? AND `to_account` = ?)',
+      'WHERE ((`from_account` = ? AND `to_account` = ?) OR (`from_account` = ? AND `to_account` = ?))' +
+      (all ? '' : " AND `status` = 'active'"),
     [a.accountId, b.accountId, b.accountId, a.accountId]
   );
 
@@ -662,7 +664,12 @@ export const sparkScenarios: readonly Scenario[] = [
         assert((await pairMatches(ada, ben)).length === 0, 'the unmatch left the match row');
         assert(
           (await dmRows(ada, ben)) === 0,
-          `the unmatch left ${await dmRows(ada, ben)} DM rows between Ada and Ben; expected 0`
+          `the unmatch left ${await dmRows(ada, ben)} live DMs between Ada and Ben; expected 0`
+        );
+        // Deleted, not removed (MICA-428): the thread is kept for staff.
+        assert(
+          (await dmRows(ada, ben, true)) === 1,
+          `the unmatch kept ${await dmRows(ada, ben, true)} DM rows between Ada and Ben; expected 1`
         );
         const after = await send(ada, ben, 'Still there?');
         assert(
@@ -671,8 +678,8 @@ export const sparkScenarios: readonly Scenario[] = [
             "'server.blabberDms.blocked' refusal"
         );
         assert(
-          (await dmRows(ada, ben)) === 0,
-          `a refused DM after the unmatch wrote ${await dmRows(ada, ben)} rows`
+          (await dmRows(ada, ben, true)) === 1,
+          `a refused DM after the unmatch wrote ${(await dmRows(ada, ben, true)) - 1} rows`
         );
       } finally {
         await leave([ada, ben, cal]);

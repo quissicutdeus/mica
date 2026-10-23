@@ -412,7 +412,19 @@ describe('moderated rows', () => {
 
     await repo.update(7, { body: 'sneaky' } as never, 'CIT_A');
 
-    expect(String(dbMock.update.mock.calls[0][0])).toContain("`status` != 'moderated'");
+    expect(String(dbMock.update.mock.calls[0][0])).toContain(
+      "`status` NOT IN ('moderated', 'erased', 'expired')"
+    );
+  });
+
+  it('nor over a row hidden for good: an owner cannot edit or revive an erased one (MICA-428)', async () => {
+    // A privacy-deleted player still exists: without this, an update by id rewrote evidence,
+    // and a delete moved an erased row to `deleted`, where `restore` brought it back live.
+    const repo = buildRepository(resolveAppSchema({ id: 'posts', schema: { body: 'string' } }));
+    await repo.delete(7, 'CIT_A');
+    const sql = String(dbMock.update.mock.calls[0][0]);
+    expect(sql).toContain('SET `status` = ?');
+    expect(sql).toContain("`status` NOT IN ('moderated', 'erased', 'expired')");
   });
 
   it('does not exclude an app own away-states like archived', async () => {

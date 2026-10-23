@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { EXPIRED } from '../lib/statuses';
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
@@ -18,11 +19,10 @@ import {
   DARKCHAT_APP,
   aliasIsLive,
   liveCitizensOf,
-  deleteInBatches,
   liveMember,
   liveChannelByCode,
   normalizeCode,
-  sweepMembersAndChannels
+  updateInBatches
 } from './Darkchat';
 import { darkchatMessagesContract } from '@mica/shared/contracts/darkchat_messages';
 import type { DarkchatMessage } from '@mica/shared/types';
@@ -152,7 +152,8 @@ export const darkchatMessages = defineService<MessageRow, typeof darkchatMessage
     }
   },
   paging: { pageSize: 50, maxPageSize: 100 },
-  statuses: ['active', 'deleted', 'moderated'],
+  // `expired`: the retention window passed (MICA-428), never a player's own delete.
+  statuses: ['active', 'deleted', 'moderated', EXPIRED],
   /** Bound to the author's citizenid and the channel, as a message is to its conversation. */
   encryptionScope: ['channel_id'],
   schema: {
@@ -422,19 +423,19 @@ export const SWEEP_INTERVAL_MS = 15 * 60_000;
 let sweeping = false;
 
 /**
- * Delete the messages past the window, except any a pending report names or a takedown holds
- * (MICA-426), then the member and channel rows nothing needs any more
- * (`sweepMembersAndChannels`). **A hard delete.**
+ * Expire the messages past the window (MICA-428): `active` to `expired`, kept for staff and
+ * hidden from every player. A message a pending report names stays as it is until the report
+ * resolves, and a takedown's `moderated` one is never moved (MICA-426). Nothing is deleted.
  *
  * Its own sweep rather than a `contentRetention` policy: that one is measured in days, with a
  * day's grace and a six-hour interval, so a 24-hour message would live up to about two and a
  * half days. The hold is the same predicate (`evidenceHold`), so a reported or moderated
- * message is kept as evidence by one definition; once a reopen puts it back, the next sweep
- * takes it by its window, so a line that would have expired anyway stays expired. Ids are
- * selected, then exactly those ids deleted with the window and the hold asked again, so a
- * report filed between the two wins.
+ * message is held by one definition; once a reopen puts it back, the next sweep expires it by
+ * its window, so a line that would have expired anyway stays expired. Ids are selected, then
+ * exactly those ids moved with the window and the hold asked again, so a report filed between
+ * the two wins. `updated_at` is pinned: expiring is not an edit.
  *
- * Never rejects; returns the messages removed.
+ * Never rejects; returns the messages expired.
  */
 export const sweepDarkchat = async (): Promise<number> => {
   if (sweeping) return 0;
@@ -444,28 +445,23 @@ export const sweepDarkchat = async (): Promise<number> => {
     const hours = retentionHours();
     const selectHold = evidenceHold(TABLE, 't');
     const deleteHold = evidenceHold(TABLE, `\`${TABLE}\``);
-    removed = await deleteInBatches(
+    removed = await updateInBatches(
       {
         sql: `SELECT t.\`id\` FROM \`${TABLE}\` t
-         WHERE t.\`created_at\` < NOW() - INTERVAL ? HOUR AND ${selectHold.sql}
+         WHERE t.\`status\` = 'active' AND t.\`created_at\` < NOW() - INTERVAL ? HOUR
+           AND ${selectHold.sql}
          ORDER BY t.\`created_at\`, t.\`id\` LIMIT ${RETENTION_BATCH}`,
         params: [hours, ...selectHold.params]
       },
       (ids) => ({
         sql:
-          `DELETE FROM \`${TABLE}\` WHERE \`id\` IN (${ids.map(() => '?').join(', ')}) ` +
+          `UPDATE \`${TABLE}\` SET \`status\` = ?, \`updated_at\` = \`updated_at\` ` +
+          `WHERE \`id\` IN (${ids.map(() => '?').join(', ')}) AND \`status\` = 'active' ` +
           `AND \`created_at\` < NOW() - INTERVAL ? HOUR AND ${deleteHold.sql} LIMIT ${RETENTION_BATCH}`,
-        params: [...ids, hours, ...deleteHold.params]
+        params: [EXPIRED, ...ids, hours, ...deleteHold.params]
       })
     );
-    // Then who stood behind the aliases, now that the messages that named them are gone.
-    const forgotten = await sweepMembersAndChannels(hours);
-    if (forgotten.members > 0 || forgotten.channels > 0) {
-      console.log(
-        `[darkchat] forgot ${forgotten.members} member row(s) and ${forgotten.channels} deleted channel(s).`
-      );
-    }
-    if (removed > 0) console.log(`[darkchat] removed ${removed} message(s) past ${hours}h.`);
+    if (removed > 0) console.log(`[darkchat] expired ${removed} message(s) past ${hours}h.`);
   } catch (error) {
     // The driver's last line only: an oxmysql error embeds the statement and its parameters.
     const line = reasonOf(error);

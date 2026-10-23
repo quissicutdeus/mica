@@ -127,11 +127,12 @@ describe('the declaration', () => {
     expect(blabber.resolved.indexes.map((i) => i.name)).not.toContain('account_mouth');
   });
 
-  it('generates mouth_key as mouth_of while active, NULL otherwise, and nobody writes it', () => {
+  it('generates mouth_key as mouth_of while live, NULL otherwise, and nobody writes it', () => {
     const declared = blabber.resolved.fields.find((f) => f.name === 'mouth_key')?.def;
     expect(declared).toMatchObject({
       type: 'int',
-      generatedAs: "CASE WHEN `status` <> 'deleted' THEN `mouth_of` ELSE NULL END"
+      generatedAs:
+        "CASE WHEN `status` NOT IN ('deleted', 'expired', 'erased') THEN `mouth_of` ELSE NULL END"
     });
     expect(blabber.resolved.clientWritable).not.toContain('mouth_key');
     expect(blabber.resolved.publicColumns).not.toContain('mouth_key');
@@ -224,11 +225,13 @@ describe('create needs a phone in hand, and the feed hides moderated media', () 
     expect(dbMock.insert).toHaveBeenCalled();
   });
 
-  it('hides moderated media on a post, and names no other status', async () => {
+  it('hides moderated, expired and erased media on a post, and no other status', async () => {
     dbMock.query.mockResolvedValueOnce([]);
     await repo.findAttachmentsFor([10]);
     const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
-    expect(sql).toContain("JOIN `mica_media` m ON a.media_id = m.id AND m.status <> 'moderated'");
+    expect(sql).toContain(
+      "JOIN `mica_media` m ON a.media_id = m.id AND m.status NOT IN ('moderated', 'expired', 'erased')"
+    );
     expect(sql).not.toMatch(/'active'|'deleted'/);
   });
 });
@@ -846,14 +849,14 @@ describe('a mouth deleted and mouthed again (MICA-330)', () => {
  * The importer's `repeats` asks what `account_mouth_key` refuses — a mouth not deleted — so a
  * repeat of a mouth the player deleted imports rather than being skipped (MICA-330).
  */
-describe('micaimport: a repeat is a mouth not deleted', () => {
-  it('asks for any row but a deleted one', async () => {
+describe('micaimport: a repeat is a live mouth', () => {
+  it('asks for any row but a deleted, expired or erased one', async () => {
     dbMock.scalar.mockResolvedValueOnce(null);
     expect(await postsTarget()?.repeats(1, 9)).toBe(false);
     const [sql, params] = dbMock.scalar.mock.calls.at(-1) ?? [];
     expect(sql).toBe(
       'SELECT 1 FROM `mica_blabber` WHERE `account_id` = ? AND `mouth_of` = ? ' +
-        "AND `status` <> 'deleted' LIMIT 1"
+        "AND `status` NOT IN ('deleted', 'expired', 'erased') LIMIT 1"
     );
     expect(params).toEqual([1, 9]);
   });
@@ -1157,7 +1160,7 @@ describe('engagement', () => {
     const statements = dbMock.query.mock.calls.map(([sql]) => String(sql).replace(/\s+/g, ' '));
     const mine = statements.find((sql) => sql.startsWith('SELECT `mouth_of` FROM `mica_blabber`'));
     expect(mine).toContain('AND `account_id` IN (?)');
-    expect(mine).toContain("AND `status` <> 'deleted'");
+    expect(mine).toContain("AND `status` NOT IN ('deleted', 'expired', 'erased')");
     const count = statements.find((sql) => sql.includes('SELECT `mouth_of` AS parent'));
     expect(count).toContain("AND `status` = 'active'");
   });

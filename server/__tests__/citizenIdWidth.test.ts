@@ -138,7 +138,7 @@ describe('the planner', () => {
               : c.name === 'note'
                 ? 'text'
                 : c.name === 'status'
-                  ? "enum('active','deleted')"
+                  ? "enum('active','deleted','erased')"
                   : 'timestamp',
         nullable: !c.def.notNull
       })),

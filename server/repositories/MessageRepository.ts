@@ -133,7 +133,7 @@ export class MessageRepository extends SchemaRepository<MessageRow> {
    * and whether each carried an attachment rather than the attachment, which is the player's
    * own media. One statement on `conversation_id_id`, plus an `EXISTS` per row on the
    * attachments' `message_id` key — joined to the picture, so a message whose only attachments
-   * were moderated does not claim to carry one (MICA-339). A picture its owner deleted from their
+   * were moderated, expired or erased does not claim to carry one (MICA-339, MICA-428). A picture its owner deleted from their
    * gallery still counts: the recipient received it.
    *
    * Keyset on `id DESC` with an exclusive cursor, exactly as `findByConversation` pages, and
@@ -154,7 +154,7 @@ export class MessageRepository extends SchemaRepository<MessageRow> {
       await Database.query<LineMessageRow[]>(
         `SELECT m.id, m.conversation_id, m.citizenid, m.message, m.external_sender, m.created_at,
                 EXISTS (SELECT 1 FROM mica_messages_attachments a
-                          JOIN mica_media p ON p.id = a.photo_id AND p.status <> 'moderated'
+                          JOIN mica_media p ON p.id = a.photo_id AND p.status NOT IN ('moderated', 'expired', 'erased')
                          WHERE a.message_id = m.id)
                   AS has_attachments
            FROM mica_messages m
@@ -271,10 +271,11 @@ export class MessageRepository extends SchemaRepository<MessageRow> {
      * construction.
      *
      * **Not a moderated picture** (MICA-339): the join drops a media row an admin moderated
-     * after it was sent, so it stops showing in every thread it was attached to. Only
-     * `moderated`, not "anything but `active`": a sender deleting the photo from their own
-     * gallery (`deleted`) must not reach into every recipient's thread and take back what they
-     * already received. Media's statuses are `active`, `deleted` and `moderated`.
+     * after it was sent, so it stops showing in every thread it was attached to. Nor an
+     * `expired` or `erased` one (MICA-428): retention hid it, or its owner is gone or asked to
+     * be. Not "anything but `active`": a sender deleting the photo from their own gallery
+     * (`deleted`) must not reach into every recipient's thread and take back what they already
+     * received.
      */
     // This page's attachments and nothing more: bound to the ids just selected rather than
     // to the conversation, or every page would re-hydrate the whole thread's pictures and
@@ -287,7 +288,7 @@ export class MessageRepository extends SchemaRepository<MessageRow> {
               p.mime_type, p.duration_ms, p.alt_text,
               p.citizenid AS media_citizenid, p.device_id AS media_device_id
          FROM mica_messages_attachments a
-         JOIN mica_media p ON a.photo_id = p.id AND p.status <> 'moderated'
+         JOIN mica_media p ON a.photo_id = p.id AND p.status NOT IN ('moderated', 'expired', 'erased')
         WHERE a.message_id IN (${placeholders})`,
       messageIds
     );

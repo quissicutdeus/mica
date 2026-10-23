@@ -36,12 +36,10 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { AUDIT_LOG_TABLE } from '../lib/AuditLogger';
 import { plaintextBytesSql } from '../lib/contentCipher';
-import { cascadeEdges, ownedTables, purgeOwnedRows } from '../lib/orphanSweep';
+import { ownedTables, purgeOwnedRows } from '../lib/orphanSweep';
+import { hasStatus } from '../lib/sweep/tables';
 import { moderateTarget, restoreTarget } from '../lib/moderation';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
-  CASCADE_DEPENDENTS,
   EXPORT_EXCLUDED,
   SELF_SERVICE_EXCEPT,
   __resetPrivacyLimits,
@@ -82,21 +80,37 @@ const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
 let clock = 1_000_000;
 
 /**
- * A database for the self-service purge: it plans before it deletes, so each owned table
- * answers the plan with `planRows` (one deletable row by default) and every link read with
- * nothing, and a `DELETE` removes one row the first time a table is asked and none after.
+ * Tables a self-service delete erases (MICA-428): every owned table with a status to move, but
+ * the ones it keeps whole. A status-less one is MICA-429's, and left as it is.
  */
-let deletedOnce = new Set<string>();
-let planRows: Record<string, { id: number; go: number; held: number; ex: number }[]> = {};
+const erasable = () =>
+  ownedTables()
+    .map(({ table }) => table)
+    .filter((table) => hasStatus(table) && !WHOLE_KEPT.includes(table));
+
+/** The erase of one table, as `purgePlanned` writes it, and the table it names. */
+const ERASE = /^UPDATE `(\w+)` SET `status` = \?.*? WHERE/;
+const erases = () =>
+  dbMock.query.mock.calls.filter((c: any[]) => ERASE.test(String(c[0]).replace(/\s+/g, ' ')));
+const eraseOf = (table: string) =>
+  erases().find((c: any[]) => ERASE.exec(String(c[0]))?.[1] === table);
+
+/**
+ * A database for the self-service erase: each status table moves one row the first time it is
+ * asked and none after, which ends its loop; every read finds nothing, and `keptRows` is how
+ * many of a table's rows the count afterwards finds left as they were.
+ */
+let erasedOnce = new Set<string>();
+let keptRows: Record<string, number> = {};
 const answer = (sql: string): unknown => {
-  const planned = /^SELECT t\.`id` AS `id`, .* FROM (\w+) t WHERE/.exec(sql)?.[1];
-  if (planned) return planRows[planned] ?? [{ id: 1, go: 1, held: 0, ex: 0 }];
   if (sql.startsWith('SELECT')) return [];
-  const table = /^DELETE FROM (\w+)/.exec(sql)?.[1] ?? sql;
-  if (deletedOnce.has(table)) return { affectedRows: 0 };
-  deletedOnce.add(table);
+  const table = ERASE.exec(sql.replace(/\s+/g, ' '))?.[1] ?? sql;
+  if (erasedOnce.has(table)) return { affectedRows: 0 };
+  erasedOnce.add(table);
   return { affectedRows: 1 };
 };
+const keptCount = async (sql: string): Promise<number> =>
+  keptRows[/^SELECT COUNT\(\*\) FROM `(\w+)`/.exec(String(sql))?.[1] ?? ''] ?? 0;
 const auditInserts = () =>
   dbMock.insert.mock.calls.filter((c: any[]) => String(c[0]).includes(AUDIT_LOG_TABLE));
 const selects = () =>
@@ -107,8 +121,9 @@ beforeEach(() => {
   __resetRateLimits();
   __resetPrivacyLimits();
   clock = 1_000_000;
-  deletedOnce = new Set();
-  planRows = {};
+  erasedOnce = new Set();
+  keptRows = {};
+  dbMock.scalar.mockImplementation(keptCount);
   __setPrivacyClock(() => clock);
   vi.spyOn(FrameworkBridge, 'getPlayer').mockImplementation(
     () => ({ citizenid: player.current, source: 5, setMeta: () => {} }) as any
@@ -125,6 +140,28 @@ afterEach(() => {
 describe('what an export selects (MICA-168)', () => {
   const plans = () => exported().map((owned) => ({ owned, plan: planFor(owned) }));
   const planOf = (table: string) => plans().find(({ owned }) => owned.table === table)!.plan!;
+
+  it('leaves out what an erase hid, from every table with a status (MICA-428)', () => {
+    // The player's own delete erases their rows and keeps them for staff; the player's export
+    // must not hand them back. A table with no status has nothing an erase moved.
+    for (const { owned, plan } of plans()) {
+      const sql = exportSql(plan!);
+      const hasStatus = plan!.hidesErased;
+      expect(sql.includes(" AND `status` <> 'erased'"), owned.table).toBe(hasStatus);
+    }
+    expect(planOf('mica_notes').hidesErased).toBe(true);
+    expect(planOf('mica_messages_reactions').hidesErased).toBe(false);
+  });
+
+  it('keeps an expired row in the export: it is still stored, and still the player own', () => {
+    // A retention window hid it from the app; nobody asked for it to be gone. Only an erase is
+    // left out, so the export names no other status (MICA-428 review).
+    for (const table of ['mica_messages', 'mica_media', 'mica_blabber_dms', 'mica_notifications']) {
+      const sql = exportSql(planOf(table));
+      expect(sql, table).toContain(" AND `status` <> 'erased'");
+      expect(sql, table).not.toMatch(/'expired'|'deleted'|'moderated'/);
+    }
+  });
 
   it('has a plan for every exported table, so no category silently goes missing', () => {
     expect(exported().length).toBeGreaterThan(20);
@@ -237,7 +274,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'setting_value'
     ],
     sized: [],
-    withheld: []
+    withheld: ['live_device']
   },
   mica_media: {
     plain: [
@@ -363,7 +400,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
   mica_blocklist: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'number'],
     sized: [],
-    withheld: []
+    withheld: ['live_device']
   },
   mica_devices: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'kind', 'claimed'],
@@ -412,17 +449,17 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'updated_at'
     ],
     sized: [],
-    withheld: []
+    withheld: ['live_device']
   },
   mica_highscores: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'app', 'score'],
     sized: [],
-    withheld: []
+    withheld: ['live_citizen']
   },
   mica_hodlr: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'quantity'],
     sized: [],
-    withheld: []
+    withheld: ['live_citizen']
   },
   mica_import_ledger: {
     plain: [
@@ -725,127 +762,87 @@ describe('privacy:delete', () => {
     expect(dbMock.query).not.toHaveBeenCalled();
   });
 
-  it('purges through purgeOwnedRows for whichever character the session is', async () => {
+  it('erases through purgeOwnedRows for whichever character the session is', async () => {
     await call('delete', { confirm: 'DELETE' }, 'CIT_B');
 
     expect(purgeOwnedRows).toHaveBeenCalledTimes(1);
-    expect(purgeOwnedRows).toHaveBeenCalledWith('CIT_B', {
-      except: SELF_SERVICE_EXCEPT,
-      cascade: { dependents: CASCADE_DEPENDENTS }
-    });
-    const deletes = dbMock.query.mock.calls.filter((c: any[]) => String(c[0]).startsWith('DELETE'));
-    expect(deletes).toHaveLength(ownedTables().length - WHOLE_KEPT.length);
-    for (const c of deletes) expect(c[1][0]).toBe('CIT_B');
+    expect(purgeOwnedRows).toHaveBeenCalledWith('CIT_B', { except: SELF_SERVICE_EXCEPT });
+    // One status change per table, bound to the session's citizenid, and no delete anywhere.
+    expect(
+      erases()
+        .map((c: any[]) => ERASE.exec(String(c[0]))![1])
+        .toSorted()
+    ).toEqual(erasable().toSorted());
+    for (const c of erases()) expect(c[1].slice(0, 2)).toEqual(['erased', 'CIT_B']);
+    expect(dbMock.query.mock.calls.some((c: any[]) => /\bDELETE\b/.test(String(c[0])))).toBe(false);
   });
 
-  it('keeps the evidence hold, and answers what it kept', async () => {
-    // Message 1 may go; 2 and 3 are under open reports, so the plan keeps them.
-    planRows.mica_messages = [
-      { id: 1, go: 1, held: 0, ex: 0 },
-      { id: 2, go: 0, held: 1, ex: 0 },
-      { id: 3, go: 0, held: 1, ex: 0 }
-    ];
+  it('erases a reported row with the rest, and answers what it left as it was', async () => {
+    // MICA-428: nothing is deleted, so a row under an open report is kept anyway; it is hidden
+    // from the player and everyone else like the rest. What stays as it was is counted.
+    keptRows.mica_messages = 2;
 
     const reply = await call('delete', { confirm: 'DELETE' });
 
-    expect(reply).toEqual({
-      complete: true,
-      removed: ownedTables().length - WHOLE_KEPT.length,
-      kept: 2,
-      failed: []
-    });
-    const heldDelete = dbMock.query.mock.calls.find((c: any[]) =>
-      String(c[0]).startsWith('DELETE FROM mica_messages WHERE')
-    )!;
-    // By id, and the hold still in the statement for a report filed after the plan.
-    expect(String(heldDelete[0])).toContain('mica_messages.`id` IN (?)');
-    expect(String(heldDelete[0])).toContain('NOT EXISTS (SELECT 1 FROM `mica_reports` r');
-    expect(heldDelete[1]).toContain(1);
-    expect(heldDelete[1]).not.toContain(2);
+    expect(reply).toEqual({ complete: true, removed: erasable().length, kept: 2, failed: [] });
+    const erase = eraseOf('mica_messages')!;
+    expect(String(erase[0])).not.toContain('`mica_reports`');
   });
 
   /**
    * MICA-426, the owner's decision: a row a takedown holds (`moderated`) is evidence, and the
-   * player's own delete keeps it like every other purge. The plan's `held` is answered from
-   * each row's status, by the clause the plan actually sent, so a plan without the takedown
-   * hold would mark the moderated message deletable and this would fail.
+   * player's own delete leaves it where it is. Its takedowns are then told the player erased it,
+   * so a reopen puts back `erased` rather than live. Read after the erase (MICA-428), so a
+   * takedown that landed before the write is found too.
    */
-  it("keeps a moderated row in the player's own delete and removes their other rows", async () => {
-    const status = new Map([
-      [1, 'active'],
-      [2, 'moderated'],
-      [3, 'deleted']
-    ]);
-    dbMock.query.mockImplementation(async (raw: string, params: unknown[] = []) => {
+  it("leaves a moderated row in the player's own delete, and records it as erased", async () => {
+    dbMock.query.mockImplementation(async (raw: string) => {
       const sql = String(raw);
-      // As many rows go as the statement names by id; the ids are its only numbers.
-      if (sql.startsWith('DELETE FROM mica_messages WHERE')) {
-        return { affectedRows: params.filter((p) => typeof p === 'number').length };
-      }
-      if (/^SELECT t\.`id` AS `id`, .* FROM mica_messages t WHERE/.test(sql)) {
-        const asksTakedown = sql.includes("t.`status` <> 'moderated'");
-        const marksTakedown = sql.includes("CASE WHEN t.`status` = 'moderated' THEN 1");
-        return [...status].map(([id, st]) => {
-          const held = asksTakedown && st === 'moderated' ? 1 : 0;
-          return { id, go: 1 - held, held, ex: 0, mo: marksTakedown && st === 'moderated' ? 1 : 0 };
-        });
+      if (sql.includes('FROM `mica_messages` WHERE') && sql.includes("`status` = 'moderated'")) {
+        return [{ id: 2 }];
       }
       return answer(sql);
     });
 
     const reply = await call('delete', { confirm: 'DELETE' });
 
-    expect(reply).toMatchObject({ complete: true, kept: 1, failed: [] });
-    const messagesDelete = dbMock.query.mock.calls.find((c: any[]) =>
-      String(c[0]).startsWith('DELETE FROM mica_messages WHERE')
-    )!;
-    // The live and the unsent message go; the moderated one stays, and the hold rides the
-    // statement too, for a takedown landing between the plan and the delete.
-    expect(messagesDelete[1]).toEqual(expect.arrayContaining([1, 3]));
-    expect(messagesDelete[1]).not.toContain(2);
-    expect(String(messagesDelete[0])).toContain("mica_messages.`status` <> 'moderated'");
-    // Every other table the player owns is still purged.
-    const deletes = dbMock.query.mock.calls.filter((c: any[]) => String(c[0]).startsWith('DELETE'));
-    expect(deletes).toHaveLength(ownedTables().length - WHOLE_KEPT.length);
-    // And the kept row's takedowns are told the player deleted it (MICA-426 review), so a reopen
-    // puts it back `deleted` rather than live for a player who asked for everything to go.
-    const records = dbMock.update.mock.calls.filter((c: any[]) =>
-      String(c[0]).startsWith("UPDATE `mica_reports` SET `target_prior_status` = 'deleted'")
+    expect(reply).toMatchObject({ complete: true, failed: [] });
+    expect(String(eraseOf('mica_messages')![0])).toContain(
+      "`mica_messages`.`status` NOT IN ('moderated', ?)"
     );
-    expect(records.map((c: any[]) => c[1])).toEqual([['mica_messages', 2]]);
+    const calls = dbMock.query.mock.calls.map((c: any[]) => String(c[0]));
+    const erasedAt = calls.findIndex((sql) => sql.startsWith('UPDATE `mica_messages`'));
+    const readAt = calls.findIndex(
+      (sql) => sql.includes('FROM `mica_messages` WHERE') && sql.includes("= 'moderated'")
+    );
+    expect(erasedAt).toBeLessThan(readAt);
+    const records = dbMock.update.mock.calls.filter((c: any[]) =>
+      String(c[0]).startsWith('UPDATE `mica_reports` SET `target_prior_status` = ?')
+    );
+    expect(records.map((c: any[]) => c[1])).toEqual([['erased', 'mica_messages', 2]]);
   });
 
   /**
-   * MICA-426 round three: a row under a pending report when its player deletes everything is
-   * kept as evidence — and hidden, `deleted`, not left live. A takedown afterwards then records
-   * `deleted`, and the reopen puts back what the player left: nothing showing.
+   * A row under a pending report when its player deletes everything is erased with the rest,
+   * kept and hidden. A takedown afterwards records `erased`, and the reopen puts back what the
+   * player left: nothing showing.
    */
-  it('a pending report, the delete, a takedown and a reopen: the row comes back deleted', async () => {
+  it('a pending report, the delete, a takedown and a reopen: the row comes back erased', async () => {
     const status = new Map([
       [1, 'active'],
       [2, 'active']
     ]);
-    const ids = (params: unknown[]) => params.filter((p): p is number => typeof p === 'number');
     dbMock.query.mockImplementation(async (raw: string, params: unknown[] = []) => {
       const sql = String(raw);
-      if (/^SELECT t\.`id` AS `id`, .* FROM mica_messages t WHERE/.test(sql)) {
-        // 2 is under a pending report, so the plan holds it.
-        return [
-          { id: 1, go: 1, held: 0, ex: 0, mo: 0 },
-          { id: 2, go: 0, held: 1, ex: 0, mo: 0 }
-        ];
-      }
-      if (
-        sql.startsWith("UPDATE mica_messages SET `status` = 'deleted', `updated_at` = `updated_at`")
-      ) {
-        for (const id of ids(params)) {
-          if (!['moderated', 'deleted'].includes(status.get(id)!)) status.set(id, 'deleted');
+      if (sql.startsWith('UPDATE `mica_messages` SET `status` = ?')) {
+        let moved = 0;
+        for (const [id, st] of status) {
+          if (!['moderated', 'erased'].includes(st)) {
+            status.set(id, String(params[0]));
+            moved += 1;
+          }
         }
-        return { affectedRows: 1 };
-      }
-      if (sql.startsWith('DELETE FROM mica_messages WHERE')) {
-        for (const id of ids(params)) status.delete(id);
-        return { affectedRows: ids(params).length };
+        return { affectedRows: moved };
       }
       return answer(sql);
     });
@@ -870,17 +867,20 @@ describe('privacy:delete', () => {
     });
     try {
       expect(await call('delete', { confirm: 'DELETE' })).toMatchObject({ complete: true });
-      expect([...status]).toEqual([[2, 'deleted']]);
+      expect([...status]).toEqual([
+        [1, 'erased'],
+        [2, 'erased']
+      ]);
 
       // The report is actioned: the takedown records what it replaced.
       const recorded = await moderateTarget('mica_messages', 2, 'ADMIN1', 'report #1: spam');
-      expect([recorded, status.get(2)]).toEqual(['deleted', 'moderated']);
+      expect([recorded, status.get(2)]).toEqual(['erased', 'moderated']);
 
       // Reopened: the restore puts back the recorded status, which hides it still.
       expect(
         await restoreTarget('mica_messages', 2, recorded!, 'ADMIN1', 'report #1 reopened')
       ).toBe(true);
-      expect(status.get(2)).toBe('deleted');
+      expect(status.get(2)).toBe('erased');
     } finally {
       dbMock.single.mockReset();
       dbMock.update.mockReset();
@@ -890,7 +890,7 @@ describe('privacy:delete', () => {
   it('reports a partial delete as partial', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     dbMock.query.mockImplementation(async (sql: string) => {
-      if (sql.startsWith('DELETE FROM mica_notes ')) throw new Error('lock wait timeout');
+      if (sql.startsWith('UPDATE `mica_notes` ')) throw new Error('lock wait timeout');
       return answer(sql);
     });
 
@@ -899,7 +899,7 @@ describe('privacy:delete', () => {
 
     expect(reply.complete).toBe(false);
     expect(reply.failed).toEqual(['notes']);
-    expect(reply.removed).toBe(ownedTables().length - WHOLE_KEPT.length - 1);
+    expect(reply.removed).toBe(erasable().length - 1);
   });
 
   it('allows one delete an hour per citizenid', async () => {
@@ -923,17 +923,14 @@ describe('privacy:delete', () => {
   it('audit-logs the delete after the purge, with counts and whether anything was held', async () => {
     const order: string[] = [];
     dbMock.query.mockImplementation(async (sql: string) => {
-      if (sql.startsWith('DELETE')) order.push('delete');
+      if (ERASE.test(sql)) order.push('erase');
       return answer(sql);
     });
     dbMock.insert.mockImplementation(async () => {
       order.push('audit');
       return 1;
     });
-    planRows.mica_media = [
-      { id: 1, go: 1, held: 0, ex: 0 },
-      { id: 2, go: 0, held: 1, ex: 0 }
-    ];
+    keptRows.mica_media = 1;
 
     await call('delete', { confirm: 'DELETE' });
 
@@ -941,9 +938,10 @@ describe('privacy:delete', () => {
     expect(order.filter((o) => o === 'audit')).toHaveLength(1);
     const [entry] = auditInserts();
     expect(entry[1].slice(0, 4)).toEqual(['CIT_A', 'deleted', 'privacy', 'delete']);
+    expect(order[0]).toBe('erase');
     expect(JSON.parse(entry[1][6])).toEqual({
       complete: true,
-      removed: ownedTables().length - WHOLE_KEPT.length,
+      removed: erasable().length,
       kept: 1,
       failed: [],
       held: true
@@ -973,128 +971,53 @@ describe('what a self-service delete keeps (MICA-168)', () => {
     ]);
   });
 
-  it('never deletes from the ledgers or the device tables', async () => {
+  it('never touches the ledgers or the device tables', async () => {
     const statements = await run();
     for (const table of WHOLE_KEPT) {
       expect(
-        statements.some((sql) => sql.includes(` ${table} `)),
+        statements.some((sql) => sql.includes(`\`${table}\``) && !sql.startsWith('SELECT')),
         table
       ).toBe(false);
     }
   });
 
-  it('keeps a pending report and an open invoice, and deletes the rest of each', async () => {
-    const statements = await run();
-    const pending = "mica_reports.`status` = 'active' AND mica_reports.`resolution` = 'pending'";
-    const open = "mica_invoices.`status` = 'active'";
-    // In the plan, as the rows that do not go and are not counted as kept...
-    const plan = (table: string) =>
-      statements.find((sql) => sql.startsWith('SELECT t.`id`') && sql.includes(`FROM ${table} t`))!;
-    expect(plan('mica_reports')).toContain(
-      "CASE WHEN t.`status` = 'active' AND t.`resolution` = 'pending' THEN 1 ELSE 0 END AS `ex`"
-    );
-    expect(plan('mica_invoices')).toContain(
-      "CASE WHEN t.`status` = 'active' THEN 1 ELSE 0 END AS `ex`"
-    );
-    // ...and in the DELETE itself.
-    const del = (table: string) =>
-      statements.find((sql) => sql.startsWith(`DELETE FROM ${table} `))!;
-    expect(del('mica_reports')).toContain(`NOT (${pending})`);
-    expect(del('mica_invoices')).toContain(`NOT (${open})`);
+  it('keeps a pending report and an open invoice live, and erases the rest of each', async () => {
+    await run();
+    const pending =
+      "`mica_reports`.`status` = 'active' AND `mica_reports`.`resolution` = 'pending'";
+    const open = "`mica_invoices`.`status` = 'active'";
+    expect(String(eraseOf('mica_reports')![0])).toContain(`NOT (${pending})`);
+    expect(String(eraseOf('mica_invoices')![0])).toContain(`NOT (${open})`);
   });
 });
 
-describe('the cascade guard covers every foreign key (MICA-168)', () => {
-  /** `child.column -> parent` for every non-owner foreign key in the committed DDL. */
-  const ddlEdges = (): string[] => {
-    const sql = readFileSync(join(__dirname, '..', '..', 'mica.sql'), 'utf8');
-    const out: string[] = [];
-    let table = '';
-    let column = '';
-    for (const line of sql.split('\n')) {
-      table = /CREATE TABLE IF NOT EXISTS `(\w+)`/.exec(line)?.[1] ?? table;
-      column = /FOREIGN KEY \(`(\w+)`\)/.exec(line)?.[1] ?? column;
-      const ref = /REFERENCES `(\w+)`/.exec(line)?.[1];
-      if (ref && ref !== 'players') out.push(`${table}.${column} -> ${ref}`);
-    }
-    return out.toSorted();
-  };
+describe('a shared row stays while others are in it (MICA-428)', () => {
+  /**
+   * The player's erase must not hide a thread or a channel they started from everyone else in
+   * it: their own membership and messages are erased, the container stays while another
+   * citizen's membership is live. Asked in the statement itself, so a member who leaves later
+   * lets the next orphan sweep erase it.
+   */
+  it.each([
+    ['mica_messages_conversations', 'mica_messages_participants', 'conversation_id'],
+    ['mica_darkchat', 'mica_darkchat_members', 'channel_id']
+  ])('%s is kept while another member of it is active', async (table, members, column) => {
+    dbMock.query.mockImplementation(async (sql: string) => answer(sql));
+    await call('delete', { confirm: 'DELETE' });
 
-  it('derives the same foreign keys the DDL declares, so none is invisible to the guard', () => {
-    const derived = cascadeEdges().map((e) => `${e.child}.${e.column} -> ${e.parent}`);
-    expect(ddlEdges().length).toBeGreaterThan(20);
-    expect(derived.toSorted()).toEqual(ddlEdges());
-  });
-
-  it('decides every child of a table the self-service delete deletes from', () => {
-    const owned = new Set(ownedTables().map(({ table }) => table));
-    const wholeKept = new Set(SELF_SERVICE_EXCEPT.filter((e) => !e.keep).map((e) => e.table));
-    const dependents = new Set(CASCADE_DEPENDENTS);
-    const edges = cascadeEdges();
-    const undecided = edges.filter(
-      (e) =>
-        owned.has(e.parent) &&
-        !wholeKept.has(e.parent) &&
-        !owned.has(e.child) &&
-        !dependents.has(e.child)
+    const [sql, params] = eraseOf(table)!;
+    expect(String(sql)).toContain(
+      `NOT EXISTS (SELECT 1 FROM \`${members}\` sm WHERE sm.\`${column}\` = \`${table}\`.\`id\` ` +
+        "AND sm.`status` = 'active' AND NOT (sm.`citizenid` = ?))"
     );
-    expect(
-      undecided.map((e) => `${e.child}.${e.column} -> ${e.parent}`),
-      'a new child table: add it to CASCADE_DEPENDENTS in Privacy.ts, or leave it keeping its parent'
-    ).toEqual([]);
-    for (const dependent of CASCADE_DEPENDENTS) {
-      expect(owned.has(dependent), `${dependent} has an owner, so it is not a dependent`).toBe(
-        false
-      );
-      expect(
-        edges.some((e) => e.parent === dependent),
-        `${dependent} has children`
-      ).toBe(false);
-      expect(
-        edges.some((e) => e.child === dependent),
-        `${dependent} is no child`
-      ).toBe(true);
-    }
+    expect(params.filter((p: unknown) => p === 'CIT_A')).toHaveLength(2);
   });
 
-  it('guards each such parent against every owned child, in the DELETE it runs', async () => {
+  it('guards no table it does not share — the positive twin', async () => {
     dbMock.query.mockImplementation(async (sql: string) => answer(sql));
     await call('delete', { confirm: 'DELETE' });
-    const statements = dbMock.query.mock.calls.map((c: any[]) => String(c[0]));
-    const deleteOf = (table: string) =>
-      statements.find((sql) => sql.startsWith(`DELETE FROM ${table} WHERE`));
-    const owned = new Set(ownedTables().map(({ table }) => table));
-    const wholeKept = new Set(WHOLE_KEPT);
 
-    let guarded = 0;
-    for (const e of cascadeEdges()) {
-      if (!owned.has(e.parent) || wholeKept.has(e.parent) || CASCADE_DEPENDENTS.includes(e.child)) {
-        continue;
-      }
-      const sql = deleteOf(e.parent);
-      expect(sql, e.parent).toBeDefined();
-      const reference =
-        e.child === e.parent
-          ? `SELECT DISTINCT c.\`${e.column}\` AS \`k\` FROM \`${e.child}\` c`
-          : `FROM \`${e.child}\` c WHERE c.\`${e.column}\` = ${e.parent}.\`id\``;
-      expect(sql, `${e.child}.${e.column} -> ${e.parent}`).toContain(reference);
-      guarded += 1;
-    }
-    expect(guarded).toBeGreaterThan(10);
-  });
-
-  it('deletes children before their parents', async () => {
-    dbMock.query.mockImplementation(async (sql: string) => answer(sql));
-    await call('delete', { confirm: 'DELETE' });
-    const order = dbMock.query.mock.calls
-      .map((c: any[]) => /^DELETE FROM (\w+)/.exec(String(c[0]))?.[1])
-      .filter((t): t is string => t !== undefined);
-    for (const e of cascadeEdges()) {
-      if (e.child === e.parent || !order.includes(e.child) || !order.includes(e.parent)) continue;
-      expect(order.indexOf(e.child), `${e.child} before ${e.parent}`).toBeLessThan(
-        order.indexOf(e.parent)
-      );
-    }
+    expect(String(eraseOf('mica_notes')![0])).not.toContain(' sm WHERE ');
   });
 });
 
@@ -1102,7 +1025,7 @@ describe('what a failed request costs (MICA-168)', () => {
   it('does not spend the hour on a partial delete, so the failed part can be retried', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     dbMock.query.mockImplementation(async (sql: string) => {
-      if (sql.startsWith('DELETE FROM mica_notes ')) throw new Error('lock wait timeout');
+      if (sql.startsWith('UPDATE `mica_notes` ')) throw new Error('lock wait timeout');
       return answer(sql);
     });
     expect((await call('delete', { confirm: 'DELETE' })).complete).toBe(false);
@@ -1142,7 +1065,7 @@ describe('what a failed request costs (MICA-168)', () => {
     const gate = new Promise<void>((resolve) => (release = resolve));
     vi.mocked(purgeOwnedRows).mockImplementationOnce(async () => {
       await gate;
-      return { removed: 0, kept: 0, failures: [] };
+      return { erased: 0, kept: 0, failures: [] };
     });
     const handler = handlers.get('mica:server:privacy:delete')!;
     const replies: any[] = [];

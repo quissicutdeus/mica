@@ -10,12 +10,14 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import {
+  buildRepository,
   declaredServices,
   normalizeIndex,
   resolveAppSchema,
   type ResolvedService
 } from '../lib/defineService';
 import '../services/index';
+import { hodlr } from '../services/Hodlr';
 
 /**
  * Every unique key on a declared table has a decision for the row a soft delete leaves under it
@@ -125,6 +127,50 @@ describe('unique keys and soft deletes (MICA-321)', () => {
       ]
     });
     expect(undecided([resolved])).toEqual([]);
+  });
+
+  /**
+   * MICA-428: a key over a status-aware copy of a column — Hodlr's `live_citizen`, which an
+   * erased row does not carry — would leave the revive nothing to match, since a create never
+   * names a generated column. `reviveAs` compares the column it copies in its place.
+   */
+  it('revives under a generated copy by the column it copies (reviveAs)', () => {
+    const resolved = resolveAppSchema({
+      id: 'revive_as',
+      schema: {
+        label: 'string',
+        live_label: {
+          type: 'string',
+          generatedAs: "CASE WHEN `status` <> 'erased' THEN `label` ELSE NULL END",
+          reviveAs: 'label'
+        }
+      },
+      indexes: [{ name: 'live_label', columns: ['live_label'], unique: true }],
+      uniqueAfterDelete: 'revive'
+    });
+    expect(buildRepository(resolved).revivesUnder).toEqual([['label']]);
+    expect(hodlr.repo.revivesUnder).toEqual([['citizenid']]);
+  });
+
+  it('refuses reviveAs on a column that is not generated, or naming no column', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'revive_as_plain',
+        schema: { label: 'string', copy: { type: 'string', reviveAs: 'label' } }
+      })
+    ).toThrow(/'reviveAs' without 'generatedAs'/);
+    expect(() =>
+      resolveAppSchema({
+        id: 'revive_as_missing',
+        schema: {
+          copy: {
+            type: 'string',
+            generatedAs: "CASE WHEN `status` <> 'erased' THEN `nope` ELSE NULL END",
+            reviveAs: 'nope'
+          }
+        }
+      })
+    ).toThrow(/'reviveAs' 'nope', which the table does not have/);
   });
 
   it('revives on exactly the tables whose code creates a row a delete could wedge', () => {

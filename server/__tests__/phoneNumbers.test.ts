@@ -170,7 +170,7 @@ const load = async (src: number): Promise<void> => {
  * nothing looser: anchored at both ends, so a number-sync `UPDATE` can never match it.
  */
 const HANDOVER_TRANSFER =
-  /^UPDATE `mica_\w+` SET `citizenid` = \?(, `updated_at` = `updated_at`)? WHERE `device_id` = \? AND `citizenid` <> \?$/;
+  /^UPDATE `mica_\w+` SET `citizenid` = \?(, `updated_at` = `updated_at`)? WHERE `device_id` = \? AND `citizenid` <> \?( AND `status` NOT IN \('erased', 'expired', 'moderated'\))?$/;
 
 /**
  * The SQL and parameters of every `update` this test made, in order — less the handover walk.

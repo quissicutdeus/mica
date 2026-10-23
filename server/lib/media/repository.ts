@@ -8,7 +8,7 @@ import { MediaItem } from '@mica/shared/types';
 import { Database } from '../Database';
 import type { Bytes } from 'node:buffer';
 import { PlayerFacingError } from '../errors';
-import { hostPhoto, refuseUploadWithoutRoom, releaseOnFailure } from './hosting';
+import { hostPhoto, refuseUploadWithoutRoom } from './hosting';
 import {
   QUOTA_FULL_MESSAGE,
   assertStorableData,
@@ -97,8 +97,8 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     // An `AddMedia` photo goes to the host too, when there is one (MICA-243); a
     // location's JSON never does, by kind.
     const stored = await hostPhoto(item);
-    return await releaseOnFailure(stored, item, async () =>
-      super.create(withStoredBytes({ ...stored, citizenid, device_id }, await hostedUrlPrefixes()))
+    return await super.create(
+      withStoredBytes({ ...stored, citizenid, device_id }, await hostedUrlPrefixes())
     );
   }
 
@@ -123,13 +123,10 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     assertStorableData(payload.data);
     await refuseUploadWithoutRoom(payload);
     const item = await hostPhoto(payload);
-    return await releaseOnFailure(item, payload, () => this.insertOwned(item));
+    return await this.insertOwned(item);
   }
 
-  /**
-   * The insert half of `create`, quota-gated when a ceiling is set. Split out only so
-   * `create` can release a hosted file when this refuses or throws (MICA-243).
-   */
+  /** The insert half of `create`, quota-gated when a ceiling is set. */
   async insertOwned(unsized: Partial<MediaItem>): Promise<number> {
     const limit = quotaBytes();
     const citizenid = unsized.citizenid;
@@ -197,22 +194,18 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
    *
    * **Each copy is selected from the sender's row as it stands, not from `source` as
    * `drop` read it** (MICA-293). `drop` reads the row, then looks for who is nearby, then
-   * writes; retention, a character purge or the orphan sweep can hard-delete that row in
-   * between and — seeing no other row naming its URL yet — ask the image host to delete
-   * the file. A copy written from the values read earlier would then land after the check
-   * and point every recipient at a deleted file. Selecting from the row in the insert
-   * itself means a copy exists only if its source still does, in the same statement:
+   * writes; retention can expire that row in between, and a purge or the orphan sweep erase
+   * it (MICA-428). A copy written from the values read earlier would hand every recipient a
+   * live copy of a photo hidden a moment before. Selecting the `active` row in the insert
+   * itself means a copy exists only if its source is still shown, in the same statement:
    *
-   * - the copy commits first → the release's reference check, which runs after the
-   *   delete, sees the recipient's row and keeps the file;
-   * - the delete commits first → the insert selects nothing, that recipient gets no row
-   *   and no toast, and the file goes as it should.
+   * - the copy commits first → the recipient's row is their own, and stays;
+   * - the status change commits first → the insert selects nothing, and that recipient gets
+   *   no row and no toast.
    *
-   * The seam is here rather than in `releaseHostedImages` because the release already
-   * asks the right question — is any row still naming this URL — and cannot be asked it
-   * about a row that does not exist yet. It holds on InnoDB's default isolation for the
-   * same reason `insertWithinQuota` does: an `INSERT … SELECT` takes a shared lock on the
-   * source row it reads, so the delete and the copy serialize. The quota is charged from
+   * It holds on InnoDB's default isolation for the same reason `insertWithinQuota` does: an
+   * `INSERT … SELECT` takes a shared lock on the source row it reads, so the update and the
+   * copy serialize. The quota is charged from
    * the same row, so a thumbnail stored on it in the meantime is charged as it is copied.
    *
    * **Concurrent, not sequential**, which is what makes that affordable: the objection

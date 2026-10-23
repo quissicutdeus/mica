@@ -90,7 +90,7 @@ describe('repository column sets', () => {
 
     const [sql] = dbMock.update.mock.calls[0];
     expect(sql).toContain('AND `citizenid` = ?');
-    expect(sql).toContain("AND `status` != 'moderated'");
+    expect(sql).toContain("AND `status` NOT IN ('moderated', 'erased', 'expired')");
   });
 });
 

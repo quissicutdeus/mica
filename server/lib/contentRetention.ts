@@ -7,6 +7,7 @@ import { declaredServices, type ColumnDef, type ColumnType } from './defineServi
 import { SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
 import { whenSchemaReady } from './schemaReady';
 import { traceOf } from './sqlErrors';
+import { ERASED, EXPIRED } from './statuses';
 
 /**
  * Age-based retention for player content (MICA-167): messages, DMs and media.
@@ -15,31 +16,32 @@ import { traceOf } from './sqlErrors';
  * right — a convar in days, read per run so `set` from the console needs no restart. What it
  * does not do, and this does:
  *
- * - **Bounded statements.** Each pass selects at most `RETENTION_BATCH` ids and deletes exactly
- *   those, then yields before the next — the shape `lib/orphanSweep.ts` uses for the same
- *   reason: one unbounded `DELETE` holds row locks on every match, and every write into that
- *   table waits behind it.
+ * - **Nothing is deleted** (MICA-428). An expired row moves from `active` to `expired`, kept
+ *   for staff and hidden from every player, and a hosted file it names is kept with it.
+ * - **Bounded statements.** Each pass selects at most `RETENTION_BATCH` ids and moves exactly
+ *   those, then yields before the next: one unbounded `UPDATE` holds row locks on every match,
+ *   and every write into that table waits behind it.
  * - **A schedule.** At resource start and every `RETENTION_INTERVAL_MS`.
  * - **Holds.** A row is never removed while something still needs it:
  *   - an open report on it (`mica_reports`, `status = 'active'`, `resolution = 'pending'`);
  *   - a takedown standing on it (`status = 'moderated'`, MICA-426): the row is the evidence the
  *     ledger and the actioned report point at, and what a reopen puts back;
  *   - a live reference to it — a row in another service's declared child table (a photo
- *     attached to a message, blab or listing) whose parent row still exists. So media expires
- *     only when it is old **and** nothing live shows it; a year-old photo attached to this
- *     morning's message stays exactly as long as the message does;
+ *     attached to a message, blab or listing) whose parent row is still shown: not `deleted`,
+ *     `expired` or `erased` (MICA-428 keeps every parent, so existing is no longer the test). So
+ *     media expires only when it is old **and** nothing live shows it; a year-old photo attached
+ *     to this morning's message stays exactly as long as the message does;
  *   - whatever the owning service adds (`RetentionPolicy.holds`): an open report on a message
  *     holds its whole conversation, one on a DM or an account holds that thread or that
  *     account's DMs.
  *
- *   Every hold is asked twice per batch — in the select, and again in the delete — so a report
- *   filed in between still wins. A hold that has to read the table being deleted from (the
+ *   Every hold is asked twice per batch — in the select, and again in the update — so a report
+ *   filed in between still wins. A hold that has to read the table being updated (the
  *   conversation and thread holds) reads it through a `DISTINCT` derived table, which both
- *   engines materialise, so the delete never trips MySQL's error 1093.
- * - **The children.** A pruned row's own child tables (a message's attachments and reactions)
- *   carry `ON DELETE CASCADE` in `mica.sql`, but `SchemaMigrator` never adds a foreign key, so
- *   an older install has none; each batch removes the ones whose parent is now gone.
- * - **The first-run grace.** Nothing is deleted until a window has been announced for 24 hours
+ *   engines materialise, so the update never trips MySQL's error 1093.
+ * - **The children stay.** A pruned row's own child rows (a message's attachments and
+ *   reactions) are left as they are; nothing shows them once their parent is hidden.
+ * - **The first-run grace.** Nothing is hidden until a window has been announced for 24 hours
  *   (`graceRemainingMs`), and a shorter window is a new announcement.
  * - **The index.** A table without its `created_at` key is not pruned at all
  *   (`preflight`): every batch would be a table scan.
@@ -51,7 +53,7 @@ import { traceOf } from './sqlErrors';
  * migrations ledger, for the grace markers.
  */
 
-/** Rows per statement against the pruned table. Never more than this in one `DELETE`. */
+/** Rows per statement against the pruned table. Never more than this in one `UPDATE`. */
 export const RETENTION_BATCH = 500;
 
 /**
@@ -63,7 +65,7 @@ export const RETENTION_MAX_BATCHES = 200;
 /** Every six hours. Retention is measured in days, so this is precise enough and cheap. */
 export const RETENTION_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-/** How long a window is announced before anything under it is deleted. */
+/** How long a window is announced before anything under it is hidden. */
 export const RETENTION_GRACE_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -104,14 +106,6 @@ export const parseRetentionDays = (raw: unknown, fallback: number, convar: strin
 };
 
 /** A table whose rows point at a pruned row and go with it. */
-export interface RetentionDependent {
-  table: string;
-  /** The column holding the pruned row's `id`. */
-  column: string;
-  /** For a table shared by several parents: only rows whose `column` equals `value`. */
-  scope?: { column: string; value: string };
-}
-
 /**
  * An extra hold a service declares: SQL that is true while the candidate row must be kept.
  *
@@ -135,27 +129,8 @@ export interface RetentionPolicy {
   days: () => number;
   /** The convar `days` reads, named in the warnings so an owner knows what to set. */
   convar: string;
-  /** Dependents keyed by `(target_table, target_id)` rather than a declared reference. */
-  dependents?: readonly RetentionDependent[];
   /** Holds only the owning service can express. See `RetentionHold`. */
   holds?: readonly RetentionHold[];
-  /** What the rows point at outside the database, released once they are gone. */
-  external?: RetentionExternal;
-}
-
-/**
- * Something a pruned row names outside the database — a photo on an image host (MICA-243).
- *
- * `collect` runs before each batch's delete, because afterwards the rows are gone and so is
- * the reference; it is a query like the select, and if it throws the batch is not deleted,
- * since deleting the rows would strand whatever they named. `release` runs after, with what
- * `collect` answered, and decides for itself what nothing references any more — a row the
- * delete's re-check spared still does. A failed release is logged and the prune carries on:
- * the rows are already deleted, and a host outage must not stop the next batch.
- */
-export interface RetentionExternal {
-  collect: (ids: readonly number[]) => Promise<readonly string[]>;
-  release: (refs: readonly string[]) => Promise<void>;
 }
 
 const policies = new Map<string, RetentionPolicy>();
@@ -184,26 +159,6 @@ export const retentionPolicies = (): RetentionPolicy[] => [...policies.values()]
 
 const asColumnDef = (spec: ColumnType | ColumnDef): ColumnDef =>
   typeof spec === 'string' ? { type: spec } : spec;
-
-/**
- * The pruned table's **own** children: child tables its service declares with a column
- * referencing it — a message's attachments and reactions. They go with the row.
- */
-export const declaredDependents = (table: string): RetentionDependent[] => {
-  const out: RetentionDependent[] = [];
-  for (const service of declaredServices) {
-    if (service.table !== table) continue;
-    for (const child of service.childTables) {
-      for (const [name, spec] of Object.entries(child.columns)) {
-        const ref = asColumnDef(spec).references;
-        if (ref?.table === table && ref.column === 'id') {
-          out.push({ table: child.name, column: name });
-        }
-      }
-    }
-  }
-  return out;
-};
 
 /** A row in another service's child table that points at the pruned table. */
 export interface LiveReference {
@@ -293,7 +248,9 @@ export const holdClause = (
   for (const ref of liveReferences(policy.table)) {
     parts.push(
       `NOT EXISTS (SELECT 1 FROM \`${ref.child}\` a JOIN \`${ref.parentTable}\` p ` +
-        `ON p.\`id\` = a.\`${ref.parentColumn}\` WHERE a.\`${ref.column}\` = ${row}.\`id\`)`
+        `ON p.\`id\` = a.\`${ref.parentColumn}\` ` +
+        `AND p.\`status\` NOT IN ('deleted', '${EXPIRED}', '${ERASED}') ` +
+        `WHERE a.\`${ref.column}\` = ${row}.\`id\`)`
     );
   }
   for (const hold of policy.holds ?? []) {
@@ -394,6 +351,12 @@ export const retentionMarkerId = (table: string, days: number): string =>
   `retention:${table}:${days}d`;
 
 /**
+ * When retention on `table` was last switched off (MICA-428): every window marker announced
+ * before it is void. A `retention-off:` id, which the `retention:` pattern does not match.
+ */
+export const retentionOffMarkerId = (table: string): string => `retention-off:${table}`;
+
+/**
  * The `LIKE` that finds a table's markers. Deliberately unescaped: a backslash escape matches
  * nothing under `sql_mode = NO_BACKSLASH_ESCAPES`, and then the grace never saw its own marker,
  * re-announced every six hours and never pruned. The `_` in a table name is a one-character
@@ -407,14 +370,20 @@ const markerDays = (id: string, table: string): number | null => {
   return match && match[1] === table ? Number(match[2]) : null;
 };
 
-/** This table's markers, exactly: its window in days and its age in seconds. */
+/**
+ * This table's live markers, exactly: its window in days and its age in seconds. Not one a
+ * switch-off voided: announced before the table's off marker (`forgetMarkers`). Strictly
+ * before, so an announcement in the same second as the off marker — the run after it — counts.
+ */
 const readMarkers = async (
   table: string
 ): Promise<{ id: string; days: number; ageSeconds: number }[]> => {
   const rows = await Database.query<{ id: string; age: number | string | null }[]>(
-    `SELECT \`id\`, TIMESTAMPDIFF(SECOND, \`applied_at\`, NOW()) AS \`age\` ` +
-      `FROM \`${SCHEMA_MIGRATIONS_TABLE}\` WHERE \`id\` LIKE ?`,
-    [markerPattern(table)]
+    `SELECT m.\`id\` AS \`id\`, TIMESTAMPDIFF(SECOND, m.\`applied_at\`, NOW()) AS \`age\` ` +
+      `FROM \`${SCHEMA_MIGRATIONS_TABLE}\` m WHERE m.\`id\` LIKE ? ` +
+      `AND NOT EXISTS (SELECT 1 FROM \`${SCHEMA_MIGRATIONS_TABLE}\` o ` +
+      'WHERE o.`id` = ? AND o.`applied_at` > m.`applied_at`)',
+    [markerPattern(table), retentionOffMarkerId(table)]
   );
   if (!Array.isArray(rows)) throw new Error(`could not read ${SCHEMA_MIGRATIONS_TABLE}`);
   const out: { id: string; days: number; ageSeconds: number }[] = [];
@@ -485,7 +454,7 @@ const graceRemainingMs = async (
   if (remaining === 0) return 0;
   if (remaining !== null) {
     console.log(
-      `[mica] retention: ${table} is inside its announced grace; nothing is deleted before ` +
+      `[mica] retention: ${table} is inside its announced grace; nothing is hidden before ` +
         `${new Date(Date.now() + remaining).toISOString()}.`
     );
     scheduleGraceEnd(policy, remaining);
@@ -494,28 +463,36 @@ const graceRemainingMs = async (
 
   const count = firstNumber(
     await Database.query(
-      `SELECT COUNT(*) AS \`n\` FROM \`${table}\` t ` +
-        `WHERE t.\`created_at\` < NOW() - INTERVAL ? DAY AND ${hold.sql}`,
+      `SELECT COUNT(*) AS \`n\` FROM \`${table}\` t WHERE t.\`status\` = 'active' ` +
+        `AND t.\`created_at\` < NOW() - INTERVAL ? DAY AND ${hold.sql}`,
       [days, ...hold.params]
     ),
     'n'
   );
-  await Database.query(`INSERT IGNORE INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES (?)`, [
-    retentionMarkerId(table, days)
-  ]);
+  // Refreshed rather than ignored: the only marker of this id that can already be here is one a
+  // switch-off voided (`forgetMarkers`), and the new announcement starts its grace now.
+  await Database.query(
+    `INSERT INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES (?) ` +
+      'ON DUPLICATE KEY UPDATE `applied_at` = CURRENT_TIMESTAMP',
+    [retentionMarkerId(table, days)]
+  );
   console.warn(
-    `[mica] retention: ${count} ${table} rows are older than ${days} days and will be deleted ` +
+    `[mica] retention: ${count} ${table} rows are older than ${days} days and will be hidden ` +
       `from ${new Date(Date.now() + RETENTION_GRACE_MS).toISOString()}. ` +
-      `Set ${policy.convar} "0" to keep them forever.`
+      `Every row is kept; set ${policy.convar} "0" to keep showing them.`
   );
   scheduleGraceEnd(policy, RETENTION_GRACE_MS);
   return RETENTION_GRACE_MS;
 };
 
 /**
- * Retention is off: forget every announcement for this table, so switching it back on is a
+ * Retention is off: void every announcement for this table, so switching it back on is a
  * fresh 24 hours with a fresh count rather than a marker from before the owner changed their
  * mind. Observed on every run (start and every six hours).
+ *
+ * By an off marker, `retention-off:<table>`, never a delete (MICA-428): every window marker
+ * announced before it is void (`readMarkers`). Written only while a live marker remains,
+ * so a table left off is not rewritten every six hours.
  */
 const forgetMarkers = async (policy: RetentionPolicy): Promise<void> => {
   const timerForTable = graceTimers.get(policy.table);
@@ -524,11 +501,11 @@ const forgetMarkers = async (policy: RetentionPolicy): Promise<void> => {
     graceTimers.delete(policy.table);
   }
   if (!(await ledgerExists())) return;
-  const ids = (await readMarkers(policy.table)).map((marker) => marker.id);
-  if (ids.length === 0) return;
+  if ((await readMarkers(policy.table)).length === 0) return;
   await Database.query(
-    `DELETE FROM \`${SCHEMA_MIGRATIONS_TABLE}\` WHERE \`id\` IN (${ids.map(() => '?').join(', ')})`,
-    ids
+    `INSERT INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES (?) ` +
+      'ON DUPLICATE KEY UPDATE `applied_at` = CURRENT_TIMESTAMP',
+    [retentionOffMarkerId(policy.table)]
   );
 };
 
@@ -540,11 +517,14 @@ export const isRetentionRunning = (table: string): boolean => running.has(table)
 
 /**
  * Prune one table: rows older than its window, in batches, never a held row, never inside a
- * grace, never without its index. **A hard delete.** Returns the rows removed from the table
- * itself (children are not counted).
+ * grace, never without its index. **Not a delete** (MICA-428): `active` moves to `expired`,
+ * kept for staff and hidden from every player, and a hosted file the row names is kept with it.
+ * Returns the rows expired.
  *
- * `created_at` and every status: the sentence an owner agrees to is "content older than N
- * days is removed", and the holds are the only exceptions.
+ * `created_at`, and only `active` rows: a row the player deleted stays `deleted`, a takedown's
+ * stays `moderated`, and an erased one stays `erased`, so each status keeps saying who hid it.
+ * The sentence an owner agrees to is "content older than N days is hidden", and the holds are
+ * the only exceptions. `updated_at` is pinned: expiring is not an edit.
  */
 export const pruneTable = async (policy: RetentionPolicy): Promise<number> => {
   if (running.has(policy.table)) return 0;
@@ -560,63 +540,36 @@ export const pruneTable = async (policy: RetentionPolicy): Promise<number> => {
     if (!(await preflight(policy))) return 0;
 
     const selectHold = holdClause(policy, 't');
-    const deleteHold = holdClause(policy, `\`${table}\``);
+    const updateHold = holdClause(policy, `\`${table}\``);
     if ((await graceRemainingMs(policy, days, selectHold)) > 0) return 0;
 
-    const dependents = [...declaredDependents(table), ...(policy.dependents ?? [])];
     const selectSql =
       `SELECT t.\`id\` FROM \`${table}\` t ` +
-      `WHERE t.\`created_at\` < NOW() - INTERVAL ? DAY AND ${selectHold.sql} ` +
-      `ORDER BY t.\`created_at\`, t.\`id\` LIMIT ${RETENTION_BATCH}`;
+      `WHERE t.\`status\` = 'active' AND t.\`created_at\` < NOW() - INTERVAL ? DAY ` +
+      `AND ${selectHold.sql} ORDER BY t.\`created_at\`, t.\`id\` LIMIT ${RETENTION_BATCH}`;
 
-    let removed = 0;
+    let expired = 0;
     for (let batch = 0; batch < RETENTION_MAX_BATCHES; batch += 1) {
       const rows = await Database.query<{ id: number }[]>(selectSql, [days, ...selectHold.params]);
       const ids = (Array.isArray(rows) ? rows : [])
         .map((row) => Number(row.id))
         .filter((id) => Number.isSafeInteger(id) && id > 0)
         .slice(0, RETENTION_BATCH);
-      if (ids.length === 0) return removed;
+      if (ids.length === 0) return expired;
 
       const marks = ids.map(() => '?').join(', ');
-      const refs = policy.external ? await policy.external.collect(ids) : [];
       // Every hold and the window are asked again, so a report filed since the select wins.
-      removed += affectedRows(
+      expired += affectedRows(
         await Database.query(
-          `DELETE FROM \`${table}\` WHERE \`id\` IN (${marks}) ` +
+          `UPDATE \`${table}\` SET \`status\` = ?, \`updated_at\` = \`updated_at\` ` +
+            `WHERE \`id\` IN (${marks}) AND \`status\` = 'active' ` +
             `AND \`created_at\` < NOW() - INTERVAL ? DAY ` +
-            `AND ${deleteHold.sql} LIMIT ${RETENTION_BATCH}`,
-          [...ids, days, ...deleteHold.params]
+            `AND ${updateHold.sql} LIMIT ${RETENTION_BATCH}`,
+          [EXPIRED, ...ids, days, ...updateHold.params]
         )
       );
 
-      // Children only of the parents that are actually gone — a row the re-check spared
-      // keeps its attachments.
-      for (const dep of dependents) {
-        const depTable = identifier(dep.table, 'a dependent table');
-        const depColumn = identifier(dep.column, 'a dependent column');
-        const scope = dep.scope
-          ? ` AND \`${identifier(dep.scope.column, 'a dependent scope column')}\` = ?`
-          : '';
-        await Database.query(
-          `DELETE FROM \`${depTable}\` WHERE \`${depColumn}\` IN (${marks})${scope} ` +
-            `AND NOT EXISTS (SELECT 1 FROM \`${table}\` p WHERE p.\`id\` = \`${depTable}\`.\`${depColumn}\`)`,
-          dep.scope ? [...ids, dep.scope.value] : ids
-        );
-      }
-
-      if (policy.external && refs.length > 0) {
-        try {
-          await policy.external.release(refs);
-        } catch (error) {
-          console.error(
-            `[${policy.label}] releasing what the pruned rows named failed:`,
-            traceOf(error)
-          );
-        }
-      }
-
-      if (ids.length < RETENTION_BATCH) return removed;
+      if (ids.length < RETENTION_BATCH) return expired;
       await pause();
     }
 
@@ -624,7 +577,7 @@ export const pruneTable = async (policy: RetentionPolicy): Promise<number> => {
       `[${policy.label}] retention reached ${RETENTION_MAX_BATCHES * RETENTION_BATCH} rows in ` +
         `one run; the rest are left for the next run rather than held in one long sitting.`
     );
-    return removed;
+    return expired;
   } finally {
     running.delete(policy.table);
   }
@@ -635,7 +588,7 @@ const runOne = async (policy: RetentionPolicy): Promise<number> => {
     const removed = await pruneTable(policy);
     if (removed > 0) {
       console.log(
-        `[${policy.label}] removed ${removed} row(s) older than ${policy.days()} day(s).`
+        `[${policy.label}] expired ${removed} row(s) older than ${policy.days()} day(s).`
       );
     }
     return removed;

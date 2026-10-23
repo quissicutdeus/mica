@@ -17,6 +17,7 @@ import { registerReportable, type ReportableDefinition } from './moderation';
 import type { ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
 import { registerServerOnlyColumns } from './replyShape';
+import { ERASED } from './statuses';
 import type { ServiceContract } from '@mica/shared/contract';
 import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
 import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@mica/shared/devices';
@@ -218,6 +219,16 @@ export interface ColumnDef {
    * index on a VIRTUAL column.
    */
   generatedAs?: string;
+  /**
+   * For a generated column under a `uniqueAfterDelete: 'revive'` key: the column it copies
+   * whenever a row holds the key (MICA-428). A revive looks for the caller's own `deleted` row
+   * by the values the create names, and a create never names a generated column; a `deleted`
+   * row's copy equals its base column, so the revive compares the base column in its place.
+   *
+   * Only alongside `generatedAs`, and only naming a column the table has. A status-aware key
+   * (`CASE WHEN status <> 'erased' THEN citizenid ELSE NULL END`) is the one shape it is for.
+   */
+  reviveAs?: string;
   /**
    * This column holds a citizenid, so it is as wide as the owner key rather than `length`
    * (MICA-289): 50 where rows hang off qb's `players(citizenid)`, 60 where they hang off
@@ -1244,7 +1255,15 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
       liveWhileNull: rawMembership.liveWhileNull ?? null
     };
   }
-  const statuses = definition.statuses ?? DEFAULT_STATUSES;
+  /**
+   * `erased` is on every status table (MICA-428): the purges hide a gone owner's rows rather than
+   * delete them, and reach every table the owner has rows in. Appended last, after whatever the
+   * declaration says, so an existing table's ENUM only ever grows at its end.
+   */
+  const declaredStatuses = definition.statuses ?? DEFAULT_STATUSES;
+  const statuses = declaredStatuses.includes(ERASED)
+    ? declaredStatuses
+    : [...declaredStatuses, ERASED];
 
   if (!statuses.includes('active') || !statuses.includes('deleted')) {
     throw new Error(
@@ -1357,6 +1376,12 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
           'generated column takes its value from the expression alone.'
       );
     }
+    if (def.reviveAs !== undefined && !def.generatedAs) {
+      throw new Error(
+        `defineService('${id}'): '${name}' declares 'reviveAs' without 'generatedAs'. Only a ` +
+          'generated copy of another column is compared as that column.'
+      );
+    }
     assertCitizenIdColumn(id, `'${name}'`, def);
     assertEncryptedColumn(id, name, def);
     fields.push({ name, def });
@@ -1367,6 +1392,14 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   ]);
 
   const columns = [...IMPLICIT_COLUMNS, ...fields.map((f) => f.name)] as string[];
+  for (const { name, def } of fields) {
+    if (def.reviveAs !== undefined && !columns.includes(def.reviveAs)) {
+      throw new Error(
+        `defineService('${id}'): '${name}' is 'reviveAs' '${def.reviveAs}', which the table ` +
+          'does not have.'
+      );
+    }
+  }
 
   const indexes = (definition.indexes ?? []).map(normalizeIndex);
   // The handover's own lookup — `UPDATE … WHERE device_id = ?` — and the narrowing half of
@@ -1555,9 +1588,15 @@ export class SchemaRepository<T> extends Repository<T> {
     this.columnRules = resolved.columnRules;
     this.editWindow = resolved.editWindow;
     if (resolved.uniqueAfterDelete === 'revive') {
+      // A generated copy is compared as the column it copies (`reviveAs`, MICA-428).
+      const reviveAs = new Map(
+        resolved.fields
+          .filter((field) => field.def.reviveAs !== undefined)
+          .map((field) => [field.name, field.def.reviveAs!])
+      );
       this.reviveKeys = resolved.indexes
         .filter((index) => index.unique)
-        .map((index) => index.columns);
+        .map((index) => index.columns.map((column) => reviveAs.get(column) ?? column));
       this.reviveResets = resolved.fields
         .filter((field) => !field.def.generatedAs && field.name !== 'device_id')
         .map((field) => field.name);

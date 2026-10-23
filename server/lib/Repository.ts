@@ -465,9 +465,17 @@ export abstract class Repository<T> {
       );
     }
     const pin = this.hasColumn('updated_at') ? ', `updated_at` = `updated_at`' : '';
+    /**
+     * Never a row the holder did not make and cannot see (MICA-428 review): one a purge erased,
+     * one a window expired, one a moderator holds. Each is evidence, and its `citizenid` is
+     * its real author; stamping the next holder's on it would misattribute it to them.
+     */
+    const live = this.hasStatusColumn
+      ? " AND `status` NOT IN ('erased', 'expired', 'moderated')"
+      : '';
     return await Database.update(
       `UPDATE \`${this.tableName}\` SET \`citizenid\` = ?${pin} ` +
-        'WHERE `device_id` = ? AND `citizenid` <> ?',
+        `WHERE \`device_id\` = ? AND \`citizenid\` <> ?${live}`,
       [citizenid, deviceId, citizenid]
     );
   }
@@ -955,16 +963,18 @@ export abstract class Repository<T> {
        * moderated post, and if a moderator later reinstates it they reinstate text nobody
        * reviewed.
        *
-       * Only `moderated`, deliberately. Excluding `deleted` too would make deleting an
-       * already-deleted row report failure, and excluding an app's own states — Notes and
-       * Conversations both declare `archived` — would break editing a row that is merely put
-       * away. Moderation is the one state that is a decision *about* the author.
+       * `moderated`, and the two hidden-for-good states (MICA-428): an `erased` or `expired`
+       * row is kept as evidence, and an edit, or a delete to `deleted` that `restore` would
+       * then bring back, is the owner rewriting or reviving what was hidden. Not `deleted`:
+       * excluding it would make deleting an already-deleted row report failure. Not an app's
+       * own states — Notes and Conversations both declare `archived` — which would break
+       * editing a row that is merely put away.
        *
        * Not applied to `updateUnscoped`: moderating and un-moderating are exactly the writes
        * that have to reach these rows.
        */
       if (this.hasStatusColumn) {
-        query += " AND `status` != 'moderated'";
+        query += " AND `status` NOT IN ('moderated', 'erased', 'expired')";
       }
 
       /**

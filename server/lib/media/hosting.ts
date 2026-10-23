@@ -5,7 +5,7 @@
 import { PlayerFacingError } from '../errors';
 import { MediaItem } from '@mica/shared/types';
 import { Database } from '../Database';
-import { releaseHostedImages, reportRelease, uploadConfig, uploadImage } from '../mediaHost';
+import { uploadConfig, uploadImage } from '../mediaHost';
 import { QUOTA_FULL_MESSAGE, hostedUrlPrefixes, quotaBytes, usedBytesQuery } from './quota';
 
 /**
@@ -65,6 +65,12 @@ const HOSTABLE_KINDS = new Set(['photo', 'gif', 'sticker']);
  * `null`, and the caller writes the bytes to the database as it always did. A host outage
  * is a slower, fatter row, never a lost photo.
  *
+ * **The upload happens before the insert, and a refused insert keeps the file** (MICA-428).
+ * The quota is a predicate *in* the insert (MICA-131), so there is no earlier moment at which
+ * "will this row be written" is known; a player at their ceiling, or any failed insert, leaves
+ * a file on the host that no row names. It is kept, as every hosted file is: nothing is ever
+ * deleted from the host. `refuseUploadWithoutRoom` turns most of those away before the post.
+ *
  * On success `data` is left out rather than nulled, so the insert names no column it does
  * not write, `mime_type` records what the host was sent, and `byte_size` how big it was —
  * the size the quota charges for a row whose bytes are no longer in it (MICA-293). `url` is `clientWritable:
@@ -77,31 +83,6 @@ export const hostPhoto = async (item: Partial<MediaItem>): Promise<Partial<Media
   if (!hosted) return item;
   const { data: _bytes, ...rest } = item;
   return { ...rest, url: hosted.url, mime_type: hosted.mimeType, byte_size: hosted.bytes };
-};
-
-/**
- * Run `insert`, and if it refuses or throws after `hostPhoto` moved the bytes to the host,
- * ask the host to delete the file before rethrowing. MICA-243.
- *
- * The upload has to happen before the insert — the quota is a predicate *in* the insert
- * (MICA-131), so there is no earlier moment at which "will this row be written" is known.
- * Without this, a player at their ceiling, or any failed insert, leaves a file on the host
- * that no row names and no prune will ever find. `releaseHostedImages` never throws and
- * checks no row names the URL first, so the caller's own error is the one that surfaces.
- */
-export const releaseOnFailure = async (
-  stored: Partial<MediaItem>,
-  original: Partial<MediaItem>,
-  insert: () => Promise<number>
-): Promise<number> => {
-  try {
-    return await insert();
-  } catch (error) {
-    if (stored !== original && typeof stored.url === 'string') {
-      reportRelease('micamedia', await releaseHostedImages([stored.url]));
-    }
-    throw error;
-  }
 };
 
 /**
@@ -118,9 +99,9 @@ const hostedBytesAtLeast = (data: string): number | null => {
  * Refuse a capture before it is posted to the image host when the player's library cannot
  * take it even at its smallest. MICA-293.
  *
- * Without this, a player already at their ceiling uploads every capture to the owner's host,
- * is refused by `insertWithinQuota`, and `releaseOnFailure` deletes the file again: two
- * requests to somebody else's host per retry, for a photo that was never going to be kept.
+ * Without this, a player already at their ceiling uploads every capture to the owner's host
+ * and is refused by `insertWithinQuota`, leaving a file on somebody else's host per retry for
+ * a photo that was never going to have a row (and nothing deletes it, MICA-428).
  *
  * **A pre-check, never the authority.** It reads the library in a statement of its own, so
  * it has exactly the MICA-131 gap `insertWithinQuota` exists to close — two captures in

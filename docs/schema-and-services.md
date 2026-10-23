@@ -166,6 +166,14 @@ and a hand-written `columns` array in sync by hand means a silent divergence
 breaks either security or writes. One schema drives both, plus the generated
 DDL.
 
+- **Nothing is a real delete** (MICA-428), and the status list says who hid a
+  row. `defineService` appends `erased` to every service's `statuses`, so every
+  table a purge reaches can take it: it means the owner is gone or asked to be,
+  and is hidden from everyone, the owner included. A table a timer hides
+  declares `expired` too (`server/lib/statuses.ts`), which retention sets and no
+  player can restore. Migration 0015 appended both to every existing `status`
+  ENUM, in place, with no row rewritten. A purge is an `UPDATE`, so it cascades
+  nowhere, and a table with no `status` is left alone by it.
 - `id, citizenid, status, created_at, updated_at` are **supplied by the
   framework**. Declaring any of them in `schema` is an error.
 - **A citizenid is 50 characters on qb and 60 on ESX and standalone
@@ -765,23 +773,28 @@ before `micaschema apply` any more. **A new column-to-column join against
 
 ### Who cleans up after a deleted character
 
-With no foreign key onto the framework's table, micaOS removes a deleted
+With no foreign key onto the framework's table, micaOS hides a deleted
 character's rows itself, in two places: the local server event
 `mica:server:shell:characterDeleted` (fired by an owner's deletion flow), and
-the orphan sweep at every resource start, which removes rows whose owner no
-longer exists. Both go through the cascade-safe plan in
-`server/lib/orphanSweep.ts` (MICA-168, MICA-300): the character's own rows go,
-but anything under an open report and what hangs off it (attachments, replies,
-photos), any row a takedown holds (`status = 'moderated'`, MICA-426), and any
-row another player's rows still reference, survive — the foreign keys _between_
-micaOS's own tables still cascade, so a parent is only deleted when nothing it
-would take with it has to stay. Two accountability records outlive the
-character: reports they filed that staff have not resolved (which go on holding
-what they reported, and go on the next sweep once resolved) and their rows in
-the audit ledger, which are never swept. What survives as evidence is hidden,
-not left live: it moves to `deleted` (`updated_at` pinned) before the deletes
-run, and a `moderated` row stays `moderated`. A row kept only because another
-player's row references it stays as it was.
+the orphan sweep at every resource start, which hides rows whose owner no longer
+exists. Both go through `purgePlanned` in `server/lib/sweep/purge.ts` (MICA-168,
+MICA-300, MICA-428), and **neither deletes anything**: each row moves to
+`erased` and stays, with `updated_at` pinned. A `moderated` row (MICA-426) stays
+`moderated`, with its takedown told the owner erased it. Several survive live:
+reports the character filed that staff have not resolved, their rows in the
+audit ledger (never swept), and the device rows (`mica_devices`,
+`mica_phone_numbers`, `mica_battery`, `mica_lockscreen`), which the phone item
+can outlive its character to need. A table with no `status` is skipped.
+
+**A shared row stays while others are in it** (`registerSharedRows`, from
+`lib/orphanSweep.ts`). A service whose rows other players share through a
+membership table registers the row table, the membership table, its reference
+column, its owner column and its `left_at` column. A purge then leaves that row
+live while any other member is `active`, erases the owner's own membership and
+marks it left, and the next orphan sweep erases the row once the last member has
+gone. Messages' threads and Dark Chat's channels register theirs
+(`server/services/Conversations.ts`, `Darkchat.ts`); one registered twice
+throws.
 
 ### Never read another resource's tables
 

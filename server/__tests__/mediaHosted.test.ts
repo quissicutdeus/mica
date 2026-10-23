@@ -64,7 +64,7 @@ vi.mock('../lib/proximity', () => ({
 }));
 
 import type { MediaItem } from '@mica/shared/types';
-import { releaseHostedImages, resetMediaHostForTests } from '../lib/mediaHost';
+import { resetMediaHostForTests } from '../lib/mediaHost';
 import {
   hostedUrlPrefixes,
   media,
@@ -228,20 +228,21 @@ describe('a hosted capture is held to the quota', () => {
     expect(sql).not.toContain(HOST);
   });
 
-  it('refuses a hosted capture the ceiling turned away, and releases the uploaded file', async () => {
+  it('refuses a hosted capture the ceiling turned away, and keeps the uploaded file', async () => {
     hosting();
     dbMock.insert.mockResolvedValue(0);
 
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
 
     expect(reply.error).toMatch(/full/i);
-    expect(deletesRequested()).toEqual(['https://api.example.test/files/abc.webp']);
+    // Nothing is deleted from the host (MICA-428), a delete URL configured or not.
+    expect(deletesRequested()).toEqual([]);
   });
 
   /**
    * Ponds' review of MICA-293: a player at their ceiling used to post every capture to the
-   * owner's host, be refused by the insert, and have the file deleted again. The pre-check
-   * refuses first; the insert stays the authority.
+   * owner's host and be refused by the insert. The pre-check refuses first, so no file is left
+   * on the host for nothing; the insert stays the authority.
    */
   const uploads = () => fetchMock.mock.calls.filter((c: any[]) => c[1]?.method === 'POST');
   const usedSoFar = (bytes: number) =>
@@ -278,7 +279,7 @@ describe('a hosted capture is held to the quota', () => {
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
     expect(dbMock.insert.mock.calls[0][0]).toContain('WHERE quota.used + ? <= ?');
     expect(reply.error).toMatch(/full/i);
-    expect(deletesRequested()).toEqual(['https://api.example.test/files/abc.webp']);
+    expect(deletesRequested()).toEqual([]);
   });
 
   it('costs an install with no host no extra statement per capture', async () => {
@@ -309,17 +310,17 @@ describe('a hosted capture is held to the quota', () => {
 
 /**
  * The race, interleaved. A tiny `mica_media`: the sender's hosted photo, and whatever copies
- * the drop writes. It answers the three statements that matter the way MariaDB would:
+ * the drop writes. It answers the two statements that matter the way MariaDB would:
  *
  * - `findById` (`single`) finds the source row while it exists;
  * - the copy (`insert`) writes a recipient row — but when the statement carries the source
- *   predicate, only if that row still exists, which is what the predicate asks;
- * - the release's reference check (`query`) answers which URLs a remaining row still names.
+ *   predicate, only if that row is still `active`, which is what the predicate asks.
  *
- * "Retention" here is what every hard delete of media does (MICA-292): delete the row, then
- * `releaseHostedImages` its URL. It is called directly, so the release is the real one.
+ * "Retention" here is what the prune does to the sender's row since MICA-428: `active` to
+ * `expired`, the row and its file kept. A copy written after it would hand a live photo to
+ * everyone nearby a moment after it was hidden.
  */
-describe('a drop racing a release', () => {
+describe('a drop racing retention', () => {
   /** The predicate that makes a copy conditional on its source; nothing else counts as one. */
   const SOURCE_STILL_THERE = "src.`id` = ? AND src.`citizenid` = ? AND src.`status` = 'active'";
 
@@ -341,7 +342,7 @@ describe('a drop racing a release', () => {
     dbMock.insert.mockImplementation(async (sql: string, params: unknown[]) => {
       const recipient = params[0] as string;
       if (String(sql).includes(SOURCE_STILL_THERE)) {
-        // The copy names its source by id and owner; it exists only while that row does.
+        // The copy names its source by id and owner; it exists only while that row is live.
         expect(params).toContain(42);
         expect(params).toContain('CID_A');
         const source = rows.find((r) => r.id === 42 && r.status === 'active');
@@ -354,19 +355,12 @@ describe('a drop racing a release', () => {
       }
       return nextId++;
     });
-    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql.startsWith('SELECT DISTINCT `url` FROM `mica_media` WHERE `url` IN')) {
-        const live = new Set(rows.map((r) => r.url));
-        return params.filter((url) => live.has(url as string)).map((url) => ({ url }));
-      }
-      return [];
-    });
+    dbMock.query.mockResolvedValue([]);
   };
 
-  /** What retention does to the sender's row: hard-delete it, then release its file. */
-  const retention = async () => {
-    rows = rows.filter((r) => r.id !== 42);
-    return await releaseHostedImages([HOSTED]);
+  /** What retention does to the sender's row: expire it, and keep it (MICA-428). */
+  const retention = () => {
+    for (const row of rows) if (row.id === 42) row.status = 'expired';
   };
 
   /** Start a drop and stop it between reading the sender's row and writing the copies. */
@@ -391,36 +385,40 @@ describe('a drop racing a release', () => {
         ];
       });
 
-      it('writes no copy of a row retention deleted mid-drop, and tells nobody', async () => {
+      it('writes no copy of a row retention expired mid-drop, and tells nobody', async () => {
         const drop = await dropHeldOpen();
 
-        // The sender's row goes and its file is released while the drop is between its read
-        // and its write — the window MICA-293 is about.
-        const outcome = await retention();
-        expect(outcome.deleted).toBe(1);
-        expect(deletesRequested()).toEqual(['https://api.example.test/files/abc.webp']);
+        // The sender's row expires while the drop is between its read and its write — the
+        // window MICA-293 is about.
+        retention();
 
         drop.finish();
         const reply = await drop.reply;
 
-        // No recipient holds a row pointing at the file that was just deleted.
-        expect(rows.filter((r) => r.url === HOSTED)).toEqual([]);
+        // No recipient holds a live copy of a photo hidden a moment before.
+        expect(rows.filter((r) => r.status === 'active')).toEqual([]);
         expect(reply).toEqual({ count: 0 });
         const pushes = (globalThis.emitNet as any).mock.calls.filter(
           (args: unknown[]) => args[0] === 'mica:client:shell:appEvent'
         );
         expect(pushes).toHaveLength(0);
+        // And the file is kept, with the expired row that names it.
+        expect(deletesRequested()).toEqual([]);
       });
 
-      it('keeps the file when the copies landed first, because they still name it', async () => {
+      it("keeps the copies that landed first: they are their recipients' own", async () => {
         const reply = await call(DROP_EVENT, { mediaId: 42 });
         expect(reply).toEqual({ count: 2 });
 
-        const outcome = await retention();
+        retention();
 
-        expect(outcome.deleted).toBe(0);
         expect(deletesRequested()).toEqual([]);
-        expect(rows.map((r) => r.citizenid).sort()).toEqual(['CID_B', 'CID_C']);
+        expect(
+          rows
+            .filter((r) => r.status === 'active')
+            .map((r) => r.citizenid)
+            .sort()
+        ).toEqual(['CID_B', 'CID_C']);
       });
     });
   }

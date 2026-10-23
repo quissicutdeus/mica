@@ -521,8 +521,9 @@ describe('the per-app policy (MICA-390)', () => {
 
 describe('deleteThread (MICA-390)', () => {
   /**
-   * The thread's statements: the candidates, a delete and its reactions per batch, and
-   * (MICA-426) the moderated rows, read before the deletes (`before`) and after them (`after`).
+   * The thread's statements: the candidates, a status change per batch (MICA-428: nothing is
+   * deleted, reactions included), and (MICA-426) the moderated rows, read before the updates
+   * (`before`) and after them (`after`).
    */
   const thread = (
     candidates: number[],
@@ -533,8 +534,7 @@ describe('deleteThread (MICA-390)', () => {
     let moderatedReads = 0;
     dbMock.query.mockImplementation(async (sql: string) => {
       const text = String(sql).replace(/\s+/g, ' ');
-      if (text.startsWith('DELETE FROM `mica_blabber_dms`')) return { affectedRows: deleted };
-      if (text.startsWith('DELETE FROM `mica_account_reactions`')) return { affectedRows: 0 };
+      if (text.startsWith('UPDATE `mica_blabber_dms`')) return { affectedRows: deleted };
       if (text.includes("t.`status` = 'moderated'")) {
         return (moderatedReads++ === 0 ? before : after).map((id) => ({ id }));
       }
@@ -555,12 +555,13 @@ describe('deleteThread (MICA-390)', () => {
     registerOwnerDeletionRecorder(previousRecorder);
   });
 
-  it('deletes both directions unless the thread is held, then the reactions on what went', async () => {
+  it('deletes both directions unless the thread is held, as a status change, reactions kept', async () => {
     thread([3, 4], 2);
 
     expect(await deleteThread(1, 2)).toBe(2);
 
-    const [select, remove, reactions] = dbMock.query.mock.calls.filter((c) => !isModeratedRead(c));
+    const rest = dbMock.query.mock.calls.filter((c) => !isModeratedRead(c));
+    const [select, remove] = rest;
     const threadHeld =
       'NOT EXISTS (SELECT 1 FROM (SELECT DISTINCT r.`id` FROM `mica_reports` r ' +
       'JOIN `mica_blabber_dms` d ON d.`id` = r.`target_id` WHERE r.`target_table` = ?';
@@ -573,14 +574,17 @@ describe('deleteThread (MICA-390)', () => {
     );
     expect(String(select[0])).not.toContain('r.`target_id` = t.`id`');
     expect(select[1]).toEqual([1, 2, 2, 1, 'mica_blabber_dms', 1, 2, 2, 1]);
-    // The delete asks the hold again, so a report filed since the select still wins.
-    expect(String(remove[0])).toMatch(/^DELETE FROM `mica_blabber_dms` WHERE `id` IN \(\?, \?\)/);
+    // The update asks the hold again, so a report filed since the select still wins; only an
+    // active line moves, and `updated_at` stays when it was last edited (MICA-428).
+    expect(one(remove[0])).toMatch(
+      /^UPDATE `mica_blabber_dms` SET `status` = 'deleted', `updated_at` = `updated_at` WHERE `id` IN \(\?, \?\)/
+    );
+    expect(one(remove[0])).toContain("AND `status` = 'active' AND NOT EXISTS");
     expect(String(remove[0])).toContain(threadHeld);
     expect(remove[1]).toEqual([3, 4, 1, 2, 2, 1, 'mica_blabber_dms', 1, 2, 2, 1]);
-    // Reactions only on rows actually gone.
-    expect(String(reactions[0])).toContain('DELETE FROM `mica_account_reactions`');
-    expect(String(reactions[0])).toContain('NOT EXISTS (SELECT 1 FROM `mica_blabber_dms` p');
-    expect(reactions[1]).toEqual(['mica_blabber_dms', 3, 4]);
+    // Nothing else: no reaction is deleted, and nothing anywhere is (MICA-428, MICA-429).
+    expect(rest).toHaveLength(2);
+    expect(rest.some(([sql]) => /DELETE/.test(String(sql)))).toBe(false);
   });
 
   it('deletes nothing when the thread is held', async () => {
@@ -588,7 +592,7 @@ describe('deleteThread (MICA-390)', () => {
 
     expect(await deleteThread(1, 2)).toBe(0);
     expect(
-      dbMock.query.mock.calls.filter(([sql]: any[]) => String(sql).startsWith('DELETE'))
+      dbMock.query.mock.calls.filter(([sql]: any[]) => String(sql).startsWith('UPDATE'))
     ).toEqual([]);
   });
 
@@ -608,9 +612,9 @@ describe('deleteThread (MICA-390)', () => {
     // First and last: before the candidates are read, and after the last delete.
     expect(isModeratedRead(calls[0])).toBe(true);
     const moderated = calls[calls.length - 1];
-    // Asked in the select and again in the delete, so a takedown landing between the two wins.
-    expect(one(select[0])).toContain("AND t.`status` <> 'moderated' AND NOT EXISTS");
-    expect(one(remove[0])).toContain("AND `status` <> 'moderated' AND NOT EXISTS");
+    // Asked in the select and again in the update, so a takedown landing between the two wins.
+    expect(one(select[0])).toContain("AND t.`status` = 'active' AND NOT EXISTS");
+    expect(one(remove[0])).toContain("AND `status` = 'active' AND NOT EXISTS");
     expect(remove[1]).toEqual([3, 1, 2, 2, 1, 'mica_blabber_dms', 1, 2, 2, 1]);
     // Last, and not in a thread an open report holds, which stays live.
     expect(one(moderated[0])).toContain("AND t.`status` = 'moderated' AND NOT EXISTS");

@@ -934,7 +934,8 @@ describe('the retention window', () => {
       String(c[0]).includes('FROM `mica_darkchat_messages`')
     )!;
     expect(one(exported[0])).toContain(
-      'WHERE `citizenid` = ? AND (`created_at` > NOW() - INTERVAL ? HOUR)'
+      // Never what an erase hid (MICA-428), then the window.
+      "WHERE `citizenid` = ? AND `status` <> 'erased' AND (`created_at` > NOW() - INTERVAL ? HOUR)"
     );
     expect(exported[1]).toEqual(['CIT_A', 6, 1001]);
     // And no other table is narrowed by it.
@@ -946,7 +947,7 @@ describe('the retention window', () => {
 });
 
 describe('the sweep', () => {
-  it('selects past the window, holds reported and moderated rows, and deletes exactly those ids', async () => {
+  it('selects past the window, holds reported and moderated rows, and expires exactly those ids', async () => {
     dbMock.query.mockImplementation(async (sql: string) =>
       one(sql).startsWith('SELECT t.`id`') ? [{ id: 7 }, { id: 8 }] : { affectedRows: 2 }
     );
@@ -954,21 +955,27 @@ describe('the sweep', () => {
     expect(await sweepDarkchat()).toBe(2);
     log.mockRestore();
 
-    const [select, delete_] = dbMock.query.mock.calls;
+    const [select, expire] = dbMock.query.mock.calls;
     // A pending report holds a line, and so does a takedown standing on it (MICA-426): a reopen
     // has to find the row it restores.
     const hold =
       "NOT EXISTS (SELECT 1 FROM `mica_reports` r WHERE r.`target_table` = ? AND r.`target_id` = %.`id` AND r.`status` = 'active' AND r.`resolution` = 'pending') AND %.`status` <> 'moderated'";
     expect(one(select[0])).toContain(
-      't.`created_at` < NOW() - INTERVAL ? HOUR AND ' + hold.replaceAll('%', 't')
+      "t.`status` = 'active' AND t.`created_at` < NOW() - INTERVAL ? HOUR AND " +
+        hold.replaceAll('%', 't')
     );
     expect(select[1]).toEqual([24, 'mica_darkchat_messages']);
-    expect(one(delete_[0])).toBe(
-      'DELETE FROM `mica_darkchat_messages` WHERE `id` IN (?, ?) AND `created_at` < NOW() - INTERVAL ? HOUR AND ' +
+    // A status change, never a delete (MICA-428): only an active line moves, and its
+    // `updated_at` stays the moment it was last edited.
+    expect(one(expire[0])).toBe(
+      'UPDATE `mica_darkchat_messages` SET `status` = ?, `updated_at` = `updated_at` ' +
+        "WHERE `id` IN (?, ?) AND `status` = 'active' AND `created_at` < NOW() - INTERVAL ? HOUR AND " +
         hold.replaceAll('%', '`mica_darkchat_messages`') +
         ' LIMIT 500'
     );
-    expect(delete_[1]).toEqual([7, 8, 24, 'mica_darkchat_messages']);
+    expect(expire[1]).toEqual(['expired', 7, 8, 24, 'mica_darkchat_messages']);
+    // Members and channels are no longer swept: nothing past the two statements above.
+    expect(dbMock.query.mock.calls).toHaveLength(2);
   });
 
   it('never rejects, and logs only the driver line', async () => {
@@ -1263,61 +1270,5 @@ describe('the join limiter under a burst (review)', () => {
     // The success cost nothing: this is the tenth failure, not the eleventh.
     expect((await bad()).key).toBe('server.darkchat.badCode');
     expect((await bad()).key).toBe('server.darkchat.tooManyCodes');
-  });
-});
-
-describe('the member and channel sweep (review)', () => {
-  it('runs after the messages, children first, holding a reported author and live removals', async () => {
-    const answers: Record<string, unknown[]> = {
-      'SELECT t.`id`': [{ id: 7 }],
-      'SELECT m.`id`': [{ id: 21 }, { id: 22 }],
-      'SELECT c.`id`': [{ id: 3 }]
-    };
-    dbMock.query.mockImplementation(async (sql: string) => {
-      const key = Object.keys(answers).find((k) => one(sql).startsWith(k));
-      return key ? answers[key] : { affectedRows: 1 };
-    });
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await sweepDarkchat();
-    log.mockRestore();
-
-    const calls = dbMock.query.mock.calls.map((c) => [one(c[0]), c[1]] as [string, unknown[]]);
-    const order = calls.map(([sql]) => sql.slice(0, 40));
-    const at = (prefix: string) => order.findIndex((sql) => sql.startsWith(prefix));
-    expect(at('DELETE FROM `mica_darkchat_messages`')).toBeLessThan(
-      at('DELETE FROM `mica_darkchat_members`')
-    );
-    expect(at('DELETE FROM `mica_darkchat_members`')).toBeLessThan(
-      at('DELETE FROM `mica_darkchat` ')
-    );
-
-    const unreferenced = (row: string) =>
-      `NOT EXISTS (SELECT 1 FROM \`mica_darkchat_messages\` x WHERE x.\`author_member_id\` = ${row}.\`id\`)`;
-    const [memberSelect, memberParams] = calls.find(([sql]) => sql.startsWith('SELECT m.`id`'))!;
-    expect(memberSelect).toContain(
-      'm.`left_at` < NOW() - INTERVAL ? HOUR AND ' + unreferenced('m')
-    );
-    // A removal outlives the window while its channel is live: it is what refuses the rejoin.
-    expect(memberSelect).toContain(
-      "(m.`status` = 'left' OR (m.`status` = 'removed' AND EXISTS (SELECT 1 FROM `mica_darkchat` c WHERE c.`id` = m.`channel_id` AND c.`status` = 'deleted')))"
-    );
-    expect(memberParams).toEqual([24]);
-    const [memberDelete, memberDeleteParams] = calls.find(([sql]) =>
-      sql.startsWith('DELETE FROM `mica_darkchat_members`')
-    )!;
-    expect(memberDelete).toContain(unreferenced('`mica_darkchat_members`'));
-    expect(memberDeleteParams).toEqual([21, 22, 24]);
-
-    const [channelDelete, channelParams] = calls.find(([sql]) =>
-      sql.startsWith('DELETE FROM `mica_darkchat` ')
-    )!;
-    expect(channelDelete).toContain("`mica_darkchat`.`status` = 'deleted'");
-    expect(channelDelete).toContain(
-      'NOT EXISTS (SELECT 1 FROM `mica_darkchat_members` m WHERE m.`channel_id` = `mica_darkchat`.`id`)'
-    );
-    expect(channelDelete).toContain(
-      'NOT EXISTS (SELECT 1 FROM `mica_darkchat_messages` x WHERE x.`channel_id` = `mica_darkchat`.`id`)'
-    );
-    expect(channelParams).toEqual([3]);
   });
 });

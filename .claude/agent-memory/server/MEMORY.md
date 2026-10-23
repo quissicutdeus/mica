@@ -144,3 +144,11 @@ line here.
   — `accepts` broke `shareLocation`; `mediumtext` exports as a size
 - [Redefine a virtual column by drop and add; pin updated_at](migration-virtual-column-and-fill-traps.md)
   — MODIFY wrote garbage bytes on MariaDB 11; a fill moves updated_at (MICA-432)
+- [An erase is not one statement shape for every table](an-erase-is-not-one-statement-shape.md)
+  — no `updated_at` on a child, membership is `left_at`, ESX citizenid is 60
+- [A row kept but hidden is still writable by its id](a-kept-row-is-still-writable-by-id.md)
+  — update, or delete then restore, revived an erased row (MICA-428)
+- [A generated column in a revive key turns the revive off silently](a-generated-key-column-silences-revive.md)
+  — a create never names it; `reviveAs` (MICA-428)
+- [A kept row holds every unique key over a plain column](a-kept-row-holds-every-plain-unique-key.md)
+  — the purge used to free it; the participants seat took a second review

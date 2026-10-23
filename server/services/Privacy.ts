@@ -176,6 +176,12 @@ const WITHHELD: Readonly<Record<string, readonly string[]>> = {
   // MICA-330. `mouth_key` is `mouth_of` again while the mouth is live, and NULL otherwise: the
   // unique key's machinery, telling the player nothing `mouth_of` and `status` do not.
   mica_blabber: ['mouth_key'],
+  // MICA-428. `live_device` is `device_id` again while the row is not erased, and NULL
+  // otherwise: the unique key's machinery, as `phone_key` is. (Hodlr's and the highscores'
+  // `live_citizen` is a citizenid column and withheld as one.)
+  mica_settings: ['live_device'],
+  mica_blocklist: ['live_device'],
+  mica_messages_participants: ['live_device'],
   // MICA-254. A Dark Chat channel's join code: a key to a room other people speak in, which an
   // export copied out of the game would hand to whoever reads the file. The owner reads it in
   // the app. `alias_key` is the alias again while the member is live (`live_citizen`, its twin,
@@ -212,7 +218,7 @@ export const EXPORT_EXCLUDED: ReadonlySet<string> = new Set([AUDIT_LOG_TABLE]);
  *   Deleting it would release the evidence hold on the content it names, which is the one
  *   thing the hold exists to stop. A resolved report is the player's own row and goes. The
  *   predicate is retention's `OPEN_REPORT` (`lib/contentRetention.ts`) over this table's own
- *   row, spelled out because a `DELETE` cannot read its own table through a subquery.
+ *   row, spelled out because an `UPDATE` cannot read its own table through a subquery.
  * - `mica_invoices`, the open ones: a bill somebody else issued to the player and they have
  *   not paid. Deleting it would be walking away from the debt. A paid, declined or expired
  *   invoice is the player's history and goes.
@@ -243,34 +249,6 @@ export const SELF_SERVICE_EXCEPT: readonly PurgeException[] = [
   { table: 'mica_phone_numbers' },
   { table: 'mica_battery' },
   { table: 'mica_lockscreen' }
-];
-
-/**
- * Tables with no owner column whose rows are part of the parent row they hang off, and go with
- * it when the cascade guard lets the parent go (`CascadeOptions.dependents`). Every other child
- * table keeps its parent while it has a row; `privacy.test.ts` fails on a child table that is
- * in neither set, so a new one is decided here rather than inherited.
- *
- * - `mica_blabber_tags`: a post's own hashtags.
- * - `mica_blabber_ears`: a like of the post. Another player's like of a post that is gone.
- * - `mica_account_follows`: either side of a follow of the account, which means nothing once
- *   the account is gone.
- * - `mica_account_blocks`: either side of a block. Another player's block of this account
- *   protects them from an account that no longer exists; a new account is a new id either way.
- * - `mica_account_reactions`: the account's own reactions, keyed by account rather than owner.
- * - `mica_spark_swipes`: either side of a like or pass on a Spark profile (MICA-255). Another
- *   player's swipe on a profile that is gone; keeping the profile for it would keep it in decks.
- * - `mica_spark_matches`: either side of a match, which ends with the profile. Its thread is
- *   deleted by Spark's own hook before the purge (`onBeforeSelfServiceDelete`).
- */
-export const CASCADE_DEPENDENTS: readonly string[] = [
-  'mica_blabber_tags',
-  'mica_blabber_ears',
-  'mica_account_follows',
-  'mica_account_blocks',
-  'mica_account_reactions',
-  'mica_spark_swipes',
-  'mica_spark_matches'
 ];
 
 interface ColumnSpec {
@@ -325,6 +303,15 @@ export interface ExportPlan {
    * dropped from the row afterwards, so opening changes nothing else about the export.
    */
   context: string[];
+  /**
+   * The table has a status, so the export leaves out what an erase hid (MICA-428): erased rows
+   * are kept for staff and shown to no player, their owner included, here as everywhere.
+   *
+   * **Only `erased`.** An `expired` row is still stored and still the player's own — a window
+   * hid it from the app, nobody asked for it to be gone — so it stays in their export, as a
+   * `deleted` or `moderated` one always has.
+   */
+  hidesErased: boolean;
 }
 
 /**
@@ -352,7 +339,8 @@ export const planFor = ({ table, column }: OwnedTable): ExportPlan | null => {
     withheld: [],
     ordered: columns.some(({ name }) => name === 'id'),
     sealed: [],
-    context: []
+    context: [],
+    hidesErased: columns.some(({ name }) => name === 'status')
   };
   for (const { name, type, citizenId } of columns) {
     if (name === column) continue;
@@ -420,7 +408,9 @@ export const exportSql = (plan: ExportPlan, filter: string | null = null): strin
   ];
   return (
     `SELECT ${select.length > 0 ? select.join(', ') : '1 AS `present`'} FROM ${ident(plan.table)} ` +
-    `WHERE ${ident(plan.owner)} = ?${filter ? ` AND (${filter})` : ''}` +
+    `WHERE ${ident(plan.owner)} = ?` +
+    `${plan.hidesErased ? " AND `status` <> 'erased'" : ''}` +
+    `${filter ? ` AND (${filter})` : ''}` +
     `${plan.ordered ? ' ORDER BY `id`' : ''} LIMIT ?`
   );
 };
@@ -545,10 +535,7 @@ export const selfServicePurge = async (citizenid: string) => {
       throw error;
     }
   }
-  return await purgeOwnedRows(citizenid, {
-    except: SELF_SERVICE_EXCEPT,
-    cascade: { dependents: CASCADE_DEPENDENTS }
-  });
+  return await purgeOwnedRows(citizenid, { except: SELF_SERVICE_EXCEPT });
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -647,7 +634,8 @@ app.registerEvent('delete', async (_source, _cbId, data, citizenid) => {
 
   const result: PrivacyDeleteResult = {
     complete: purged.failures.length === 0,
-    removed: purged.removed,
+    // `removed` on the wire: what is gone from the player's phone. Kept, erased (MICA-428).
+    removed: purged.erased,
     kept: purged.kept,
     failed: purged.failures.map(({ table }) => categoryOf(table))
   };

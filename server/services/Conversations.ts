@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { ERASED } from '../lib/statuses';
 import { PlayerFacingError } from '../lib/errors';
 import {
   ConversationRepository,
@@ -27,6 +28,7 @@ import { phoneForCitizen, deviceForRequest } from '../lib/deviceIdentity';
 import { readPhoneIdByNumber } from '../lib/phoneNumbers';
 import { onDeviceHandover } from './Devices';
 import { onBeforeSelfServiceDelete } from './Privacy';
+import { registerSharedRows } from '../lib/orphanSweep';
 
 // Re-exported: the constant moved beside the line helpers in the repository (MICA-275).
 export { PARTICIPANT_KEY_MAX_LENGTH };
@@ -241,10 +243,28 @@ export const conversations = defineService<ConversationRow, typeof conversations
          * because a child table has no repository to refuse a NULL through.
          */
         device_id: { type: 'string', length: 32 },
+        /**
+         * The phone, while the membership is not `erased` (MICA-428 review). What the
+         * one-row-per-phone key is over, so a dead character's erased membership — which keeps
+         * naming its real member when the phone changes hands (`transferParticipants`) — never
+         * refuses the phone's next holder the same thread. Before MICA-428 the purge deleted
+         * that row, which freed the slot.
+         *
+         * A `moderated` membership still holds it, on purpose: freed, the line thread's rejoin
+         * (`ensureLineParticipant`) would insert past a takedown. A `removed` one moves with the
+         * phone, so it is never another citizen's. Restated, frozen, by
+         * `0015_hidden_rows_are_kept`.
+         */
+        live_device: {
+          type: 'string',
+          length: 32,
+          generatedAs: "CASE WHEN `status` <> 'erased' THEN `device_id` ELSE NULL END"
+        },
         role: { type: 'string', length: 20, notNull: true, default: 'member' },
         status: {
           type: 'enum',
-          values: ['active', 'left', 'removed', 'moderated'],
+          // `erased` (MICA-428): a purge hides a gone owner's memberships, never deletes them.
+          values: ['active', 'left', 'removed', 'moderated', ERASED],
           notNull: true,
           default: 'active'
         },
@@ -271,6 +291,11 @@ export const conversations = defineService<ConversationRow, typeof conversations
          * because one person's two phones are two members: a thread between my burner and
          * Bob and a thread between my main phone and Bob are two threads.
          *
+         * Over `live_device` since MICA-428, as `conversation_live_device`: an erased
+         * membership, which the handover leaves with its real member, holds no slot, so the
+         * phone's next holder can open the same thread. `0015_hidden_rows_are_kept` swaps it
+         * for `conversation_device_unique`, the name 0008 gave it.
+         *
          * It replaces `conversation_participant_unique` on `(conversation_id, citizenid)`,
          * which `0002_phone_data_follows_the_phone` drops. The name had to change:
          * `SchemaMigrator` compares live indexes **by name only** (`server/lib/migrate.ts`),
@@ -279,8 +304,8 @@ export const conversations = defineService<ConversationRow, typeof conversations
          * ones with nothing reporting it.
          */
         {
-          name: 'conversation_device_unique',
-          columns: ['conversation_id', 'device_id'],
+          name: 'conversation_live_device',
+          columns: ['conversation_id', 'live_device'],
           unique: true
         },
         { name: 'device_id', columns: ['device_id'] },
@@ -861,8 +886,8 @@ onDeviceHandover('conversations', (deviceId, citizenid) =>
  * A player's own delete is about to take them out of every thread: unpair each 1:1 first
  * (MICA-342).
  *
- * The purge removes the player's membership rows. A thread another player is still in stays,
- * because the cascade guard keeps it for that player's membership and texts. It used to stay
+ * The erase hides the player's membership rows and marks them left (MICA-428). A thread another
+ * player is still in stays live for them (`registerSharedRows`). It used to stay
  * `active` with the pair's key, and `findOneToOne` no longer matched it, so a new thread between
  * the two was a duplicate key and `create` told either of them only that something went wrong.
  * Unpaired, the other player keeps the thread and every text left in it, still readable, and
@@ -876,4 +901,17 @@ onDeviceHandover('conversations', (deviceId, citizenid) =>
  */
 onBeforeSelfServiceDelete('conversations', async (citizenid) => {
   await conversationRepo.releasePairsOf(citizenid, await frameworkNumberOf(citizenid));
+});
+
+/**
+ * A thread the erased player started stays live while anyone else is still in it (MICA-428):
+ * it is where the others read their own texts. The player's own membership and texts are
+ * erased with the rest of their rows.
+ */
+registerSharedRows('mica_messages_conversations', {
+  members: 'mica_messages_participants',
+  column: 'conversation_id',
+  owner: 'citizenid',
+  leftAt: 'left_at',
+  kicked: 'removed'
 });

@@ -124,8 +124,7 @@ export const NOMINAL_HOSTED_BYTES = 320 * 1024;
  * configured now and every one micaOS recorded using before (MICA-292's ledger), sorted so
  * the statement text is stable. Empty when there has never been a host.
  *
- * A former host counts, the same way `releaseHostedImages` treats it: an owner who moves
- * hosts, or turns uploads off, still has every photo already on the old one in someone's
+ * A former host counts: an owner who moves hosts, or turns uploads off, still has every photo already on the old one in someone's
  * library. A URL on any other host is a hotlink — `AddMedia` and the importer write those —
  * and costs nothing, as it always has: it is not on the owner's storage.
  *

@@ -47,6 +47,46 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply`: nothing deletes a row any more (MICA-428).** Every
+place that used to remove a row now hides it and keeps it stored as evidence:
+
+- **Retention** (`mica_message_retention`, `mica_dm_retention`,
+  `mica_media_retention`, `mica_notification_retention`, the Dark Chat sweep)
+  moves an old row to a new `expired` status.
+- **A character's deletion, the orphan sweep, a player's privacy delete and
+  `micaseed clear`** move rows to a new `erased` status, hidden from everyone,
+  the owner included.
+- **A moderator's takedown is never moved**, and neither is a phone's own device
+  rows, so the item keeps working for its next holder. A shared thread or Dark
+  Chat channel stays live while another member is still in it.
+- **`micamedia prune`** expires and erases; it deletes nothing.
+
+So the database only grows. Retention frees no disk, and nothing shrinks the
+tables; plan storage with that in mind.
+
+Migration `0015_hidden_rows_are_kept` appends `expired` and `erased` to the
+`status` columns in place, without rewriting a row. It also rebuilds the keys
+that allow one live row per player, so that a hidden row no longer holds the
+slot:
+
+- `mica_blabber`'s `account_mouth_key` and `mica_spark`'s `live_citizen` now
+  free their slot on `deleted`, `expired` or `erased`.
+- `mica_hodlr` gains a `live_citizen` column and key in place of
+  `citizenid_unique`.
+- `mica_highscores` gains `live_citizen` and `live_citizen_app` in place of
+  `citizenid_app`.
+- `mica_settings` gains `live_device` and `live_device_app_key` in place of
+  `device_app_key`.
+- `mica_blocklist` gains `live_device` and `live_device_number` in place of
+  `device_number_unique`.
+- `mica_messages_participants` gains `live_device` and
+  `conversation_live_device` in place of `conversation_device_unique`, so a
+  phone's next holder can join a group its erased former owner was in.
+
+**`mica_media_delete_url` is retired.** No hosted photo is deleted from its
+image host any more. The convar is ignored, and a server that still sets it gets
+one warning at start; remove the line.
+
 **Run `micaschema apply`, then `micacrypt backfill --apply`, to encrypt contact
 numbers, Dark Chat, mail headers, thread names, places and invoices
 (MICA-432).** With a content key set, these are now sealed as well:

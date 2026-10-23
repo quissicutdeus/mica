@@ -13,7 +13,6 @@ import {
   withSink,
   type HttpSink,
   type Responder,
-  type SinkReply,
   type SinkRequest
 } from '../lib/httpSink';
 import { assert, expectOk, harnessKeys, runCommand, seedCitizen, unique } from '../lib/mica';
@@ -29,8 +28,10 @@ import { schemaCreated } from './qbx';
  * (`lib/httpSink.ts`, MICA-304) and checked request by request.
  *
  * All three of micaOS's outbound callers are here. The image host (MICA-243, MICA-292) is the one
- * a server reaches with no player connected: `AddMedia` uploads, and the purge, the media-only
- * purge and the orphan sweep release. The other two answer only a player's net event in play —
+ * a server reaches with no player connected: `AddMedia` uploads, and nothing else — the purge,
+ * the media-only purge and the orphan sweep, which once released files, keep them since
+ * MICA-428, the retired delete URL set or not. The other two answer only a player's net event in
+ * play —
  * the Discord webhook (MICA-242) mirrors audit entries a player's action writes, and the add-on
  * catalog relay (MICA-237) answers `store:catalog` — so they are driven here through
  * `micahttp` (MICA-322), the console command that sends one through the same request and
@@ -79,28 +80,27 @@ interface ImageHost {
   secret: string;
   /** How the next uploads are answered; null for the default, a fresh file name each. */
   onUpload(reply: Responder | null): void;
-  /** How a delete for one file name is answered. 204 by default. */
-  onDelete(reply: (name: string) => SinkReply): void;
 }
 
 const fileName = (): string => `itx-${randomBytes(6).toString('hex')}.png`;
 
 /**
  * A sink standing in for an owner's image host, and micaOS pointed at it: uploads to
- * `UPLOAD_PATH` with `KEY_HEADER`, deletes at `DELETE_PREFIX{name}`. The field name, the reply
- * path and the image host are left unset, so what is proven is micaOS's defaults for them —
- * `file`, `url`, and the upload URL's own host.
+ * `UPLOAD_PATH` with `KEY_HEADER`, and the retired `mica_media_delete_url` at
+ * `DELETE_PREFIX{name}`, which nothing may request since MICA-428. The field name, the reply path
+ * and the image host are left unset, so what is proven is micaOS's defaults for them — `file`,
+ * `url`, and the upload URL's own host.
  */
 const withImageHost = (run: (host: ImageHost) => Promise<void>): Promise<void> =>
   withSink(async (sink) => {
     const secret = randomBytes(16).toString('hex');
     const issue: Responder = () => ({ status: 200, json: { url: `${FILES}${fileName()}` } });
     let upload = issue;
-    let remove: (name: string) => SinkReply = () => ({ status: 204 });
     sink.respond((request) => {
       if (request.method === 'POST' && request.path === UPLOAD_PATH) return upload(request);
+      // Answered, so a delete that did go out is recorded rather than refused unseen.
       if (request.method === 'DELETE' && request.path.startsWith(DELETE_PREFIX)) {
-        return remove(decodeURIComponent(request.path.slice(DELETE_PREFIX.length)));
+        return { status: 204 };
       }
       return { status: 404 };
     });
@@ -118,9 +118,6 @@ const withImageHost = (run: (host: ImageHost) => Promise<void>): Promise<void> =
         secret,
         onUpload: (reply) => {
           upload = reply ?? issue;
-        },
-        onDelete: (reply) => {
-          remove = reply;
         }
       });
     } finally {
@@ -201,8 +198,11 @@ const mediaRow = async (id: number): Promise<Record<string, unknown> | null> => 
   };
 };
 
-const exists = async (id: number): Promise<boolean> =>
-  (await db.count('SELECT COUNT(*) FROM `mica_media` WHERE `id` = ?', [id])) === 1;
+/** A media row's status, or null when the row is gone — which nothing may make it (MICA-428). */
+const statusOf = async (id: number): Promise<string | null> => {
+  const row = await db.row('SELECT `status` FROM `mica_media` WHERE `id` = ?', [id]);
+  return row ? String(row.status) : null;
+};
 
 /** The hosted file a row names, by its last path segment, which is what a delete asks for. */
 const hostedName = async (id: number): Promise<string> => {
@@ -435,12 +435,12 @@ export const httpScenarios: Scenario[] = [
       })
   },
   {
-    // MICA-292, MICA-300: the character-deleted purge releases the deleted character's hosted
-    // photos — and only those no other row still names. A proximity drop's copy on another
-    // player's row keeps its file.
-    id: 'http-character-deleted-asks-the-host-to-delete-its-photos',
+    // MICA-428: the character-deleted purge erases the deleted character's hosted photos and
+    // asks the host for nothing, the retired delete URL set: every file is kept with its row. A
+    // proximity drop's copy on another player's row stays live.
+    id: 'http-character-deleted-keeps-hosted-photos',
     mode: 'standalone',
-    tickets: ['MICA-292', 'MICA-300', 'MICA-243', 'MICA-304'],
+    tickets: ['MICA-428', 'MICA-292', 'MICA-300', 'MICA-304'],
     timeoutMs: 45_000,
     run: (signal) =>
       withImageHost(async (host) => {
@@ -449,7 +449,6 @@ export const httpScenarios: Scenario[] = [
         const keeper = unique('http_keeper');
         const lone = (await expectOk<{ id: number }>('AddMedia', gone.citizenid, PHOTO)).id;
         const shared = (await expectOk<{ id: number }>('AddMedia', gone.citizenid, PHOTO)).id;
-        const loneName = await hostedName(lone);
         const sharedName = await hostedName(shared);
         const copy = await db.insert(
           "INSERT INTO `mica_media` (`citizenid`, `kind`, `url`) VALUES (?, 'photo', ?)",
@@ -464,43 +463,27 @@ export const httpScenarios: Scenario[] = [
           emit('mica:server:shell:characterDeleted', gone.citizenid);
           const said = await tap.waitFor(
             mark,
-            new RegExp(`^\\[mica\\] (purged \\d+ row\\(s\\)|purge for) .*${token}`),
+            new RegExp(
+              `^\\[mica\\] (erased \\d+ row\\(s\\) for deleted character|purge for) .*${token}`
+            ),
             30_000,
             signal,
             "the purge's summary"
           );
-          assert(said.startsWith('[mica] purged'), said);
+          assert(said.startsWith('[mica] erased'), said);
 
           const received = host.sink.since(from);
-          const names = deletedNames(received);
           assert(
-            names.includes(loneName),
-            `the host was not asked to delete the deleted character's photo; it received ` +
-              `${describe(received)}; micaOS said: ${mediaSaid(tap, mark)}`
+            received.length === 0 && deletedNames(received).length === 0,
+            `the host was asked for something by a purge: ${describe(received)}; ` +
+              `micaOS said: ${mediaSaid(tap, mark)}`
           );
-          assert(
-            !names.includes(sharedName),
-            "the host was asked to delete a photo another player's row still names"
-          );
-          assert(
-            names.every((name) => name === loneName),
-            `the host received deletes it did not expect: ${names.join(', ')}`
-          );
-          assert(
-            received.every((request) => request.headers[KEY_HEADER.toLowerCase()] === host.secret),
-            `a delete did not carry ${KEY_HEADER} with the configured value`
-          );
-          assert(
-            tap.since(mark).includes('[micamedia] deleted 1 hosted photo(s) from the image host.'),
-            `micaOS did not report one hosted photo deleted; it said: ${mediaSaid(tap, mark)}`
-          );
-
-          assert(!(await exists(lone)), "the deleted character's photo row survived");
-          assert(
-            !(await exists(shared)),
-            "the deleted character's copy of the shared photo survived"
-          );
-          assert(await exists(copy), "the other player's copy of the photo was purged");
+          for (const id of [lone, shared]) {
+            const status = await statusOf(id);
+            assert(status === 'erased', `the deleted character's photo ${id} is ${status}`);
+          }
+          const kept = await statusOf(copy);
+          assert(kept === 'active', `the other player's copy of the photo is ${kept}`);
           assertNoLeak(tap, mark, host.secret);
         } finally {
           await db.exec('DELETE FROM `mica_media` WHERE `id` = ?', [copy]);
@@ -508,21 +491,18 @@ export const httpScenarios: Scenario[] = [
       })
   },
   {
-    // MICA-292: a host that refuses the delete, or hangs up on it, never fails the purge that
-    // asked. The rows are gone, and the console says the files were left.
-    id: 'http-host-refusing-deletes-still-purges-the-rows',
+    // MICA-428: the older media-only hook erases a character's photos the same way, asks the
+    // host for nothing, and says how many rows it erased.
+    id: 'http-media-purge-keeps-hosted-photos',
     mode: 'standalone',
-    tickets: ['MICA-292', 'MICA-243', 'MICA-304'],
+    tickets: ['MICA-428', 'MICA-292', 'MICA-304'],
     timeoutMs: 45_000,
     run: (signal) =>
       withImageHost(async (host) => {
         const tap = requireTap();
-        const who = await seedCitizen('http_refused_delete');
-        const refused = (await expectOk<{ id: number }>('AddMedia', who.citizenid, PHOTO)).id;
-        const dropped = (await expectOk<{ id: number }>('AddMedia', who.citizenid, PHOTO)).id;
-        const refusedName = await hostedName(refused);
-        const droppedName = await hostedName(dropped);
-        host.onDelete((name) => (name === droppedName ? { drop: true } : { status: 500 }));
+        const who = await seedCitizen('http_media_purge');
+        const first = (await expectOk<{ id: number }>('AddMedia', who.citizenid, PHOTO)).id;
+        const second = (await expectOk<{ id: number }>('AddMedia', who.citizenid, PHOTO)).id;
 
         // The line names the character by its log token (MICA-433), not its citizenid.
         const token = await serverWho(who.citizenid);
@@ -532,37 +512,28 @@ export const httpScenarios: Scenario[] = [
         const said = await tap.waitFor(
           mark,
           new RegExp(
-            `^\\[micamedia\\] (purged \\d+ row\\(s\\) for deleted character ${token}\\.` +
+            `^\\[micamedia\\] (erased \\d+ row\\(s\\) for deleted character ${token}\\.` +
               '|purge for a deleted character failed)'
           ),
           30_000,
           signal,
           "the media purge's summary"
         );
-        assert(/purged 2 row\(s\)/.test(said), said);
+        assert(/erased 2 row\(s\)/.test(said), said);
 
-        // The twin: both deletes reached the host, so the refusals were the host's to make.
-        const names = deletedNames(host.sink.since(from));
+        const received = host.sink.since(from);
         assert(
-          names.includes(refusedName) && names.includes(droppedName),
-          `the host was not asked to delete both photos; it was asked for: ` +
-            `${names.join(', ') || 'nothing'}; micaOS said: ${mediaSaid(tap, mark)}`
+          received.length === 0,
+          `the host was asked for something by the media purge: ${describe(received)}`
         );
         assert(
-          tap
-            .since(mark)
-            .includes(
-              '[micamedia] 2 hosted photo(s) could not be deleted from the image host and ' +
-                'are left there; their rows are already gone.'
-            ),
-          `micaOS did not report the two files left on the host; it said: ${mediaSaid(tap, mark)}`
+          !tap.since(mark).some((line) => /hosted photo\(s\)/.test(line)),
+          `micaOS still reports on hosted files: ${mediaSaid(tap, mark)}`
         );
-        assert(
-          !tap.since(mark).some((line) => line.startsWith('[micamedia] deleted ')),
-          'micaOS reported a hosted photo deleted although the host refused every delete'
-        );
-        assert(!(await exists(refused)), 'a photo row survived a purge whose delete was refused');
-        assert(!(await exists(dropped)), 'a photo row survived a purge whose delete hung up');
+        for (const id of [first, second]) {
+          const status = await statusOf(id);
+          assert(status === 'erased', `photo ${id} is ${status}, not erased and kept`);
+        }
         assertNoLeak(tap, mark, host.secret);
       })
   },
@@ -848,24 +819,23 @@ export const httpScenarios: Scenario[] = [
       })
   },
   {
-    // MICA-292, MICA-300: the orphan sweep, which on a framework is the cleanup after a
-    // character the framework deleted, releases the orphan's hosted photos — again only those
-    // no remaining row names. Standalone has no owner table, so the sweep runs only here.
-    id: 'qbx-orphan-sweep-asks-the-host-to-delete-orphaned-photos',
+    // MICA-428: the orphan sweep, which on a framework is the cleanup after a character the
+    // framework deleted, erases the orphan's hosted photos and asks the host for nothing.
+    // Standalone has no owner table, so the sweep runs only here.
+    id: 'qbx-orphan-sweep-keeps-hosted-photos',
     mode: 'qbx',
-    tickets: ['MICA-292', 'MICA-300', 'MICA-304'],
+    tickets: ['MICA-428', 'MICA-292', 'MICA-300', 'MICA-304'],
     timeoutMs: 60_000,
     run: async (signal) => {
       await schemaCreated(signal);
       // Plant no orphan while either of micaOS's own start-up sweeps is still going: it could
-      // take them first, and the deletes would land before this scenario's mark; and while the
-      // media one runs, `micamedia prune` refuses (MICA-332). See bootSweep.ts.
+      // take them first, before this scenario's mark; and while the media one runs,
+      // `micamedia prune` refuses (MICA-332). See bootSweep.ts.
       await bootOrphanSweepEnded(requireTap(), 10_000, signal);
       await bootMediaOrphanSweepEnded(requireTap(), 10_000, signal);
       await withImageHost(async (host) => {
         const tap = requireTap();
         const orphan = unique('http_orphan');
-        const loneName = fileName();
         const sharedName = fileName();
         const row = (citizenid: string, name: string): Promise<number> =>
           db.insert(
@@ -875,7 +845,7 @@ export const httpScenarios: Scenario[] = [
         // The seeded character's row is also what lets the sweep run at all: it samples owners
         // from mica_media and refuses when not one of them is in `players`.
         const kept = await row(QBX_SEED.citizenid, sharedName);
-        const lone = await row(orphan, loneName);
+        const lone = await row(orphan, fileName());
         const shared = await row(orphan, sharedName);
 
         try {
@@ -885,30 +855,19 @@ export const httpScenarios: Scenario[] = [
           const done = await runMediaPrune(tap, 45_000, signal);
           assert(done.startsWith('[micamedia] prune finished: '), done);
 
-          assert(
-            !(await exists(lone)) && !(await exists(shared)),
-            `the orphan's rows survived the sweep; micaOS said: ${mediaSaid(tap, mark)}`
-          );
-          assert(await exists(kept), "the seeded character's photo row was swept");
-
+          for (const id of [lone, shared]) {
+            const status = await statusOf(id);
+            assert(
+              status === 'erased',
+              `the orphan's photo ${id} is ${status}; micaOS said: ${mediaSaid(tap, mark)}`
+            );
+          }
+          const live = await statusOf(kept);
+          assert(live === 'active', `the seeded character's photo is ${live}`);
           const received = host.sink.since(from);
-          const names = deletedNames(received);
           assert(
-            names.includes(loneName),
-            `the host was not asked to delete the orphan's photo; it received ` +
-              `${describe(received)}; micaOS said: ${mediaSaid(tap, mark)}`
-          );
-          assert(
-            !names.includes(sharedName),
-            "the host was asked to delete a photo the seeded character's row still names"
-          );
-          assert(
-            received.every((request) => request.headers[KEY_HEADER.toLowerCase()] === host.secret),
-            `a delete did not carry ${KEY_HEADER} with the configured value`
-          );
-          assert(
-            tap.since(mark).includes('[micamedia] deleted 1 hosted photo(s) from the image host.'),
-            `micaOS did not report one hosted photo deleted; it said: ${mediaSaid(tap, mark)}`
+            received.length === 0,
+            `the host was asked for something by the sweep: ${describe(received)}`
           );
           assertNoLeak(tap, mark, host.secret);
         } finally {

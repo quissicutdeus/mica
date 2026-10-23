@@ -133,7 +133,7 @@ const holdTransfer = (table: string) => {
 };
 
 const TRANSFER =
-  /^UPDATE `(mica_\w+)` SET `citizenid` = \?.* WHERE `device_id` = \? AND `citizenid` <> \?$/;
+  /^UPDATE `(mica_\w+)` SET `citizenid` = \?.* WHERE `device_id` = \? AND `citizenid` <> \?( AND `status` NOT IN \('erased', 'expired', 'moderated'\))?$/;
 
 /** The columns and values of an INSERT, as a record. */
 const inserted = (sql: string, values: unknown[]): Record<string, unknown> => {

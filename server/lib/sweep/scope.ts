@@ -78,8 +78,8 @@ export const citizenScope = (citizenid: string, purpose: string): OwnerScope => 
  * makes everything outside the fetched page an orphan. `NOT EXISTS` against the live table
  * has no such failure mode. This is the "optimisation" to refuse.
  *
- * It is in the `DELETE` as well as the plan, so a row whose owner reappeared between the two
- * is not deleted. The owner table is aliased `ow` because the plan's own statements already
+ * It is in the erase's own `UPDATE`, so a row whose owner reappears while the sweep runs is not
+ * erased. The owner table is aliased `ow` because the plan's own statements already
  * use `p` for a parent row.
  */
 export const orphanScope = (

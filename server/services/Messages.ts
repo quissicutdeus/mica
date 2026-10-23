@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { EXPIRED } from '../lib/statuses';
 import { PlayerFacingError } from '../lib/errors';
 import {
   MessageRepository,
@@ -77,7 +78,8 @@ export const messages = defineService<MessageRow, typeof messagesContract>({
       liveWhileNull: 'left_at'
     }
   },
-  statuses: ['active', 'deleted', 'moderated'],
+  // `expired`: the retention window passed (MICA-428), never a player's own delete.
+  statuses: ['active', 'deleted', 'moderated', EXPIRED],
   /**
    * A message's body is bound to its sender's citizenid and its conversation (MICA-165). On a
    * text from a line, `citizenid` is the recipient's — still the row's own, and never moved.
@@ -197,7 +199,7 @@ export const messages = defineService<MessageRow, typeof messagesContract>({
       ],
       uniqueAfterDelete: {
         optOut:
-          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'Hard-deleted: removing a row is a hard delete, so a removed row frees the key, ' +
           'and the key only ever refuses a duplicate of a live row, which is what makes ' +
           'the insert idempotent.'
       }
@@ -249,7 +251,7 @@ registerRetention({
     {
       // An open report on any message holds its whole conversation: a moderator reading a
       // report needs the thread around it, not one line. Read through a DISTINCT derived table
-      // because it reads this table, which the prune's DELETE targets (MySQL error 1093).
+      // because it reads this table, which the prune's UPDATE targets (MySQL error 1093).
       sql: (row) =>
         'EXISTS (SELECT 1 FROM (SELECT DISTINCT m.`conversation_id` AS `k` ' +
         'FROM `mica_reports` r JOIN `mica_messages` m ON m.`id` = r.`target_id` ' +
@@ -495,7 +497,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid, player) => {
  * than `requireOwnMessage`. Refused once the message is no longer `active`: reacting to a
  * message that has been unsent or moderated has nothing left to react to.
  *
- * **`unreact` needs neither.** The `DELETE` is scoped to the caller's own citizenid in the
+ * **`unreact` needs neither.** The delete is scoped to the caller's own citizenid in the
  * `WHERE`, the same as `Accounts.ts`'s `unreact` (§2.9) — a citizenid can only ever remove
  * its own reaction row, which is safe regardless of whether they are still a participant.
  * Taking back your own reaction stays possible even after leaving the thread or the message

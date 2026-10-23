@@ -75,13 +75,16 @@ vi.mock('../lib/Database', () => ({
         ) {
           return 0;
         }
-        // `conversation_device_unique` holds a left row too.
+        // `conversation_live_device` holds a left row too, but not an erased one (MICA-428).
         if (
           db.participants.some(
-            (p) => p.conversation_id === conversation_id && p.device_id === device_id
+            (p) =>
+              p.conversation_id === conversation_id &&
+              p.device_id === device_id &&
+              p.status !== 'erased'
           )
         ) {
-          throw new Error("Duplicate entry for key 'conversation_device_unique'");
+          throw new Error("Duplicate entry for key 'conversation_live_device'");
         }
         db.participants.push({
           conversation_id,
@@ -684,7 +687,7 @@ const seed = (
  * A player who left a line thread before MICA-275 made leaving delete it: the thread is still
  * active, so the line found it again, but the player had no membership and every send into it
  * was refused. Opening it restores the phone's own row rather than inserting a second one,
- * which `conversation_device_unique` would refuse.
+ * which `conversation_live_device` would refuse.
  */
 describe('a line thread the player left before leaving deleted it', () => {
   const stranded = () =>
@@ -728,8 +731,30 @@ describe('a line thread the player left before leaving deleted it', () => {
 
     await expect(
       sendFromLine('CIT_A', { name: 'Downtown Cab', number: LINE }, 'Hi', [])
-    ).rejects.toThrow(/conversation_device_unique/);
+    ).rejects.toThrow(/conversation_live_device/);
     expect(row.status).toBe('moderated');
+  });
+
+  /**
+   * MICA-428 review: a dead character's erased membership on the phone, which the handover
+   * left naming them. It holds no seat, so the phone's next holder joins beside it; it is never
+   * reopened and never re-pointed at them.
+   */
+  it("seats the phone's next holder beside a dead character's erased membership", async () => {
+    register();
+    seed({ id: 502, participant_a: PHONE, participant_b: LINE_KEY }, [
+      { citizenid: 'CIT_GONE', device_id: PHONE }
+    ]);
+    const erased = db.participants[0];
+    Object.assign(erased, { status: 'erased', left_at: 'earlier' });
+
+    const sent = await sendFromLine('CIT_A', { name: 'Downtown Cab', number: LINE }, 'Hi', []);
+
+    expect(sent.conversationId).toBe(502);
+    expect(erased).toMatchObject({ citizenid: 'CIT_GONE', status: 'erased', left_at: 'earlier' });
+    expect(db.participants.filter((p) => p.conversation_id === 502 && !p.left_at)).toEqual([
+      expect.objectContaining({ citizenid: 'CIT_A', device_id: PHONE, status: 'active' })
+    ]);
   });
 });
 
