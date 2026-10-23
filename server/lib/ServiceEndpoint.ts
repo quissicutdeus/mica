@@ -14,7 +14,7 @@ import { type ActionInput, type ContractAction, type ServiceContract } from '@mi
 import { checkReply, withoutOwnerKeys } from './replyShape';
 import { checkPayload, SchemaError, type Schema } from '@mica/shared/schema';
 import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
-import { deviceForRequest, requireDeviceInHand } from './deviceIdentity';
+import { deviceForRequest, requireDeviceInHandRead } from './deviceIdentity';
 import { appDisabledError, disabledAppFor } from './ownerConfig';
 import { traceOf } from './sqlErrors';
 
@@ -164,9 +164,10 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
    * alone on purpose: the shell's boot calls and every app's badge preload are requests too,
    * and refusing them would change what a player without a phone sees.
    *
-   * Counted through the same `requireDeviceInHand` a tablet request is held to, so it is open
-   * exactly where that is (no item gate, standalone, an inventory that cannot count) and a
-   * refusal is the `server.phone.notHeld` toast. A request naming another device is already
+   * Checked through the same `requireDeviceInHandRead` a tablet request is held to, so it is
+   * open exactly where that is (no item gate, standalone, an inventory that cannot count) and a
+   * refusal is the `server.phone.notHeld` toast. Somebody else's phone is not a phone held
+   * (MICA-436): its row is read before the action runs. A request naming another device is already
    * held to that device. A `deviceOwned` action needs no flag: its resolver refuses the same
    * player. Named per action rather than per service, and on the endpoint rather than the
    * declaration, so the service that owns the action says so beside it.
@@ -732,10 +733,28 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       /**
        * A request that is about to resolve its device answers the in-hand check from that
        * resolve's slot read (MICA-362), after validation below; counting the item here as well
-       * would read the inventory twice for one question. Every other request is counted now.
+       * would read the inventory twice for one question. Every other request is checked now,
+       * reading the row of any slot this process has not seen (MICA-436 review), so a holder of
+       * nothing but somebody else's phone is refused on the first request. The slots are read
+       * before that read yields, so the answer is about the character the request came from.
+       *
+       * That read can yield to the host, and a character switch keeps the source
+       * (`forgetOnPlayerLoaded`), so the source is asked again after it, as it is below after a
+       * schema that awaited: a request whose source is no longer the character it was sent as
+       * is refused whole — generic answer, no log line — rather than run for either character.
        */
       const resolves = Boolean(this.options.deviceOwned) || this.deviceResolved.has(action);
-      if (mustHold && !resolves) requireDeviceInHand(player, device);
+      if (mustHold && !resolves) {
+        await requireDeviceInHandRead(player, device);
+        const now = lookup(src);
+        if (!now || now.citizenid !== player.citizenid) {
+          reply({
+            error: GENERIC_ERROR_MESSAGE,
+            key: GENERIC_ERROR_KEY
+          });
+          return;
+        }
+      }
 
       /**
        * Validation slots in **after** authentication and before the handler

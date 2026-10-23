@@ -40,7 +40,7 @@ import '../services/GlimpseComments';
 import '../services/Marketplace';
 import '../services/Spark';
 import { REPORTABLE, recordOwnerDeletion } from '../lib/moderation';
-import { media } from '../services/Media';
+import '../services/Media';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 /**
@@ -185,22 +185,6 @@ beforeEach(() => {
       row.status = to;
       if (!move[2]) row.updated_at += 1;
       return true;
-    }
-    // A phone's handover (MICA-282), its status guard applied as MariaDB would (MICA-428).
-    const handover =
-      /^UPDATE `(\w+)` SET `citizenid` = \?, `updated_at` = `updated_at` WHERE `device_id` = \? AND `citizenid` <> \?(?: AND `status` NOT IN \(([^)]*)\))?$/.exec(
-        text
-      );
-    if (handover) {
-      const [holder, phone] = params as [string, string];
-      const moved = (targets.get(handover[1]) ?? []).filter(
-        (r) =>
-          r.device_id === phone &&
-          r.citizenid !== holder &&
-          !(handover[2] ?? '').includes(`'${r.status}'`)
-      );
-      for (const r of moved) r.citizenid = holder;
-      return moved.length;
     }
     throw new Error(`stand-in: unexpected update: ${text}`);
   });
@@ -664,29 +648,6 @@ describe('a takedown and a reopen leave the row as it was (MICA-426)', () => {
       'moderated'
     ]);
     expect(target('mica_blabber', 40)!.updated_at).toBe(1);
-  });
-});
-
-/**
- * MICA-428 review: the handover leaves a taken-down row naming the character who wrote it, so a
- * takedown reopened after the phone changed hands comes back under that author — not the
- * phone's new holder, who never wrote it. Right for evidence, and deliberate.
- */
-describe('a takedown reopened after its phone changed hands (MICA-428)', () => {
-  it('comes back under its real author, while the live row beside it moved', async () => {
-    row('mica_media', 60, 'active');
-    row('mica_media', 61, 'active');
-    for (const r of targets.get('mica_media')!)
-      Object.assign(r, { citizenid: 'CIT_A', device_id: 'PHONE_X' });
-    fileReport(1, 'mica_media', 60);
-    await moderate(1);
-
-    await media.repo.transferDeviceRows('PHONE_X', 'CIT_B');
-    await reopen(1);
-
-    expect(target('mica_media', 60)).toMatchObject({ status: 'active', citizenid: 'CIT_A' });
-    // The positive twin: the handover ran, and moved what the new holder may see.
-    expect(target('mica_media', 61)).toMatchObject({ status: 'active', citizenid: 'CIT_B' });
   });
 });
 

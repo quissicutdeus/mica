@@ -38,11 +38,22 @@ const { dbMock, handlers, pushes, deleteThreadSpy } = vi.hoisted(() => {
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/DiscordWebhook', () => ({ forwardReportFiled: vi.fn(), forwardAudit: vi.fn() }));
 
+/**
+ * Source 5 is whoever `bridge.current` names, for the one-request cases; source 6 is always
+ * CIT_B, so two requests in flight at once come from two connections, as they would in game.
+ * One source carries one character: the endpoint asks it again after an await and refuses a
+ * request whose source has become somebody else (MICA-436 review).
+ */
 const bridge = vi.hoisted(() => ({ current: 'CIT_A' }));
+const citizenOn = (src?: number): string => (src === 6 ? 'CIT_B' : bridge.current);
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
-    getPlayer: () => ({ citizenid: bridge.current, source: 5, setMeta: () => {} }),
-    getCitizenId: () => bridge.current,
+    getPlayer: (src?: number) => ({
+      citizenid: citizenOn(src),
+      source: src ?? 5,
+      setMeta: () => {}
+    }),
+    getCitizenId: (src?: number) => citizenOn(src),
     registerUsableItem: () => {}
   }
 }));
@@ -1029,9 +1040,11 @@ describe('swipe and match', () => {
     seed([ME, BEA]);
     const handler = handlers.get('mica:server:spark:swipe')!;
     (globalThis as any).emitNet = vi.fn();
+    // Two players, two connections: A on source 5, B on source 6.
     bridge.current = 'CIT_A';
+    (globalThis as any).source = 5;
     const a = handler('cb-a', { profile_id: 20, verdict: 'like' });
-    bridge.current = 'CIT_B';
+    (globalThis as any).source = 6;
     const b = handler('cb-b', { profile_id: 10, verdict: 'like' });
     await Promise.all([a, b]);
     expect(w.matches).toHaveLength(1);

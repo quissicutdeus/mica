@@ -86,7 +86,6 @@ import { conversations } from '../services/Conversations';
 import {
   conversationForReader,
   participantForReader,
-  type ConversationRepository,
   type ConversationRow,
   type ParticipantRow
 } from '../repositories/ConversationRepository';
@@ -704,7 +703,7 @@ describe('conversations:update — rename is the admin on the phone in hand (F15
     expect(String(sql)).toContain("p.role = 'admin' AND p.status = 'active' AND p.left_at IS NULL");
     expect(String(sql)).toContain('p.citizenid = ? AND p.device_id = ?');
     expect(String(sql)).toContain('c.seal_key = ?');
-    // Not the creator's row predicate the generic update wrote, which never moved on handover.
+    // Not the creator's row predicate the generic update wrote, which named no phone.
     expect(String(sql)).not.toMatch(/WHERE `id` = \? AND `citizenid` = \?/);
     // No key in this suite, so the name is stored as it is.
     expect(params).toEqual(['Crew', 1, 'k'.repeat(32), 'CIT_A', TEST_PHONE_ID]);
@@ -847,42 +846,5 @@ describe('a moderated picture leaves the thread, a deleted one stays', () => {
       /EXISTS \(SELECT 1 FROM mica_messages_attachments a\s+JOIN mica_media p ON p\.id = a\.photo_id AND p\.status NOT IN \('moderated', 'expired', 'erased'\)\s+WHERE a\.message_id = m\.id\)/
     );
     expect(admittedBy(sql).map((row) => row.status)).toEqual(['deleted']);
-  });
-});
-
-/**
- * MICA-428 review (Gregor): a phone's memberships move to its next holder, and the walk used to
- * move every one on the phone — a dead character's erased membership, an expired or a taken-down
- * one included — so evidence came to name somebody who was never in the thread. The statement is
- * applied to a membership in every status, as MariaDB would apply its `WHERE`.
- */
-describe('a handover moves only memberships the holder can see (MICA-428)', () => {
-  it('leaves an erased, expired or taken-down membership naming its real member', async () => {
-    const rows = ['active', 'left', 'removed', 'erased', 'expired', 'moderated'].map((status) => ({
-      device_id: 'PHONE_X',
-      citizenid: 'CIT_GONE',
-      status
-    }));
-    dbMock.update.mockImplementation(async (sql: string, params: unknown[] = []) => {
-      const [to, phone, other] = params as string[];
-      const excluded = /status NOT IN \(([^)]*)\)/.exec(String(sql))?.[1] ?? '';
-      for (const row of rows) {
-        if (row.device_id !== phone || row.citizenid === other) continue;
-        if (excluded.includes(`'${row.status}'`)) continue;
-        row.citizenid = to;
-      }
-      return true;
-    });
-
-    await (conversations.repo as ConversationRepository).transferParticipants('PHONE_X', 'CIT_NEW');
-
-    expect(rows.map((r) => `${r.status}:${r.citizenid}`)).toEqual([
-      'active:CIT_NEW',
-      'left:CIT_NEW',
-      'removed:CIT_NEW',
-      'erased:CIT_GONE',
-      'expired:CIT_GONE',
-      'moderated:CIT_GONE'
-    ]);
   });
 });

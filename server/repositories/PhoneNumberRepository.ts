@@ -11,9 +11,9 @@ import type { PhoneNumberRow } from '../lib/phoneNumbers';
  * `Repository.update` scopes every write by the citizenid in the `WHERE`, and that is the
  * right shape for a player editing their own row. Neither write below is that. Attaching a
  * legacy number to the phone its owner is using changes which *device* a row belongs to,
- * and moving a number to whoever is now holding that phone changes which *citizen* it
- * belongs to — the old owner's citizenid is the one thing the predicate could name, and the
- * whole point of the write is that it is no longer theirs.
+ * and putting a number back with its phone's owner changes which *citizen* it belongs to —
+ * the citizenid it carries is the one thing the predicate could name, and the whole point of
+ * the write is that it is no longer theirs.
  *
  * So both are **named methods on the repository built over `protected updateUnscoped`**,
  * which is exactly what §2.9 asks of a privileged write, rather than a service-level bypass.
@@ -37,11 +37,12 @@ export class PhoneNumberRepository extends SchemaRepository<PhoneNumberRow> {
   }
 
   /**
-   * The phone changed hands: the number on it now belongs to whoever is holding it.
+   * The number on a phone belongs to the phone's owner (MICA-436): put back a row recorded
+   * against anybody else, which a handover before MICA-436 left. `syncNumber` reaches it only
+   * for a phone its resolve answered to its owner, so it never hands a number to a thief.
    *
-   * This is the write that makes "steal a phone, steal the number" true, and the reason the
-   * row keeps a `citizenid` at all after MICA-284 — `getPlayerByPhone`, `readCitizenIdByNumber`
-   * and every offline lookup resolve a number through it.
+   * The reason the row keeps a `citizenid` at all after MICA-284 — `getPlayerByPhone`,
+   * `readCitizenIdByNumber` and every offline lookup resolve a number through it.
    */
   async transferToHolder(rowId: number, citizenid: string): Promise<boolean> {
     return await this.updateUnscoped(rowId, { citizenid });

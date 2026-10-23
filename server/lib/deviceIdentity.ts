@@ -61,31 +61,44 @@ export type RequestDeviceResolver = (
 export type CitizenPhoneResolver = (citizenid: string) => Promise<string>;
 /** Throws a `PlayerFacingError` when the device is off or the player holds none of it. */
 export type DeviceInHandCheck = (player: FrameworkPlayer, device: DeviceId) => void;
+/** `DeviceInHandCheck`, reading what it has to first (MICA-436 review). Rejects the same way. */
+export type DeviceInHandRead = (player: FrameworkPlayer, device: DeviceId) => Promise<void>;
 
 let forRequest: RequestDeviceResolver | null = null;
 let forCitizen: CitizenPhoneResolver | null = null;
 let deviceInHand: DeviceInHandCheck | null = null;
+let deviceInHandRead: DeviceInHandRead | null = null;
 
 /** Called once, by `services/Devices.ts`, at import. */
 export const installDeviceResolvers = (resolvers: {
   forRequest: RequestDeviceResolver;
   forCitizen: CitizenPhoneResolver;
   deviceInHand: DeviceInHandCheck;
+  deviceInHandRead: DeviceInHandRead;
 }): void => {
   forRequest = resolvers.forRequest;
   forCitizen = resolvers.forCitizen;
   deviceInHand = resolvers.deviceInHand;
+  deviceInHandRead = resolvers.deviceInHandRead;
 };
 
-/** Test seam. Pass nothing to clear every slot. */
+/**
+ * Test seam. Pass nothing to clear every slot. A suite that installs only `deviceInHand` gets
+ * a `deviceInHandRead` that asks it, so a stub answers both questions the same way.
+ */
 export const __setDeviceResolvers = (resolvers?: {
   forRequest?: RequestDeviceResolver;
   forCitizen?: CitizenPhoneResolver;
   deviceInHand?: DeviceInHandCheck;
+  deviceInHandRead?: DeviceInHandRead;
 }): void => {
   forRequest = resolvers?.forRequest ?? null;
   forCitizen = resolvers?.forCitizen ?? null;
-  deviceInHand = resolvers?.deviceInHand ?? null;
+  const check = resolvers?.deviceInHand ?? null;
+  deviceInHand = check;
+  deviceInHandRead =
+    resolvers?.deviceInHandRead ??
+    (check ? async (player: FrameworkPlayer, device: DeviceId) => check(player, device) : null);
 };
 
 const notInstalled = (what: string): Error =>
@@ -115,13 +128,30 @@ export const deviceForRequest = (
 };
 
 /**
- * Refuse a request from a device this server has off, or that the player holds none of
- * (MICA-264). `ServiceEndpoint` asks it for every request that names a device other than the
- * phone; an unfilled slot throws, so a tablet request with no resolver installed is refused.
+ * Refuse a player from a device this server has off, or that they hold none of their own of
+ * (MICA-264, MICA-436), **synchronously**: a slot carrying an id whose row this process has not
+ * read yet counts as held, because nothing synchronous can read it. For a caller that cannot
+ * yield — the call-answer path in `Phone.ts`, whose ordering keeps two answers from both
+ * winning a group call. A request goes through `requireDeviceInHandRead` instead.
  */
 export const requireDeviceInHand = (player: FrameworkPlayer, device: DeviceId): void => {
   if (!deviceInHand) throw notInstalled('the device check for a request');
   deviceInHand(player, device);
+};
+
+/**
+ * Refuse a request from a device this server has off, or that the player holds none of their
+ * own of (MICA-264, MICA-436 review), reading every unseen slot's row first. `ServiceEndpoint`
+ * asks it for every request that names a device other than the phone and every phone action
+ * flagged `requirePhoneFor`, so a holder of nothing but somebody else's phone is refused on the
+ * first request. An unfilled slot throws, so a request with no resolver installed is refused.
+ */
+export const requireDeviceInHandRead = async (
+  player: FrameworkPlayer,
+  device: DeviceId
+): Promise<void> => {
+  if (!deviceInHandRead) throw notInstalled('the device check for a request');
+  await deviceInHandRead(player, device);
 };
 
 /**

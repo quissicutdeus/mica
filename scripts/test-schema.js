@@ -47,8 +47,8 @@ let checksRun = 0;
  * `uniqueAfterDelete: 'revive'` on Hodlr and Battery, the seeded schema's one and eighteen on
  * each shape (REVIVE_CHECKS). Plus MICA-426's takedown and restore (MODERATION_CHECKS) and its
  * moderated rows through the purges (PURGE_MODERATED_CHECKS), MICA-433's log-token salt
- * (LOG_SALT_CHECKS), and MICA-431's sealed note and photo through a phone handover
- * (HANDOVER_SEALED_CHECKS), and MICA-432's blind index, place and thread name
+ * (LOG_SALT_CHECKS), and MICA-431's sealed note and photo on their phone, still the owner's
+ * (SEALED_ON_PHONE_CHECKS), and MICA-432's blind index, place and thread name
  * (BLIND_INDEX_CHECKS), on each shape.
  */
 const IMPORT_CHECKS = 16;
@@ -69,8 +69,12 @@ const CRYPT_CHECKS = 13;
 const IMPORT_QB_CHECKS = 1;
 /** MICA-165: `micaseed` writes qb's `players`, so its sealed round trip runs on qb only. */
 const CRYPT_SEED_CHECKS = 1;
-/** MICA-431: a sealed note and photo through a phone handover, on each shape. */
-const HANDOVER_SEALED_CHECKS = 6;
+/**
+ * MICA-431: a sealed note and photo on their phone, and since MICA-436 still the owner's when
+ * somebody else resolves the phone in their hand, and the owner's own resolve answers it; each
+ * shape.
+ */
+const SEALED_ON_PHONE_CHECKS = 7;
 /** MICA-432: a contact's number behind its blind index, a place, a thread's name, each shape. */
 const BLIND_INDEX_CHECKS = 7;
 /**
@@ -119,7 +123,7 @@ const MINIMUM_CHECKS =
   BOOTSTRAP_CHECKS * 2 +
   CRYPT_CHECKS * 2 +
   CRYPT_SEED_CHECKS +
-  HANDOVER_SEALED_CHECKS * 2 +
+  SEALED_ON_PHONE_CHECKS * 2 +
   BLIND_INDEX_CHECKS * 2 +
   MEDIA_HOOK_CHECKS * 2 +
   2 +
@@ -281,6 +285,8 @@ const loadServerModule = async () => {
     // The real phone resolver, installed when this module loads, as in game: an import writes
     // device-owned rows, and which phone they land on is `services/Devices.ts`'s answer.
     `export { devices } from '${root}/server/services/Devices.ts';`,
+    // MICA-436: the resolve itself, driven with the inventory stubbed, against real rows.
+    `export { resolveDevice, __resetDeviceState } from '${root}/server/services/Devices.ts';`,
     // Blabber registers itself as the app that takes imported posts when it loads (core may
     // not name the add-on, so the importer asks a registry). Without it every tweet would be
     // skipped as 'no installed app takes imported posts', and the post checks would fail.
@@ -309,7 +315,7 @@ const loadServerModule = async () => {
     // MICA-414: the two services that still declare `uniqueAfterDelete: 'revive'`, whose declared
     // repositories' `create` is the revive under test.
     `export { batteryApp } from '${root}/server/services/Battery.ts';`,
-    // MICA-431: a phone's own notes, sealed to the phone, through a handover.
+    // MICA-431: a phone's own notes, sealed to the phone.
     `export { notes } from '${root}/server/services/Notes.ts';`,
     // MICA-432: a contact's number behind its blind index, and a place's sealed position.
     `export { contacts } from '${root}/server/services/Contacts.ts';`,
@@ -746,13 +752,14 @@ const runLineMembership = async ({
 
   /**
    * MICA-428 review: a dead character's erased membership must not hold the phone's seat. B
-   * opens a thread with a line on phone D and hands D to G; G's character is deleted, and the
-   * real purge erases G's membership but keeps the thread, which is B's. The handover to N
-   * leaves the erased row naming G, its real member. Before the key was over `live_device`,
-   * N opening the line again met G's row under `(conversation_id, device_id)` for good.
+   * opens a thread with a line on phone D, and the membership is left naming G, as a handover
+   * before MICA-436 left one; G's character is deleted, and the real purge erases G's
+   * membership but keeps the thread, which is B's. Nothing moves the erased row since
+   * MICA-436, so it still names G when D's owner opens the line again. Before the key was over
+   * `live_device`, that open met G's row under `(conversation_id, device_id)` for good.
    */
   const phoneD = 'phone428d';
-  const [gone, next] = ['GONE428', 'NEXT428'];
+  const gone = 'GONE428';
   const bus = { name: 'Night Bus', number: '5550124' };
   const seats = async (id) =>
     (
@@ -762,7 +769,10 @@ const runLineMembership = async ({
       )
     )[0].map((m) => `${m.citizenid} ${m.status} ${Number(m.gone)}`);
   const busThread = (await modules.openLineThread(declared, ownerB, phoneD, bus)).id;
-  await declared.transferParticipants(phoneD, gone);
+  await connection.query(
+    'UPDATE mica_messages_participants SET citizenid = ? WHERE conversation_id = ? AND device_id = ?',
+    [gone, busThread, phoneD]
+  );
   const purged = await modules.purgeOwnedRows(gone);
   check(`${framework}: a dead holder's purge fails nothing`, purged.failures, []);
   const [[busRow]] = await connection.query(
@@ -774,18 +784,17 @@ const runLineMembership = async ({
     [await seats(busThread), busRow?.status],
     [[`${gone} erased 1`], 'active']
   );
-  await declared.transferParticipants(phoneD, next);
   let rejoin = null;
   try {
-    rejoin = (await modules.openLineThread(declared, next, phoneD, bus)).id;
+    rejoin = (await modules.openLineThread(declared, ownerB, phoneD, bus)).id;
   } catch (error) {
     rejoin = String(error?.message ?? error);
   }
-  check(`${framework}: the phone's next holder opens the same thread`, rejoin, busThread);
+  check(`${framework}: the phone's owner opens the same thread`, rejoin, busThread);
   check(
     `${framework}: beside the erased membership, which still names its real member`,
     await seats(busThread),
-    [`${gone} erased 1`, `${next} active 0`]
+    [`${gone} erased 1`, `${ownerB} active 0`]
   );
 
   check(`${framework}: lineKeyOf answers the line's key`, await declared.lineKeyOf(threadId), key);
@@ -3601,14 +3610,15 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
     }
 
     /*
-     * MICA-431: a phone's own content is sealed to the phone, so it survives the handover that
-     * rewrites every row's citizenid — the statement `Devices.handOver` runs per table — and a
-     * row on no phone, which no handover moves, still opens for its citizen. On a real MariaDB,
-     * whose columns are as wide as the sealed bound says (an ASCII photo at the camera's cap,
-     * a title of three-byte characters at its own).
+     * MICA-431: a phone's own content is sealed to the phone, and a row on no phone still opens
+     * for its citizen. MICA-436: somebody else holding the phone is refused it by the real
+     * resolve — the inventory stubbed to hand them a slot carrying it — and no row on any
+     * device-keyed table changes. On a real MariaDB, whose columns are as wide as the sealed
+     * bound says (an ASCII photo at the camera's cap, a title of three-byte characters at its
+     * own).
      */
     useKeys(rotated);
-    step(`${label} — a sealed note and photo through a phone handover`);
+    step(`${label} — a sealed note and photo on their phone, still the owner's`);
     const PHONE = 'c'.repeat(32);
     const notesRepo = modules.notes.repo;
     const mediaRepo = modules.media.repo;
@@ -3622,6 +3632,10 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
     });
     const legacyId = await notesRepo.create({ citizenid: A, title: 'written on no phone' });
     const photo = `data:image/png;base64,${'A'.repeat(4 * 1024 * 1024 - 22)}`;
+    // What A is charged before the photo — the import and the seed above gave A media of its
+    // own — so the charge below is the photo's alone.
+    const usedBefore = modules.usedBytesQuery(A, []);
+    const [chargedBefore] = await q(usedBefore.sql, usedBefore.params);
     const photoId = await mediaRepo.addForPlayer(A, {
       kind: 'photo',
       data: photo,
@@ -3646,23 +3660,73 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
       true
     );
 
-    await notesRepo.transferDeviceRows(PHONE, B);
-    await mediaRepo.transferDeviceRows(PHONE, B);
-    const moved = await q(
-      `SELECT (SELECT citizenid FROM mica_notes WHERE id = ?) AS note,
-              (SELECT citizenid FROM mica_media WHERE id = ?) AS photo,
-              (SELECT citizenid FROM mica_notes WHERE id = ?) AS legacy`,
-      [noteId, photoId, legacyId]
+    // The phone is A's: claimed, set up, as a resolve of A's would have left it.
+    await modules.devices.repo.create({
+      citizenid: A,
+      device_id: PHONE,
+      kind: 'phone',
+      claimed: 1,
+      setup_pending: 0
+    });
+    // Every device-keyed table, each row's id, owner and phone folded into a count and a
+    // checksum: anything a resolve wrote to any of them changes one or the other.
+    const deviceTables = (
+      await q(
+        `SELECT TABLE_NAME AS name FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'device_id'
+            AND TABLE_NAME LIKE 'mica\\_%' ORDER BY TABLE_NAME`
+      )
+    ).map((row) => row.name);
+    const fingerprint = async () => {
+      const out = {};
+      for (const table of deviceTables) {
+        const [row] = await q(
+          `SELECT COUNT(*) AS n,
+                  BIT_XOR(CRC32(CONCAT_WS('|', id, citizenid, IFNULL(device_id, '-')))) AS sum
+             FROM \`${table}\``
+        );
+        out[table] = `${row.n}:${row.sum}`;
+      }
+      return out;
+    };
+    const tablesBefore = await fingerprint();
+    const holding = (citizenid, source) => ({ citizenid, source, rawPlayer: {} });
+    const previousSlots = modules.FrameworkBridge.itemSlots;
+    const keyConvar = globalThis.GetConvar;
+    modules.FrameworkBridge.itemSlots = () => [{ slot: 3, metadata: { deviceId: PHONE } }];
+    globalThis.GetConvar = (name, fallback) =>
+      name === 'mica_phone_item' ? 'phone' : keyConvar(name, fallback);
+    let thief;
+    let owner;
+    try {
+      modules.__resetDeviceState();
+      thief = await modules.resolveDevice(9001, 'phone', holding(B, 9001));
+      owner = await modules.resolveDevice(9002, 'phone', holding(A, 9002));
+    } finally {
+      modules.FrameworkBridge.itemSlots = previousSlots;
+      globalThis.GetConvar = keyConvar;
+      modules.__resetDeviceState();
+    }
+    const tablesAfter = await fingerprint();
+    check(
+      `${label}: somebody else's resolve of the phone in their hand is refused, and no row moves`,
+      [
+        thief,
+        deviceTables.includes('mica_notes'),
+        deviceTables.includes('mica_devices'),
+        tablesAfter
+      ],
+      [{ status: 'none' }, true, true, tablesBefore]
     );
     check(
-      `${label}: the handover moved the phone's rows to the new holder, and not the phoneless one`,
-      [moved[0].note, moved[0].photo, moved[0].legacy],
-      [B, B, A]
+      `${label}: the owner's resolve answers the phone, and writes nothing either`,
+      [owner, await fingerprint()],
+      [{ status: 'active', device: { deviceId: PHONE, slot: 3 } }, tablesBefore]
     );
-    const note = await notesRepo.findById(noteId, B, PHONE);
-    const picture = await mediaRepo.findById(photoId, B, PHONE);
+    const note = await notesRepo.findById(noteId, A, PHONE);
+    const picture = await mediaRepo.findById(photoId, A, PHONE);
     check(
-      `${label}: the new holder opens the note and the photo, sealed to the phone`,
+      `${label}: the owner opens the note and the photo, sealed to the phone`,
       [note?.title === title, note?.content, picture?.data === photo, picture?.alt_text],
       [true, 'milk, eggs, the usual', true, 'the pier at dusk']
     );
@@ -3694,11 +3758,11 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
     );
     sizes.push([Number(cut.n), 0]);
     await q('UPDATE mica_media SET stored_bytes = NULL WHERE id = ?', [photoId]);
-    const used = modules.usedBytesQuery(B, []);
+    const used = modules.usedBytesQuery(A, []);
     const [charged] = await q(used.sql, used.params);
     check(
       `${label}: a sealed value's plaintext size is measured exactly, and charged so`,
-      [sizes.every(([n, bytes]) => n === bytes), Number(charged.used)],
+      [sizes.every(([n, bytes]) => n === bytes), Number(charged.used) - Number(chargedBefore.used)],
       [true, photo.length]
     );
     const legacy = await notesRepo.findById(legacyId, A);

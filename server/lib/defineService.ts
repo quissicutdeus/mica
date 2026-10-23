@@ -263,8 +263,7 @@ export interface ColumnDef {
    * ciphertext, and each would read as working.
    *
    * On a `deviceOwned` table the value is bound to the row's phone, `device_id`, not its
-   * `citizenid` (MICA-431): a handover rewrites `citizenid` on every row of the phone, and a
-   * value bound to the character would stop opening there.
+   * `citizenid` (MICA-431), so it opens on that phone and no other.
    */
   encrypted?: boolean;
   /**
@@ -576,12 +575,12 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    * Injects a nullable `device_id` column and a `device_id` index, and makes every generic
    * action scope by the caller's active phone as well as their citizenid — the phone id is
    * resolved by `ServiceEndpoint` from the item in the caller's own inventory and handed to
-   * custom handlers as their sixth argument. A row's `citizenid` names whoever holds the phone
-   * now, and moves with it: `services/Devices.ts` calls `transferDeviceRows` on every table
-   * with a `device_id` column when a phone changes hands. Declare it for what belongs to the
+   * custom handlers as their sixth argument. A row's `citizenid` names the phone's owner, the
+   * citizen who first used it, and nothing moves it (MICA-436): somebody else holding the phone
+   * is refused it, so its rows stay where they are. Declare it for what belongs to the
    * *device* — contacts, notes, media, the lock screen — and never for what belongs to the
-   * *person*, or a stolen phone hands over somebody's money. `docs/schema-and-services.md`
-   * has the split, table by table.
+   * *person*, which would leave somebody's money behind on a phone they lost.
+   * `docs/schema-and-services.md` has the split, table by table.
    */
   deviceOwned?: boolean;
   /**
@@ -1462,8 +1461,8 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   }
 
   const indexes = (definition.indexes ?? []).map(normalizeIndex);
-  // The handover's own lookup — `UPDATE … WHERE device_id = ?` — and the narrowing half of
-  // every scoped read. One plain key, named for the column like `citizenid_status` is.
+  // The narrowing half of every scoped read, and every lookup by phone alone. One plain key,
+  // named for the column like `citizenid_status` is.
   if (deviceOwned) indexes.push({ name: 'device_id', columns: ['device_id'], unique: false });
   for (const index of indexes) {
     if (index.columns.length === 0) {
@@ -1693,16 +1692,6 @@ export interface ServerAppHandle<T, C extends ServiceContract = ServiceContract>
 export const declaredServices: ResolvedService[] = [];
 
 /**
- * Every repository whose table carries a `device_id`, declared this process (MICA-282).
- *
- * The handover in `services/Devices.ts` walks this list and calls `transferDeviceRows` on each,
- * so a table that follows the phone follows it without being named anywhere but its own
- * declaration — the same reason `declaredServices` exists for the DDL. `mica_devices` and
- * `mica_phone_numbers` are in it too, by the same rule: they carry the column.
- */
-export const deviceKeyedRepositories: Repository<any>[] = [];
-
-/**
  * Declare an app's server half: derives the repository, registers the generic CRUD
  * events, and hands back the pieces so custom actions can be added on top.
  *
@@ -1751,7 +1740,6 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
     );
   }
   declaredServices.push(resolved);
-  if (resolved.columns.includes('device_id')) deviceKeyedRepositories.push(repo);
 
   /**
    * Every encrypted column joins the registry `lib/contentCipher.ts` keeps, which the generic

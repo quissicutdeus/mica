@@ -35,8 +35,6 @@ line here.
   — the sink needs TLS; webhook URL is a secret; restore unset convars, not `''`
 - [micaOS's own start-up passes race in-server scenarios](boot-passes-race-in-server-scenarios.md)
   — prune refused during boot retention; wait on the sweep's lines
-- [The mica_devices row is one of the walked tables](phones-row-is-one-of-the-walked-tables.md)
-  — it moves last, as the durable "unfinished" mark; MICA-319
 - [Splitting a module: re-export only what is imported; no cycle back](splitting-a-module-facade-and-cycles.md)
   — knip fails in-file-only re-exports; a lib helper must not import its service
 - [A Lua export's second return value turns its answer into an array](lua-multi-value-returns-arrive-as-arrays.md)
@@ -53,8 +51,8 @@ line here.
 - [A defaulted column tripped the widen-resume check](additive-column-trips-widen-resume.md)
   — resume skipped the additive pass until MICA-264 fixed it; run
   test:migrations
-- [A citizen-keyed phone cache outlives a handover](citizen-phone-cache-outlives-the-holder.md)
-  — check against `holderNow`; owner chose a stashed phone keeps receiving
+- [A citizen-keyed phone cache outlives a robbery, on purpose](citizen-phone-cache-outlives-the-holder.md)
+  — MICA-436: the thief is refused, rows wait for the owner; no `holderNow`
 - [A loop over a registry function asserts nothing](registry-loop-over-a-function-is-empty.md)
   — `Object.entries(REPORTABLE)` is `[]`; assert the count, import every
   declarer
@@ -161,3 +159,10 @@ line here.
   — `sql_mode=''` stores ''; every sweep asks `statusWritesMayRun` first
 - [A join onto information_schema.COLUMNS reads every database](information-schema-join-scans-every-database.md)
   — `ON` does not narrow the fill; `UNION ALL` single-table reads instead
+- [A read on somebody else's behalf can skip the owner's read](a-foreign-read-skips-the-owners-read.md)
+  — MICA-436 `judgeRow` cached the owner; `resumeSetup` never ran for them
+- [clearAllMocks keeps a mockReturnValue](clear-all-mocks-keeps-return-values.md)
+  — a stale `countItem` 0 passed a "not held" push under break-to-prove
+- [A test-schema variant is one long scope](test-schema-variants-are-one-scope.md)
+  — a new `const before` collides; `node --check` first; resolveDevice runs
+  there

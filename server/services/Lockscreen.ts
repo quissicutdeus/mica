@@ -37,8 +37,9 @@ export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
    * than adding a second row for the unique index to reject. `ON DUPLICATE KEY UPDATE`
    * against `device_id_unique`, the same upsert shape `Settings.ts`'s `put` uses for the
    * same reason: two rapid writes race in a find-then-insert, and the constraint decides
-   * here instead of whichever query happens to interleave first. `citizenid` is rewritten
-   * on the update too, because the phone may have changed hands since the row was made.
+   * here instead of whichever query happens to interleave first. `citizenid` is written on
+   * the update too: it is always the phone's owner, the only citizen a resolve answers the
+   * phone (MICA-436), so it changes nothing but a row a handover before MICA-436 left.
    */
   async upsert(citizenid: string, deviceId: string, hash: string, salt: string): Promise<void> {
     await Database.query(
@@ -89,7 +90,8 @@ export const lockscreen = defineService<LockscreenRow, typeof lockscreenContract
   },
   // One passcode per **phone** (MICA-282; `0002_phone_data_follows_the_phone` swaps the old
   // `citizenid_unique` for it). The lock belongs to the device: a second phone has its own,
-  // and a stolen one keeps the code its owner set until the thief clears it.
+  // and a stolen one keeps the code its owner set — nobody else is answered the phone to clear
+  // it (MICA-436).
   indexes: [{ name: 'device_id_unique', columns: ['device_id'], unique: true }],
   uniqueAfterDelete: {
     optOut:

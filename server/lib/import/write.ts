@@ -153,11 +153,11 @@ export const importContacts = async (
       }
       /**
        * The phone the row lands on, and whether that phone already holds the number live
-       * (MICA-335). `device_phone_unique` is per device, not per citizen: a live row there can
-       * still name a previous holder whose handover has not been walked yet, and the citizen
-       * check above cannot see it. The same question the key asks — `device_id` and
-       * `phone_key` — so what it would refuse is skipped here as already there rather than
-       * written and failed. Resolved on apply only, as the write always did: a dry run must not
+       * (MICA-335). `device_phone_unique` is per device, not per citizen: a live row there need
+       * not name this citizen — a row written before MICA-436, when a phone's rows moved to its
+       * holder — and the citizen check above cannot see it. The same question the key asks —
+       * `device_id` and `phone_key` — so what it would refuse is skipped here as already there
+       * rather than written and failed. Resolved on apply only, as the write always did: a dry run must not
        * mint a phone, and a phone it would mint holds nothing yet.
        */
       const deviceId = ctx.apply

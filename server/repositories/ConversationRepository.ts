@@ -135,7 +135,7 @@ export interface ConversationListRow extends ConversationRow {
 }
 
 /**
- * A membership row as the server holds it (MICA-339). `citizenid` is whoever holds the phone now
+ * A membership row as the server holds it (MICA-339). `citizenid` is the phone's owner (MICA-436)
  * and `device_id` is the phone; neither reaches another member. `phone_number` is the number on
  * that phone, read with the row — see `PARTICIPANT_NUMBER` for which number that is.
  */
@@ -459,11 +459,9 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * Rename a thread, as its admin, through the phone the admin's membership is on (MICA-339).
    *
    * **Who may rename: the thread's admin, on the phone in their hand.** That is the creator's
-   * membership — `create` writes it as `admin` — and it moves with the phone on a handover
-   * (`transferParticipants`), where the row's own `citizenid` never did. The generic owner-scoped
-   * update this replaces asked `citizenid = ?` of the conversation row, so the creator could still
-   * rename a thread after selling the phone it was on and leaving it, and the phone's new holder
-   * could not. A member who is not the admin is refused, as they always were.
+   * membership — `create` writes it as `admin` — on the phone the thread was started on. The
+   * generic owner-scoped update this replaces asked `citizenid = ?` of the conversation row
+   * alone, with no phone in it. A member who is not the admin is refused, as they always were.
    *
    * One statement, the membership predicate in its `WHERE`, so there is no window between asking
    * and writing. Named and on the repository because it writes without the row's own ownership
@@ -548,8 +546,8 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * **Why not `updateUnscoped`.** The reason is the same as for `renameAsAdmin`. That method
    * builds `UPDATE … WHERE id = ?` and takes no further predicate, so the check would have to be
    * a read before the write. Every column written is a literal, and no payload key reaches the
-   * SQL. `updated_at` is pinned, as `transferParticipants` pins it, so the other side's inbox is
-   * not reordered by something it cannot see.
+   * SQL. `updated_at` is pinned, so the other side's inbox is not reordered by something it
+   * cannot see.
    *
    * **The leaving phone's number stays behind** (MICA-350), in `absent_number`, so the side
    * that stays still sees who the thread was with. It is the number that phone was shown by in
@@ -747,25 +745,25 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * Not `addParticipant` alone: `conversation_live_device` is on `(conversation_id,
    * live_device)` — the phone, on every row but an erased one — and holds a left row too, so
    * inserting a second row for a phone that left is a duplicate-key error rather than a rejoin.
-   * A `left` row is reopened and re-pointed at the phone's current holder; a phone with no row
+   * A `left` row is reopened and re-pointed at the phone's owner; a phone with no row
    * at all gets one; a live row is left alone. `removed` and `moderated` are never reopened.
    *
-   * An erased row is never reopened either, and holds no seat (MICA-428): it is a dead or
-   * deleted character's, which the handover leaves naming them, so the phone's next holder
-   * gets a row of their own beside it.
+   * An erased row is never reopened either, and holds no seat (MICA-428): it is what a delete
+   * left, naming its real member, so the phone gets a row of its own beside it.
    *
    * Reached only from `openLineThread`, after `findExternalThread` matched this phone as one
    * side of the thread's pair columns, so it can only ever restore the phone the thread is
-   * with. Named and privileged for the reason `transferParticipants` is: the row's citizenid
-   * may be exactly what changes.
+   * with. Named and privileged because it writes the row's citizenid, which no ownership
+   * predicate could name first — always the phone's owner, since a resolve answers no other
+   * citizen the phone (MICA-436).
    */
   async ensureLineParticipant(
     conversationId: number,
     citizenid: string,
     deviceId: string
   ): Promise<void> {
-    // Not versioned (MICA-430 review): a membership's citizenid is always its phone's holder,
-    // and `mica_devices` keeps one version a handover, so who held it is already on record.
+    // Not versioned (MICA-430 review): a membership's citizenid is always its phone's owner,
+    // which nothing moves (MICA-436).
     const restored = await Database.update(
       `UPDATE mica_messages_participants SET left_at = NULL, status = 'active', citizenid = ?
         WHERE conversation_id = ? AND device_id = ? AND status = 'left' AND left_at IS NOT NULL`,
@@ -789,27 +787,6 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
             WHERE conversation_id = ? AND citizenid = ? AND device_id = ? AND left_at IS NULL
         `;
     return await Database.update(query, [status, conversationId, citizenid, deviceId]);
-  }
-
-  /**
-   * A phone changed hands: every membership on it now names its new holder (MICA-282).
-   *
-   * The child-table twin of `Repository.transferDeviceRows`, reached through the handover hook
-   * `Conversations.ts` registers because this table has no repository for the automatic walk
-   * to find. `updated_at` is pinned so a handover does not reorder anyone's inbox. Named and
-   * privileged for the same reason `markDeletedByAdmin` is: the row's citizenid is exactly
-   * what is being changed, so no ownership predicate could express it.
-   */
-  async transferParticipants(deviceId: string, citizenid: string): Promise<boolean> {
-    // Never an erased, expired or taken-down membership (MICA-428 review): its citizenid is
-    // the member it was, kept as evidence, as `transferDeviceRows` keeps every other table's.
-    return await Database.update(
-      `UPDATE mica_messages_participants
-          SET citizenid = ?, updated_at = updated_at
-        WHERE device_id = ? AND citizenid <> ?
-          AND status NOT IN ('erased', 'expired', 'moderated')`,
-      [citizenid, deviceId, citizenid]
-    );
   }
 
   /** A thread's live members, each with the number on its phone (`PARTICIPANT_NUMBER`). */
@@ -1145,8 +1122,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * The live 1:1 thread between two **phones** (MICA-282), or null.
    *
    * Phones rather than people, so one person's two phones can each hold a thread with the
-   * same contact — and so a stolen phone continues the thread it was in rather than starting
-   * a second one beside it.
+   * same contact.
    */
   /**
    * The thread between a phone and a line that is not a player (MICA-223).

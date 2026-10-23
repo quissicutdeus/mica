@@ -435,28 +435,6 @@ describe('the Repository keeps what an update replaces (MICA-430)', () => {
     expect(update.query).toMatch(/^UPDATE `mica_vtest` SET `slug` = \?, `title` = \?/);
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
-
-  it("versions a phone's own row on a handover, and every other row is moved as it was", async () => {
-    dbMock.update.mockResolvedValue(true);
-    const repo = new VersionedRepo();
-    await repo.transferDeviceRows('PHONE_X', 'CIT_B');
-    expect(dbMock.transaction).not.toHaveBeenCalled();
-
-    stored = [{ id: 3, citizenid: 'CIT_A' }];
-    await repo.transferDeviceRows('PHONE_X', 'CIT_B', 'handover');
-    const [, lock, snapshot, update] = batch();
-    const where =
-      "WHERE `device_id` = ? AND `citizenid` <> ? AND `status` NOT IN ('erased', 'expired', 'moderated')";
-    expect(lock.query).toContain(where);
-    expect(snapshot.query).toContain("JSON_OBJECT('citizenid', `mica_vtest`.`citizenid`)");
-    expect(snapshot.params.slice(0, 3)).toEqual(['mica_vtest', null, 'handover']);
-    expect(update.query).toBe(
-      'UPDATE `mica_vtest` SET `citizenid` = ?, `updated_at` = `updated_at` ' +
-        where +
-        ' AND ((`mica_vtest`.`id` = ? AND CAST(`mica_vtest`.`citizenid` AS BINARY) <=> CAST(? AS BINARY)))'
-    );
-    expect(update.params).toEqual(['CIT_B', 'PHONE_X', 'CIT_B', 3, 'CIT_A']);
-  });
 });
 
 /**

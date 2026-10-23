@@ -5,8 +5,9 @@ flow. Those belong to the server's own economy and job scripts, which already
 decide who can buy what, what a robbery costs and what an officer may take. What
 micaOS ships is the item model underneath them (MICA-219): a phone is an
 inventory item with an id of its own, and the number, the data and the lock
-belong to that id rather than to the character holding it. This page shows what
-each of those scripts looks like on top of it, written from the code that
+belong to that id, which belongs for good to the citizen who first used it
+(MICA-436), rather than to whichever character holds the item. This page shows
+what each of those scripts looks like on top of it, written from the code that
 implements it, so an owner asking "how do I sell phones" on day one has an
 answer rather than a missing feature.
 
@@ -37,7 +38,7 @@ the inventory (`server/lib/framework/itemMetadata.ts`):
 
 The id is a 32-character hex string and nothing about it is a secret. A copied
 id grants nothing on its own, because every read and write still names the
-character presenting it as well (`docs/security.md`, and the handover rule
+character presenting it as well (`docs/security.md`, and the ownership rule
 below). The one thing to protect is the metadata itself: **a script that moves a
 phone by removing the item and adding a fresh one has made a different phone.**
 ox_inventory keeps metadata when a player drags an item between inventories,
@@ -109,47 +110,80 @@ number of its own, not for assigning one to a player.
 
 ## Robbery and trade
 
-There is nothing to script for the data. When a phone moves inventories intact,
-the next player to **use** it becomes its holder, and the handover is what moves
-everything:
+There is nothing to script for the data, because **nothing moves**. A phone
+belongs to the citizen who first used it, for good (MICA-436): that citizen is
+the `citizenid` on its `mica_devices` row and on every device-owned row on it,
+and nothing hands it to anybody else. The item travels between inventories with
+its id intact; the ownership does not travel with it. So when somebody else ends
+up holding a phone that has been used:
 
-- `resolvePhone` finds an item whose `mica_devices` row names somebody else and
-  calls `handOver`, which runs `Repository.transferDeviceRows`: one
-  `UPDATE … SET citizenid = <holder> WHERE device_id = ?` across every table
-  with a `device_id` column. Contacts, notes, photos, places, settings, the
-  passcode row, notifications, the call log, the block list, thread memberships
-  and the battery charge all now belong to the thief.
-  `docs/schema-and-services.md` has the table-by-table split, and why
-  `citizenid` on those rows means "whoever holds the phone now".
-- The number travels: `numberForPhone` transfers the `mica_phone_numbers` row to
-  the holder, and a message or call to that number reaches the phone, whoever
-  has it. The framework's `charinfo.phone` for the thief is written back to the
-  stolen number the moment they use it.
-- The passcode travels with the `mica_lockscreen` row, so a thief faces the
-  victim's lock screen. That lock is a display state the client enforces, not a
-  server boundary (`server/lib/LockState.ts` says so plainly), and a phone
-  another resource locked with `LockPhone` stays locked in whoever's hand it
-  lands.
-- What does **not** move: the victim's Bank, Hodlr holdings, Marketplace
+- **They get a closed phone.** The item gate counts a slot only when it is the
+  player's own, theirs to claim, or blank, by the same rule the server resolves
+  a request by (`judgeRow` in `server/services/Devices.ts`, installed into the
+  gate through `installSlotJudge` in `server/lib/deviceItem.ts`). A player
+  holding nothing but other people's phones is told they hold none, and using
+  the item from the inventory opens nothing. A player holding a phone of their
+  own as well keeps it: the other is skipped as though it were not there. (On
+  qb-inventory, which lists one slot, which of the two is judged depends on the
+  slot the inventory reports, so the player can be refused their own.)
+- **A request that arrives anyway is refused.** A client that opens the phone
+  regardless is answered with the refusal a player holding no phone gets,
+  `server.phone.notHeld` ("You are not holding a phone."). Nothing is written
+  for a phone that is skipped: no row is claimed, created or moved.
+- **The owner's rows stay where they were.** Contacts, notes, photos, places,
+  settings, the passcode row, notifications, the call log, the block list,
+  thread memberships and the battery charge are all still keyed on the phone and
+  on the owner. A text addressed to the phone's number is still filed on that
+  phone, and so is the call-log row for a call to it (`readPhoneIdByNumber`),
+  and so are notifications and dropped photos for the owner while it is the
+  phone they last used (`phoneForCitizen`). They wait there. Nobody can read
+  them but the owner, and the owner can only if the phone comes back.
+- **The number stays with the owner.** `numberForPhone` is reached only for a
+  phone that resolved to its owner, so the thief's `charinfo.phone` is never
+  rewritten to the stolen number, and `mica_phone_numbers` keeps naming the
+  owner.
+- **The passcode never comes into it.** The lock screen is a display state the
+  client enforces, not a server boundary (`server/lib/LockState.ts` says so
+  plainly), and that is the reason ownership is checked on the server instead of
+  being left to it.
+- What was never on the phone: the owner's Bank, Hodlr holdings, Marketplace
   listings, Blabber account, mail and high scores. Those are keyed on the
-  character. Messages the victim wrote keep the victim as author; the thread
-  membership follows the phone, which is what puts the conversation on the
-  thief's screen.
+  character, so a thief has nothing to reach even before the refusal.
+  `docs/schema-and-services.md` has the table-by-table split.
 
 The victim, holding no phone, sees a closed phone: the client relays the
 inventory change (`client/services/DeviceItem.ts` listens for
 `ox_inventory:itemCount`, `QBCore:Player:SetPlayerData`, `esx:addInventoryItem`
 and `esx:removeInventoryItem`) and the server counts again and pushes the
 answer. Buying a new phone gives them a fresh id and a fresh number; their old
-contacts are on the phone that was taken. That is the model working as designed,
-and a server that finds it too harsh should make robbery scripts return the item
-rather than soften the model.
+contacts are on the phone that was taken, and a thief cannot read them either.
+That is the model working as designed, and a server that finds it too harsh
+should make robbery scripts return the item rather than soften the model.
 
-A robbery script that wants to _hand_ the item over rather than let the player
-loot it has one rule: move the item with its metadata. In ox_inventory,
-`RemoveItem` followed by `AddItem(target, 'phone', 1, metadata)` with the slot's
-original `metadata` table is a robbery; the same pair without the table is a
-theft that destroyed the phone and gave the robber a new one.
+**Why nothing moves.** Before MICA-436 the next player to use a phone became its
+holder and every row on it was rewritten to them. That decision handed a phone's
+whole contents to whoever could get the item into their inventory, on the
+strength of item metadata that any resource can write, behind a passcode only
+the client checks. Item duplication is among the commonest exploits on a FiveM
+server, and under that rule whoever held a duplicated phone could read all of
+its owner's. The handover was removed rather than switched off, because it had
+never run in a live server (MICA-230 was never proven) and there was no proven
+behaviour worth keeping behind a switch.
+
+**Selling a phone, and what it costs.** A phone nobody has used has no owner
+yet, so a shop's stock is unaffected: the buyer is its first user. A phone
+somebody has **used** cannot be sold on, given or traded to a second player:
+they hold it, and it reads closed for them. Until the owner can reset a phone
+for the next person, which does not exist yet and is a follow-up rather than
+part of this change (MICA-437), a player who wants to pass a phone on cannot.
+Plan any second-hand phone trade around that.
+
+A robbery script therefore has one thing to decide, and it is not about data.
+Moving the item with its metadata (in ox_inventory, `RemoveItem` followed by
+`AddItem(target, 'phone', 1, metadata)` with the slot's original `metadata`
+table) moves a phone that is closed to its new holder. To give the robber a
+phone that works, give them a blank one, which mints an id of its own the first
+time they use it.
 
 ## Confiscation and return
 
@@ -159,10 +193,12 @@ Two independent controls exist, and a confiscation script normally wants both:
 the officer's, or in an evidence stash. The player's phone closes as soon as the
 client relays the change, exactly as it does on a robbery. The data goes
 nowhere: the rows keep their `device_id`, with `citizenid` still naming the
-player, because nobody has _used_ the item since. An officer who uses the
-confiscated phone becomes its holder through the handover above and can read it,
-which is realistic and worth knowing before you let a stash be that easy to
-open.
+player. An officer who uses the confiscated phone is refused it as a thief is
+(see "Robbery and trade"): it reads closed in their hand and there is nothing
+for them to read. Before MICA-436 the officer became its holder and could read
+everything on it; if your evidence scripts relied on that, they cannot any more,
+and micaOS does not ship a way for one player to read another's phone, so a
+server that wants one has to build it as its own thing.
 
 **Disable the phone.** `exports['mica']:SetPhoneEnabled(source, false)` forces
 the phone closed and keeps it closed whatever the inventory says, and `true`
@@ -179,27 +215,30 @@ server already treats `SetPhoneEnabled`-shaped state.
 
 **Returning the phone** is moving the item back with its metadata intact, then
 `SetPhoneEnabled(source, true)` if it was disabled. The player uses it and finds
-everything where they left it: same id, same number, same data. If the officer
-never used it, no handover ever happened and the rows never moved. If they did,
-the player's next use hands it straight back. The failure to avoid is the one
-from the first section: an evidence script that stores "1 × phone" as a count
-and gives back a fresh item has destroyed the phone and handed the player a
-blank one.
+everything where they left it: same id, same number, same data. Return needs
+nothing else, because nothing was handed over to be handed back, whether or not
+an officer tried the phone in between. The failure to avoid is the one from the
+first section: an evidence script that stores "1 × phone" as a count and gives
+back a fresh item has destroyed the phone and handed the player a blank one.
 
 ## Destroyed, dropped on death or traded
 
 micaOS reacts to an item **leaving a player's hand** (the phone closes) and to
-an item **being used** (the handover). It does not react to an item ceasing to
-exist. There is no inventory event for "this item was destroyed" that every
-framework agrees on, and a phone in a stash, on the ground, or in a dead
-player's dropped inventory looks identical to one that is gone forever.
+an item **being used** (it opens only for its own citizen). It does not react to
+an item ceasing to exist. There is no inventory event for "this item was
+destroyed" that every framework agrees on, and a phone in a stash, on the
+ground, or in a dead player's dropped inventory looks identical to one that is
+gone forever.
 
 So when a phone item is destroyed, its rows stay exactly where they are: keyed
-on a `device_id` no item carries any more, with `citizenid` naming the last
-holder, and a `mica_devices` row that is now permanently claimed. Nothing reads
-them again, and nothing deletes them. The same is true of a phone dropped on
-death and never picked up. A trade is not this case at all; it is a handover the
-moment the buyer uses the phone.
+on a `device_id` no item carries any more, with `citizenid` naming its owner,
+and a `mica_devices` row that is now permanently claimed. Nothing reads them
+again, and nothing deletes them. The same is true of a phone dropped on death
+and never picked up. A trade is not this case at all: the phone still exists and
+the buyer holds it, but it was never theirs. It reads closed for them and the
+seller's rows are untouched, so a phone somebody has used cannot be traded on
+(see "Robbery and trade" for what that costs, and for a blank phone, which has
+no owner yet).
 
 What already covers some of that:
 
@@ -208,9 +247,12 @@ What already covers some of that:
   runs at resource start and when another server resource triggers
   `mica:server:shell:characterDeleted` with a citizenid. On qb it is a backstop
   for the schema's old `ON DELETE CASCADE`; on ESX it is the cleanup. It leaves
-  the device rows live: the phone item can outlive its character, and the next
-  holder needs its `mica_devices` row. It does nothing for a destroyed phone
-  whose owner still plays.
+  the device rows live, because the phone item can outlive its character and an
+  erased `mica_devices` row would make the next holder's resolve try to create
+  it again, which `device_id_unique` refuses. Left live, the row still names the
+  deleted character, so that phone reads closed for everyone who holds it from
+  then on, like any phone that is not theirs (MICA-436). It does nothing for a
+  destroyed phone whose owner still plays.
 - **Notification retention** (`mica_notification_retention`, 30 days) hides old
   notifications on every phone, destroyed or not.
 - **Media retention** (`mica_media_retention`, off by default) expires media
@@ -235,11 +277,13 @@ Buy a second phone and use it. That is the whole recipe:
    data.
 2. Its number is a fresh assignment: no number is on the item, and the legacy
    number is already attached to the first phone.
-3. **The phone you last used is the active one.** Using the burner switches
-   everything on screen and in the framework: its contacts, threads, photos,
-   passcode, battery, and its number is what `GetPlayerByPhone` now returns for
-   you. Using the first phone switches back. Dragging items between slots
-   changes nothing; only the inventory's use action does.
+3. **The phone you last used is the active one**, among the phones that are
+   yours: a phone in your inventory that another character used is skipped, as
+   though you were not holding it. Using the burner switches everything on
+   screen and in the framework: its contacts, threads, photos, passcode,
+   battery, and its number is what `GetPlayerByPhone` now returns for you. Using
+   the first phone switches back. Dragging items between slots changes nothing;
+   only the inventory's use action does.
 4. Each phone has its own passcode, theme, block list, battery charge and
    external lock. Locking the burner with `LockPhone` locks only the burner.
 
@@ -251,16 +295,18 @@ anonymity a burner really buys:
   the block list is per phone.
 - **The server links them by character.** Both `mica_devices` rows name the same
   `citizenid`, so do the `mica_phone_numbers` rows, and every device-owned row
-  on either phone carries the holder's `citizenid`. Messages the character
-  writes from either phone name them as author. `mica_audit_logs`, the
-  moderation ledger, is keyed on `citizenid` alone and never on a phone: an
-  admin acting on reported content sees the character, not which phone sent it.
-  Bank, Hodlr, Marketplace, Blabber and mail are one per character whatever
-  phone is in hand.
-- **A sold or lost burner takes its trail with it.** Once somebody else uses it,
-  the handover re-keys its rows to them and the number rings for them. The audit
-  log and any messages already authored keep the original character's name,
-  because authorship and evidence are the character's and not the device's.
+  on either phone carries it. Messages the character writes from either phone
+  name them as author. `mica_audit_logs`, the moderation ledger, is keyed on
+  `citizenid` alone and never on a phone: an admin acting on reported content
+  sees the character, not which phone sent it. Bank, Hodlr, Marketplace, Blabber
+  and mail are one per character whatever phone is in hand.
+- **A sold or lost burner keeps its trail, and the trail stays yours.** Nothing
+  moves when somebody else picks the phone up: they hold a phone that reads
+  closed, and its rows, its number and the messages sent from it stay recorded
+  against the character who used it. Throwing a burner away does not detach it
+  from you, and a used one cannot be passed on to somebody else (see "Robbery
+  and trade"). The audit log and any messages already authored keep your name
+  too, because authorship and evidence are the character's and not the device's.
 
 That split is deliberate. A burner is anonymous to the people on the other end
 of it, which is what the roleplay wants, and fully attributable to the operator,

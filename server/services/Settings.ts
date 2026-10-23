@@ -49,8 +49,9 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    * two queries interleave in.
    *
    * `citizenid` is written on the insert and **also on the update** (MICA-282): the row
-   * belongs to the phone, and the phone belongs to whoever holds it now, so a preference set
-   * on a phone that has changed hands names its new holder.
+   * belongs to the phone, and the phone to the citizen who first used it, for good (MICA-436).
+   * Only that citizen's resolve reaches here, so the update changes nothing but a row a
+   * handover before MICA-436 left naming somebody else.
    */
   async put(
     citizenid: string,

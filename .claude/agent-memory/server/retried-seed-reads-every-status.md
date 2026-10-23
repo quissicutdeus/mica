@@ -41,4 +41,4 @@ Each seeded contact carries `default_number`, which the player cannot edit, so a
 renumbered default is not re-added.
 
 Related: [[negative-check-needs-a-positive-twin]],
-[[phones-row-is-one-of-the-walked-tables]]
+[[a-foreign-read-skips-the-owners-read]]

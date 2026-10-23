@@ -34,6 +34,7 @@ const { bridgeMock, convar, netHandlers, loadedSubscribers, loadedForgetters, em
       bridgeMock: {
         getPlayer: vi.fn(),
         countItem: vi.fn(),
+        itemSlots: vi.fn(),
         registerUsableItem: vi.fn(),
         framework: 'qb' as string
       },
@@ -66,6 +67,8 @@ import {
   deviceItemName,
   enabledDevices,
   evaluateDeviceItems,
+  holdsDevice,
+  installSlotJudge,
   isDeviceEnabled,
   lastUsedDeviceSlot,
   onDeviceStateChanged,
@@ -100,10 +103,13 @@ const phone = (gated: boolean, held: boolean) => ({ device: 'phone', enabled: tr
 const TABLET_OFF = { device: 'tablet', enabled: false, gated: false, held: false };
 
 /** The phone's half of a pass, in the `{ gated, held }` shape these cases were written against. */
-const evaluatePhoneItem = (src: number) => {
-  const state = evaluateDeviceItems(src)?.find((s) => s.device === 'phone');
+const evaluatePhoneItem = async (src: number) => {
+  const state = (await evaluateDeviceItems(src))?.find((s) => s.device === 'phone');
   return state ? { gated: state.gated, held: state.held } : null;
 };
+
+/** Let a pass nobody awaits — the look-again event's — land. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const resetConvars = (): void => {
   convar.current = 'phone';
@@ -151,82 +157,84 @@ describe('the phone item gate', () => {
     expect(emitNet).toHaveBeenCalledWith(OPEN, SRC);
   });
 
-  it('subscribes to player load, so a fresh character is told where it stands', () => {
+  it('subscribes to player load, so a fresh character is told where it stands', async () => {
     const subscriber = loadedSubscribers.find((s) => s.name === 'phone-item');
     expect(subscriber).toBeDefined();
 
-    subscriber!.run(SRC);
+    await subscriber!.run(SRC);
 
     expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, phone(true, true));
   });
 
-  it('tells a holder they are gated and held, and a non-holder they are not held', () => {
+  it('tells a holder they are gated and held, and a non-holder they are not held', async () => {
     bridgeMock.countItem.mockReturnValue(2);
-    expect(evaluatePhoneItem(SRC)).toEqual({ gated: true, held: true });
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: true, held: true });
     expect(bridgeMock.countItem).toHaveBeenCalledWith(PLAYER, 'phone');
 
     bridgeMock.countItem.mockReturnValue(0);
-    expect(evaluatePhoneItem(SRC)).toEqual({ gated: true, held: false });
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: true, held: false });
     expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, phone(true, false));
   });
 
-  it('pushes "not gated" when the convar is empty, so the client stops relaying', () => {
+  it('pushes "not gated" when the convar is empty, so the client stops relaying', async () => {
     convar.current = '';
 
     expect(phoneItemName()).toBeNull();
-    expect(evaluatePhoneItem(SRC)).toEqual({ gated: false, held: true });
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: false, held: true });
     expect(bridgeMock.countItem).not.toHaveBeenCalled();
     expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, phone(false, true));
   });
 
-  it('pushes nothing for a source with no loaded character', () => {
+  it('pushes nothing for a source with no loaded character', async () => {
     bridgeMock.getPlayer.mockReturnValue(undefined);
 
-    expect(evaluatePhoneItem(SRC)).toBeNull();
+    expect(await evaluatePhoneItem(SRC)).toBeNull();
     expect(emitNet).not.toHaveBeenCalled();
   });
 
-  it('ignores the gate on a standalone server, and says so once', () => {
+  it('ignores the gate on a standalone server, and says so once', async () => {
     bridgeMock.framework = 'standalone';
 
     expect(phoneItemName()).toBeNull();
     expect(phoneItemName()).toBeNull();
-    expect(evaluatePhoneItem(SRC)).toEqual({ gated: false, held: true });
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: false, held: true });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain('standalone');
   });
 
-  it('refuses a name no inventory would accept, and says so once', () => {
+  it('refuses a name no inventory would accept, and says so once', async () => {
     convar.current = "phone'; DROP TABLE";
 
     expect(phoneItemName()).toBeNull();
-    expect(evaluatePhoneItem(SRC)).toEqual({ gated: false, held: true });
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: false, held: true });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain('not an item name');
   });
 
-  it('fails open, loudly and once, when no inventory can count', () => {
+  it('fails open, loudly and once, when no inventory can count', async () => {
     bridgeMock.countItem.mockReturnValue(null);
 
-    expect(evaluatePhoneItem(SRC)).toEqual({ gated: true, held: true });
-    expect(evaluatePhoneItem(SRC)).toEqual({ gated: true, held: true });
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: true, held: true });
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: true, held: true });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain('left open');
   });
 
   describe('the "look again" event', () => {
-    it('counts and pushes for a loaded player', () => {
+    it('counts and pushes for a loaded player', async () => {
       bridgeMock.countItem.mockReturnValue(0);
 
       netHandlers[CHECK]();
+      await flush();
 
       expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, phone(true, false));
     });
 
-    it('is refused silently for a source with no loaded character', () => {
+    it('is refused silently for a source with no loaded character', async () => {
       bridgeMock.getPlayer.mockReturnValue(undefined);
 
       netHandlers[CHECK]();
+      await flush();
 
       expect(bridgeMock.countItem).not.toHaveBeenCalled();
       expect(emitNet).not.toHaveBeenCalled();
@@ -252,23 +260,24 @@ describe('the phone-state registry', () => {
     (globalThis as any).source = SRC;
   });
 
-  it('tells a subscriber on load, on use, and on the look-again event', () => {
+  it('tells a subscriber on load, on use, and on the look-again event', async () => {
     const run = vi.fn();
     onPhoneStateChanged('test-load-use-relay', run);
 
-    loadedSubscribers.find((s) => s.name === 'phone-item')!.run(SRC);
+    await loadedSubscribers.find((s) => s.name === 'phone-item')!.run(SRC);
     registeredAtImport![1](SRC);
     netHandlers[CHECK]();
+    await flush();
 
     expect(run.mock.calls).toEqual([[SRC], [SRC], [SRC]]);
   });
 
-  it('tells nobody about a source with no loaded character', () => {
+  it('tells nobody about a source with no loaded character', async () => {
     const run = vi.fn();
     onPhoneStateChanged('test-unloaded', run);
     bridgeMock.getPlayer.mockReturnValue(undefined);
 
-    evaluatePhoneItem(SRC);
+    await evaluatePhoneItem(SRC);
 
     expect(run).not.toHaveBeenCalled();
   });
@@ -282,7 +291,7 @@ describe('the phone-state registry', () => {
     onPhoneStateChanged('test-rejects', () => Promise.reject(new Error('later')));
     onPhoneStateChanged('test-after', after);
 
-    evaluatePhoneItem(SRC);
+    await evaluatePhoneItem(SRC);
     await Promise.resolve();
 
     expect(after).toHaveBeenCalledWith(SRC);
@@ -330,10 +339,10 @@ describe('every device, one push each (MICA-263)', () => {
     expect(enabledDevices()).toEqual(['phone']);
   });
 
-  it('keeps an off tablet shut and uncounted, however its item convar reads', () => {
+  it('keeps an off tablet shut and uncounted, however its item convar reads', async () => {
     bridgeMock.countItem.mockReturnValue(0);
 
-    const states = evaluateDeviceItems(SRC);
+    const states = await evaluateDeviceItems(SRC);
 
     expect(states).toEqual([phone(true, false), TABLET_OFF]);
     expect(bridgeMock.countItem).toHaveBeenCalledTimes(1);
@@ -342,9 +351,9 @@ describe('every device, one push each (MICA-263)', () => {
     expect(emitNet).toHaveBeenCalledWith(SERVER_ENABLED, SRC, { device: 'tablet', enabled: false });
   });
 
-  it('never sends the phone a server-enabled push: it has no enable convar', () => {
+  it('never sends the phone a server-enabled push: it has no enable convar', async () => {
     convar.tablet = 'true';
-    evaluateDeviceItems(SRC);
+    await evaluateDeviceItems(SRC);
 
     const enabledPushes = emitNet.mock.calls.filter(([event]) => event === SERVER_ENABLED);
     expect(enabledPushes).toEqual([[SERVER_ENABLED, SRC, { device: 'tablet', enabled: true }]]);
@@ -361,13 +370,13 @@ describe('every device, one push each (MICA-263)', () => {
     expect(enabledDevices()).toEqual(['phone']);
   });
 
-  it('gates the tablet on its own item, independently of the phone', () => {
+  it('gates the tablet on its own item, independently of the phone', async () => {
     convar.tablet = 'true';
     bridgeMock.countItem.mockImplementation((_player: unknown, item: string) =>
       item === 'phone' ? 1 : 0
     );
 
-    expect(evaluateDeviceItems(SRC)).toEqual([
+    expect(await evaluateDeviceItems(SRC)).toEqual([
       phone(true, true),
       { device: 'tablet', enabled: true, gated: true, held: false }
     ]);
@@ -376,16 +385,16 @@ describe('every device, one push each (MICA-263)', () => {
       item === 'phone' ? 0 : 1
     );
 
-    expect(evaluateDeviceItems(SRC)).toEqual([
+    expect(await evaluateDeviceItems(SRC)).toEqual([
       phone(true, false),
       { device: 'tablet', enabled: true, gated: true, held: true }
     ]);
   });
 
-  it('leaves the tablet ungated when only the phone is gated, and the reverse', () => {
+  it('leaves the tablet ungated when only the phone is gated, and the reverse', async () => {
     convar.tablet = 'true';
     convar.tabletItem = '';
-    expect(evaluateDeviceItems(SRC)?.[1]).toEqual({
+    expect((await evaluateDeviceItems(SRC))?.[1]).toEqual({
       device: 'tablet',
       enabled: true,
       gated: false,
@@ -395,18 +404,18 @@ describe('every device, one push each (MICA-263)', () => {
     convar.current = '';
     convar.tabletItem = 'tablet';
     bridgeMock.countItem.mockReturnValue(0);
-    expect(evaluateDeviceItems(SRC)).toEqual([
+    expect(await evaluateDeviceItems(SRC)).toEqual([
       phone(false, true),
       { device: 'tablet', enabled: true, gated: true, held: false }
     ]);
     expect(phoneItemName()).toBeNull();
   });
 
-  it('ignores every item gate on a standalone server, but still honours mica_tablet', () => {
+  it('ignores every item gate on a standalone server, but still honours mica_tablet', async () => {
     bridgeMock.framework = 'standalone';
     convar.tablet = 'true';
 
-    expect(evaluateDeviceItems(SRC)).toEqual([
+    expect(await evaluateDeviceItems(SRC)).toEqual([
       phone(false, true),
       { device: 'tablet', enabled: true, gated: false, held: true }
     ]);
@@ -426,12 +435,13 @@ describe('every device, one push each (MICA-263)', () => {
     expect(deviceItemName('phone')).toBe('phone');
   });
 
-  it('tells the phone-state subscribers once per pass, not once per device', () => {
+  it('tells the phone-state subscribers once per pass, not once per device', async () => {
     convar.tablet = 'true';
     const run = vi.fn();
     onPhoneStateChanged('test-once-per-pass', run);
 
     netHandlers[CHECK]();
+    await flush();
 
     expect(run).toHaveBeenCalledTimes(1);
     expect(emitNet.mock.calls.filter(([event]) => event === PUSH)).toHaveLength(2);
@@ -446,13 +456,14 @@ describe('every device, one push each (MICA-263)', () => {
     expect(pushRehydrate).toHaveBeenCalledTimes(1);
   });
 
-  it('tells the device-state subscribers about every device but the phone, once a pass', () => {
+  it('tells the device-state subscribers about every device but the phone, once a pass', async () => {
     const seen: unknown[][] = [];
     onDeviceStateChanged('test-device-pass', (src, device) => {
       seen.push([src, device]);
     });
 
     netHandlers[CHECK]();
+    await flush();
     // On or off: an off tablet is told too, so its cached id is cleared.
     expect(seen).toEqual([[SRC, 'tablet']]);
 
@@ -462,7 +473,7 @@ describe('every device, one push each (MICA-263)', () => {
     expect(seen).toEqual([]);
   });
 
-  it('keeps a device-state subscriber that throws from stopping the pass', () => {
+  it('keeps a device-state subscriber that throws from stopping the pass', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const after = vi.fn();
     onDeviceStateChanged('test-throws', () => {
@@ -471,6 +482,7 @@ describe('every device, one push each (MICA-263)', () => {
     onDeviceStateChanged('test-after-throw', after);
 
     expect(() => netHandlers[CHECK]()).not.toThrow();
+    await flush();
     expect(after).toHaveBeenCalledWith(SRC, 'tablet');
     expect(error.mock.calls.some(([line]) => String(line).includes("'test-throws'"))).toBe(true);
     error.mockRestore();
@@ -486,6 +498,239 @@ describe('every device, one push each (MICA-263)', () => {
     } finally {
       (globalThis as any).GetConvar = previous;
     }
+  });
+});
+
+/**
+ * MICA-436: a phone belongs to the citizen who first used it, for good, so a gated server counts
+ * a slot only when the judge `services/Devices.ts` installs calls it the player's to use. A stub
+ * judge here, keyed by the id each slot carries: the rule itself is `devices.test.ts`'s, against
+ * the real resolver.
+ */
+describe('holding one of your own (MICA-436)', () => {
+  const MINE = 'a'.repeat(32);
+  const THEIRS = 'b'.repeat(32);
+  const UNREAD = 'c'.repeat(32);
+  const slot = (n: number, deviceId?: string) => ({
+    slot: n,
+    metadata: deviceId ? { deviceId } : {}
+  });
+  /** What the judge knows without a read, and what a read would find. */
+  let known: Record<string, boolean | null>;
+  let readAs: Record<string, boolean>;
+  const judge = {
+    known: vi.fn((_c: string, _d: string, s: { metadata: Record<string, unknown> }) => {
+      const id = s.metadata.deviceId as string | undefined;
+      return id === undefined ? true : (known[id] ?? null);
+    }),
+    read: vi.fn(async (_c: string, _d: string, s: { metadata: Record<string, unknown> }) => {
+      const id = s.metadata.deviceId as string;
+      if (!(id in readAs)) throw new Error('connection lost');
+      return readAs[id];
+    })
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetPhoneItemWarnings();
+    __resetRateLimits();
+    __resetLastUsedPhone();
+    resetConvars();
+    bridgeMock.framework = 'qb';
+    bridgeMock.getPlayer.mockReturnValue(PLAYER);
+    bridgeMock.countItem.mockReturnValue(1);
+    (globalThis as any).source = SRC;
+    known = { [MINE]: true, [THEIRS]: false };
+    readAs = { [UNREAD]: false };
+    installSlotJudge(judge);
+  });
+
+  afterEach(() => {
+    installSlotJudge(null);
+  });
+
+  it("pushes not held to a player holding nothing but somebody else's phone", async () => {
+    bridgeMock.itemSlots.mockReturnValue([slot(3, THEIRS)]);
+
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: true, held: false });
+    expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, phone(true, false));
+    // Ruled by slot, never by count: the count would have said one is held.
+    expect(bridgeMock.countItem).not.toHaveBeenCalled();
+  });
+
+  it('pushes held to the same player once a phone of their own is beside it', async () => {
+    bridgeMock.itemSlots.mockReturnValue([slot(3, THEIRS), slot(5, MINE)]);
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: true, held: true });
+
+    // A blank phone is theirs too: the resolve mints into it, as a burner.
+    bridgeMock.itemSlots.mockReturnValue([slot(3, THEIRS), slot(6)]);
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: true, held: true });
+  });
+
+  it('reads a slot it has not seen before it pushes, on the look-again event too', async () => {
+    bridgeMock.itemSlots.mockReturnValue([slot(3, UNREAD)]);
+
+    netHandlers[CHECK]();
+    await flush();
+
+    expect(judge.read).toHaveBeenCalledOnce();
+    expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, phone(true, false));
+    expect(emitNet).not.toHaveBeenCalledWith(PUSH, SRC, phone(true, true));
+  });
+
+  it('leaves a slot whose row cannot be read open, and says so', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    readAs = {};
+    bridgeMock.itemSlots.mockReturnValue([slot(3, UNREAD)]);
+
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: true, held: true });
+    expect(error.mock.calls.some(([line]) => String(line).includes('could not read whose'))).toBe(
+      true
+    );
+    error.mockRestore();
+  });
+
+  it('counts, as it always has, where the inventory cannot list slots', async () => {
+    bridgeMock.itemSlots.mockReturnValue(null);
+    bridgeMock.countItem.mockReturnValue(0);
+
+    expect(await evaluatePhoneItem(SRC)).toEqual({ gated: true, held: false });
+    expect(bridgeMock.countItem).toHaveBeenCalledWith(PLAYER, 'phone');
+    expect(judge.known).not.toHaveBeenCalled();
+  });
+
+  it('answers synchronously from what it knows, counting an unread slot as held', () => {
+    bridgeMock.itemSlots.mockReturnValue([slot(3, THEIRS)]);
+    expect(holdsDevice(PLAYER as any, 'phone')).toBe(false);
+
+    bridgeMock.itemSlots.mockReturnValue([slot(3, UNREAD)]);
+    expect(holdsDevice(PLAYER as any, 'phone')).toBe(true);
+    expect(judge.read).not.toHaveBeenCalled();
+  });
+
+  it("opens nothing for a use of somebody else's phone, and records no slot", async () => {
+    bridgeMock.itemSlots.mockReturnValue([slot(3, THEIRS)]);
+
+    registeredAtImport![1](SRC, { slot: 3 });
+    await flush();
+
+    expect(emitNet).not.toHaveBeenCalledWith(OPEN, SRC);
+    expect(emitNet).not.toHaveBeenCalledWith(PUSH, SRC, phone(true, true));
+    expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, phone(true, false));
+    expect(lastUsedDeviceSlot(SRC, 'phone')).toBeUndefined();
+  });
+
+  it('opens a use of their own phone in the same tick, as before', () => {
+    bridgeMock.itemSlots.mockReturnValue([slot(3, THEIRS), slot(5, MINE)]);
+
+    registeredAtImport![1](SRC, { slot: 5 });
+
+    expect(emitNet).toHaveBeenCalledWith(OPEN, SRC);
+    expect(lastUsedDeviceSlot(SRC, 'phone')).toBe(5);
+  });
+
+  it('reads a used slot it has not seen before it opens anything', async () => {
+    bridgeMock.itemSlots.mockReturnValue([slot(3, UNREAD)]);
+    readAs = { [UNREAD]: true };
+
+    registeredAtImport![1](SRC, { slot: 3 });
+    expect(emitNet).not.toHaveBeenCalledWith(OPEN, SRC);
+    await flush();
+
+    expect(judge.read).toHaveBeenCalledOnce();
+    expect(emitNet).toHaveBeenCalledWith(OPEN, SRC);
+    expect(lastUsedDeviceSlot(SRC, 'phone')).toBe(3);
+  });
+
+  /**
+   * MICA-436 review: a pass held up by a row read must not land after a newer pass. Here the
+   * phone is dropped while the first pass reads, and the relay's pass answers `held: false`
+   * from the slots alone; the first pass's `held: true` would undo it.
+   */
+  it('pushes nothing from a pass a newer one overtook', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    bridgeMock.itemSlots.mockReturnValue([slot(3, UNREAD)]);
+    judge.read.mockImplementationOnce(async () => {
+      await gate;
+      return true;
+    });
+
+    const first = evaluateDeviceItems(SRC);
+    // Dropped meanwhile: the relay's pass finds no slot, and pushes at once.
+    bridgeMock.itemSlots.mockReturnValue([]);
+    await evaluateDeviceItems(SRC);
+    release();
+
+    expect(await first).toBeNull();
+    const phonePushes = emitNet.mock.calls.filter(
+      ([event, , payload]) => event === PUSH && (payload as { device?: string }).device === 'phone'
+    );
+    expect(phonePushes).toEqual([[PUSH, SRC, phone(true, false)]]);
+  });
+
+  it('still pushes from a pass nothing overtook, once its read lands', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    bridgeMock.itemSlots.mockReturnValue([slot(3, UNREAD)]);
+    judge.read.mockImplementationOnce(async () => {
+      await gate;
+      return true;
+    });
+
+    const first = evaluateDeviceItems(SRC);
+    release();
+
+    expect(await first).not.toBeNull();
+    expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, phone(true, true));
+  });
+
+  it('opens nothing when the used slot changed while its row was read', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    bridgeMock.itemSlots.mockReturnValue([slot(3, UNREAD)]);
+    judge.read.mockImplementationOnce(async () => {
+      await gate;
+      return true;
+    });
+
+    registeredAtImport![1](SRC, { slot: 3 });
+    // Swapped meanwhile: slot 3 carries somebody else's phone now.
+    bridgeMock.itemSlots.mockReturnValue([slot(3, THEIRS)]);
+    release();
+    await flush();
+
+    expect(emitNet).not.toHaveBeenCalledWith(OPEN, SRC);
+    expect(lastUsedDeviceSlot(SRC, 'phone')).toBeUndefined();
+    expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, phone(true, false));
+  });
+
+  it('opens nothing when another character has the source by the time the read lands', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    bridgeMock.itemSlots.mockReturnValue([slot(3, UNREAD)]);
+    judge.read.mockImplementationOnce(async () => {
+      await gate;
+      return true;
+    });
+
+    registeredAtImport![1](SRC, { slot: 3 });
+    bridgeMock.getPlayer.mockReturnValue({ ...PLAYER, citizenid: 'CITIZEN_B' });
+    release();
+    await flush();
+
+    expect(emitNet).not.toHaveBeenCalledWith(OPEN, SRC);
+  });
+
+  it('pushes nothing when another character has the source by the time the reads land', async () => {
+    bridgeMock.itemSlots.mockReturnValue([slot(3, UNREAD)]);
+    judge.read.mockImplementationOnce(async () => {
+      bridgeMock.getPlayer.mockReturnValue({ ...PLAYER, citizenid: 'CITIZEN_B' });
+      return false;
+    });
+
+    expect(await evaluateDeviceItems(SRC)).toBeNull();
+    expect(emitNet).not.toHaveBeenCalled();
   });
 });
 

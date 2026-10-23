@@ -221,11 +221,12 @@ DDL.
   row belongs to, bound with the table, the column and `citizenid` into every
   sealed value, so a ciphertext copied into another thread does not open. `[]`
   is a real answer (a mail row is its own thread). On a `deviceOwned` table the
-  value is bound to the row's phone, `device_id`, not to `citizenid` (MICA-431):
-  a handover rewrites `citizenid` on every row of the phone, and a value bound
-  to the character would stop opening there. A row with no `device_id` binds to
-  its own character, and `Repository.transferDeviceRows` refuses a table with a
-  column sealed to the character, before it moves a row. `ascii: true` beside
+  value is bound to the row's phone, `device_id`, not to `citizenid` (MICA-431),
+  so it opens on that phone and on no other. MICA-431 chose that while a
+  handover rewrote `citizenid` on every row of a phone, which a value bound to
+  the character would not have survived; MICA-436 removed the handover and the
+  binding stayed, for what it still does (`server/lib/contentCipher.ts`). A row
+  with no `device_id` binds to its own character. `ascii: true` beside
   `encrypted` is for a column that only ever holds ASCII (a base64 photo): it
   sizes the plaintext bound at one byte a character rather than four, and a
   write with any other character is refused. A service that is not the
@@ -435,16 +436,26 @@ the caller's own inventory (`services/Devices.ts`, through
 `lib/deviceIdentity.ts`), never from a payload — `device_id` is refused by the
 write and filter allowlists whatever a client sends (MICA-281).
 
-**The predicate is still both.** Every read and write on a device-owned table
-names `citizenid = ? AND device_id = ?`. What makes a stolen phone show its data
-to the thief is a _handover_, not a weaker predicate: when `resolvePhone` finds
-a player holding an item whose `mica_devices` row names somebody else, every
-table with a `device_id` column gets
-`UPDATE … SET citizenid = holder WHERE device_id = ?` through
-`Repository.transferDeviceRows`, a named privileged write. A child table with no
-repository registers a hook with `onDeviceHandover`
-(`mica_messages_participants` does). So `citizenid` on a device-owned row means
-_whoever holds the phone now_, and it stays the orphan sweep's key.
+**The predicate is still both, and `citizenid` is the phone's first user.**
+Every read and write on a device-owned table names
+`citizenid = ? AND device_id = ?`. The `citizenid` on such a row, `mica_devices`
+first, is the citizen who first used the phone, **for good** (MICA-436), and it
+stays the orphan sweep's key. Nothing rewrites it to whoever holds the item:
+when `resolveDevice` finds a slot whose `mica_devices` row names somebody else,
+it skips the slot (`judgeRow` in `services/Devices.ts`, the one rule), and a
+player left with no slot of their own is answered `'none'` and refused with
+`server.phone.notHeld`. The item gate (`lib/deviceItem.ts`) counts by the same
+rule, so the shell stays shut for them. Nothing is written for a skipped slot.
+
+That rules out, for anyone adding a table or a write path: a statement that
+rewrites `citizenid` on a device-owned row to the player in hand. Before
+MICA-436 a handover did exactly that, across every table with a `device_id`
+column, and a possessed item was full read access to its owner's phone. A new
+device-owned table needs nothing to follow its phone. Two named writes still set
+`citizenid` on a phone's rows, and both set it to the phone's owner:
+`PhoneNumberRepository.transferToHolder` puts a number row recorded before
+MICA-436 back with the owner, and `ConversationRepository.ensureLineParticipant`
+reopens a line thread's membership for the phone it left.
 
 **A tablet is a device too (MICA-264).** `mica_devices.kind` says which, and a
 device-owned table keys a tablet's rows on the tablet's own id exactly as it
@@ -475,7 +486,7 @@ bug that looks like a feature, so the reasoning is written down:
 | Stays with the person                                                           | Why                                                                                               |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `mica_accounts`, `mica_blabber`, `mica_blabber_dms`, `mica_blabber_attachments` | Social identities are the person's                                                                |
-| `mica_hodlr`, `mica_marketplace`, `mica_marketplace_attachments`                | Money and listings — a stolen phone must not hand them over                                       |
+| `mica_hodlr`, `mica_marketplace`, `mica_marketplace_attachments`                | Money and listings — a lost phone must not take them with it                                      |
 | `mica_highscores`, `mica_reports`, `mica_audit_logs`                            | Scores, moderation and audit are about the person                                                 |
 | `mica_mail`                                                                     | Addressed to the character by other resources, by citizenid                                       |
 | `mica_messages`, `mica_messages_attachments`, `mica_messages_reactions`         | Authored content: the author keeps authorship, the _thread_ follows via participants              |
@@ -492,8 +503,13 @@ a per-owner unique key should name `device_id` in it from the start.
 a contact a job hands them, a call logged against them — land on the phone
 `phoneForCitizen` resolves: the one in their hand, else the one they used last,
 else their identity phone. A row addressed by **number** lands on the phone that
-owns the number (`readPhoneIdByNumber`), which is what makes a message to a
-stolen phone reach the thief.
+owns the number (`readPhoneIdByNumber`).
+
+**After a robbery, those rows wait on the phone** (MICA-339, MICA-436). The
+cached phone is always the citizen's own, so it still names the phone the thief
+now holds, and rows filed under its owner keep landing there until the owner
+starts using another. The thief is refused the phone and cannot read them; the
+owner can only if it comes back, as with a phone in a stash.
 
 **A server that cannot carry a phone id** — an ungated qb server, standalone,
 es_extended's own inventory — gives every citizen one unclaimed _identity phone_

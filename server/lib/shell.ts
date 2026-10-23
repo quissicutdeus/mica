@@ -685,11 +685,12 @@ onPlayerLoaded('framework-sources', FrameworkBridge.rememberSource);
  * ledger, permanently — the record of a staff member's moderation outlives the staff member.
  *
  * **And the device rows, live** (MICA-428). They are the phone's identity and state, not the
- * character's content, and the phone item can outlive its character: the next holder's
- * resolve reads its `mica_devices` row as `active`, finds none if it was erased, and its
- * create is refused by `device_id_unique` — a phone that never works again. Left `active`, the
- * row is handed on by the handover walk like any phone that changes hands. Before MICA-428 the
- * purge deleted them and the next resolve minted the row afresh.
+ * character's content, and the phone item can outlive its character. Erased, the next holder's
+ * resolve would read no `active` row and its create would be refused by `device_id_unique`.
+ * Left `active`, the row still names the deleted character, and since MICA-436 a phone is its
+ * first user's for good: the next holder is refused it like any phone that is not theirs, and
+ * nothing on it moves. Before MICA-428 the purge deleted them and the next resolve minted the
+ * row afresh.
  *
  * Everything else they owned is erased. The entries are a player's own delete's, taken from
  * `SELF_SERVICE_EXCEPT` rather than restated, so the pending-report predicate cannot drift

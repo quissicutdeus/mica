@@ -514,7 +514,7 @@ const beforeDeleteHooks: { name: string; run: BeforeSelfServiceDelete }[] = [];
  * still exist to say what they were (MICA-342). `Conversations.ts` is the one user: it unpairs
  * every 1:1 the player is about to be taken out of.
  *
- * Registered here rather than imported, for the reason `onDeviceHandover` is registered.
+ * Registered here rather than imported, for the reason `onDeviceCreated` is registered.
  * `Conversations.ts` reaches `lib/shell.ts` through `Devices.ts`, and `lib/shell.ts` imports this
  * file, so importing it here would close a cycle. A hook that throws fails the whole delete
  * before anything is purged, so the player's retry starts clean.

@@ -48,8 +48,8 @@ export const PHONE_NUMBERS_TABLE = 'mica_phone_numbers';
  * that is this citizen's and has not yet been attached to a phone. Every row was a legacy row
  * before MICA-284, and on a server whose inventory cannot carry a phone id (standalone, or
  * es_extended's own inventory) every row stays one — one number per citizen, exactly as
- * before. `citizenid` is whoever last used the phone the number is on, which is what makes a
- * stolen phone ring for the thief.
+ * before. `citizenid` is the owner of the phone the number is on — its first user, for good
+ * since MICA-436 — so a stolen phone's number still reaches its owner, never the thief.
  */
 export interface PhoneNumberRow {
   id: number;
@@ -186,8 +186,8 @@ export const ACTIVE_STATUS = 'active';
 /**
  * The phone this number is on, or null — for a legacy row not yet attached to one, and for a
  * number micaOS has no row for at all (ESX). What a message or a call addressed to a number
- * lands on (MICA-282): the phone, not whoever happens to hold it, which is the same thing
- * only until the phone changes hands.
+ * lands on (MICA-282): the phone, which is its owner's for good (MICA-436), so what arrives
+ * while somebody else holds it waits there for the owner.
  */
 export const readPhoneIdByNumber = async (number: string): Promise<string | null> => {
   if (!number) return null;

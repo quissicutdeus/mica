@@ -1476,15 +1476,15 @@ describe('Reports (mica_reports.target_preview) and the review queue', () => {
 
 /**
  * MICA-431: a phone's own content, sealed to the phone. Each round trip seals through the real
- * path, then opens under the row's context — and, the binding's point, still opens after a
- * handover rewrites the row's citizenid, and not on another phone.
+ * path, then opens under the row's context — and, the binding's point, opens whatever
+ * citizenid the row carries (a handover before MICA-436 rewrote it), and not on another phone.
  */
 describe("a phone's own content (MICA-431)", () => {
   const PHONE = TEST_PHONE_ID;
   const onPhone = (table: string, column: string, row: Record<string, unknown>) =>
     openContent(contentContext(encryptedColumn(table, column)!, row), String(row[column]));
 
-  it('seals a note to the phone it is written on, and opens it after a handover', async () => {
+  it('seals a note to the phone it is written on, and opens it on that phone alone', async () => {
     const reply = await call('notes', 'create', { title: 'groceries', content: 'milk, eggs' });
     expect(reply.title).toBe('groceries');
 
@@ -1494,7 +1494,7 @@ describe("a phone's own content (MICA-431)", () => {
     expect(isSealed(row.content)).toBe(true);
     expect(JSON.stringify(row)).not.toContain('milk');
     expect(onPhone('mica_notes', 'content', row)).toBe('milk, eggs');
-    // The handover: the same phone, a new holder.
+    // The same phone, another citizenid: what a handover before MICA-436 left.
     expect(onPhone('mica_notes', 'content', { ...row, citizenid: 'CIT_THIEF' })).toBe('milk, eggs');
     // The positive twin's negative: another phone's row will not open it.
     expect(onPhone('mica_notes', 'content', { ...row, device_id: 'f'.repeat(32) })).toBe(

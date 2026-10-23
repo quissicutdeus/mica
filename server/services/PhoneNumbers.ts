@@ -40,8 +40,8 @@ import { who } from '../lib/who';
  * number — the community resources that add one disagree about the field, let alone the
  * call — so there is nothing to write back through, and inventing a write into a table micaOS
  * does not own is the mistake §10 forbids. On es_extended micaOS keeps reading whatever the
- * operator's resource provides, issues nothing, and says so once at start. A stolen phone
- * there keeps the thief's own number, which is honest about what the framework allows.
+ * operator's resource provides, issues nothing, and says so once at start. A number there is
+ * the character's, not the phone's, which is honest about what the framework allows.
  *
  * **A number attaches to a phone lazily**, because it has to. A phone id lives in inventory
  * item metadata (MICA-280) and can only be minted at runtime, when a player actually holds the
@@ -116,8 +116,9 @@ const repo = phoneNumbers.repo as PhoneNumberRepository;
 
 /**
  * Numbers this process has already resolved for a phone, so a re-sync with nothing changed
- * costs no query. Keyed by phone id; the holder is kept beside the number so a phone that has
- * changed hands since is noticed and re-read.
+ * costs no query. Keyed by phone id, with the citizen it was resolved for beside it, so a sync
+ * for anybody else re-reads. Only the phone's owner reaches a sync since MICA-436, so that is a
+ * safety now rather than the handover it was written for.
  */
 const onPhone = new Map<string, { number: string; citizenid: string }>();
 
@@ -184,8 +185,10 @@ const frameworkNumber = (player: FrameworkPlayer): string | null => {
  * Two things can be wrong with a row that is nevertheless the right one. It can be
  * soft-deleted — `lib/retention.ts` never hard-deletes, so a `'deleted'` row still holds the
  * number and is reactivated rather than treated as an obstacle. And it can be recorded against
- * whoever used the phone last, which for a phone that has just changed hands is not this
- * player; `transferToHolder` is the write that makes the number ring for them.
+ * somebody other than the phone's owner — a phone that changed hands before MICA-436, when the
+ * number followed whoever held it; `transferToHolder` is the write that puts it back with the
+ * owner. Only an active phone reaches here, and a resolve answers a phone to its owner alone,
+ * so nobody else is ever handed a number this way.
  *
  * The reactivation is the ordinary ownership-scoped `update`, scoped by the citizenid the row
  * carries *now*, which is known. The transfer cannot be — its whole point is that the row's
@@ -367,11 +370,11 @@ const attachLegacy = async (
 /**
  * The number on a phone, for the citizen holding it.
  *
- * In order: the number already on this phone, whoever it was recorded against — a phone that
- * changed hands is transferred to its holder here; the holder's legacy number, attached to
- * the phone; and finally a fresh assignment, preferring the framework's own value. That order
- * is what makes both stories true at once: a phone keeps its number through a robbery, and a
- * character keeps their number through the upgrade that introduced phones.
+ * In order: the number already on this phone, whoever it was recorded against (`claimRow`);
+ * the holder's legacy number, attached to the phone; and finally a fresh assignment, preferring
+ * the framework's own value. That order is what makes both stories true at once: a phone keeps
+ * its number through a robbery — it stays with the phone, which stays its owner's (MICA-436) —
+ * and a character keeps their number through the upgrade that introduced phones.
  */
 const numberForPhone = async (
   phone: ActiveDevice,
@@ -450,8 +453,8 @@ const writeBack = (player: FrameworkPlayer, value: string): void => {
 const ESX_KEEPS_THE_NUMBER =
   `[mica] this server runs es_extended, which has no standard way to set a character's ` +
   `phone number, so micaOS keeps reading the number your phone-number resource provides ` +
-  `and issues none of its own. A phone that changes hands keeps the holder's own number ` +
-  `here. Reported once per resource start.`;
+  `and issues none of its own. A number here is the character's, not the phone's. ` +
+  `Reported once per resource start.`;
 
 /**
  * Whether `citizenid` is still the character on `src` (MICA-336). A sync is started for one

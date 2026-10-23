@@ -213,14 +213,16 @@ describe('seeding a new phone', () => {
 });
 
 describe('never seeding twice', () => {
-  it('does not seed a phone that already has a row: a claim, a handover', async () => {
+  it.each([
+    ['a claim of their own', CID, { status: 'active' }],
+    // Somebody else's phone is refused outright (MICA-436), so nothing could seed it either.
+    ["somebody else's", 'SOMEONE_ELSE', { status: 'none' }]
+  ])('does not seed a phone that already has a row: %s', async (_label, owner, outcome) => {
     convar.mica_phone_item = 'phone';
     bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
-    dbMock.query.mockResolvedValue([
-      { id: 1, citizenid: 'SOMEONE_ELSE', device_id: CARRIED, claimed: 0 }
-    ]);
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: owner, device_id: CARRIED, claimed: 0 }]);
 
-    await resolvePhone(SRC);
+    await expect(resolvePhone(SRC)).resolves.toMatchObject(outcome);
     await settle();
 
     expect(insertsInto('mica_contacts')).toEqual([]);

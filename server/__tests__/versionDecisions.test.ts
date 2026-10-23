@@ -109,12 +109,12 @@ const versioned = (): Set<string> =>
 
 describe('every content column has a version decision (MICA-430)', () => {
   /**
-   * MICA-430 review: a membership's `citizenid` is rewritten on every handover
-   * (`transferParticipants`) and on a line's rejoin, never by its member. It always names the
-   * phone's holder, and the phone's own row (`mica_devices`) keeps one version a handover, so
-   * who held a membership is already on record: versioning each one would only copy that chain.
+   * MICA-430 review: a membership's `citizenid` is written on a line's rejoin, never by its
+   * member, and always names the phone's owner, which nothing moves since MICA-436: the phone's
+   * own row (`mica_devices`) already says who that is, so versioning each one would only copy
+   * it.
    */
-  it("leaves a membership's citizenid to the phone's handover chain", () => {
+  it("leaves a membership's citizenid to the phone's own row", () => {
     expect(versioned().has('mica_messages_participants.citizenid')).toBe(false);
   });
 

@@ -92,7 +92,7 @@ describe('the integration reader of sealed bodies', () => {
 
   /**
    * MICA-431: a phone's own table is sealed to the phone, so the reader opens it by the row's
-   * `device_id`, after a handover changed its citizenid, and by the citizenid on a row with no
+   * `device_id`, whatever citizenid it carries, and by the citizenid on a row with no
    * phone. Sealed here by the real sealer, from the real context of a phone-bound entry.
    */
   it('opens a value sealed to the phone, and to the citizen on a row with no phone', async () => {

@@ -22,8 +22,7 @@ so two edits at once both land, last writer winning. A caller must treat
 **A suite whose fake `update` "matches nothing" needs `rows` too.** The default
 read always finds a row, so a write the fake refuses looks like a lost race and
 is retried, which doubles the suite's statement counts. Return `[]`, or the
-suite's own world, from `rows`, as conversationPrivacy and deviceHandoverRetry
-do.
+suite's own world, from `rows`, as conversationPrivacy does.
 
 `server/__tests__/versionedWrites.ts` teaches a suite's stand-in this path:
 

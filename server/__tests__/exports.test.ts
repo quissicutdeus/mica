@@ -23,7 +23,10 @@ const { dbMock, bridgeMock } = vi.hoisted(() => ({
     findOfflineByPhone: vi.fn(async () => null),
     registerUsableItem: vi.fn(),
     // `HasPhoneItem` counts through this; `null` is "no inventory can count".
-    countItem: vi.fn(() => 0)
+    countItem: vi.fn(() => 0),
+    // `null`, "this inventory cannot list slots", so `HasPhoneItem` counts as it always did;
+    // a case that lists slots says so (MICA-436).
+    itemSlots: vi.fn((): unknown[] | null => null)
   }
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
@@ -75,6 +78,7 @@ import { __resetBatteryState, currentCharge } from '../services/Battery';
 // Publishes `PostToDarkChat` beside its service (MICA-254); `darkchat.test.ts` drives it.
 import '../services/DarkchatMessages';
 import { __setDeviceResolvers } from '../lib/deviceIdentity';
+import { resolvePhone } from '../services/Devices';
 import { PlayerFacingError } from '../lib/errors';
 import { installTestPhone, TEST_PHONE_ID, TEST_TABLET_ID } from './phoneStub';
 
@@ -1033,6 +1037,27 @@ describe('bridge-compat exports (MICA-232)', () => {
     await withPhoneItem('phone', () => {
       expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: true });
     });
+  });
+
+  it("HasPhoneItem is false once the only phone held is known to be somebody else's", async () => {
+    // MICA-436: a phone is its first user's for good, so somebody else's does not count.
+    const THEIRS = 'b'.repeat(32);
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: THEIRS } }]);
+    dbMock.query.mockResolvedValue([
+      { id: 1, citizenid: 'OWNER001', device_id: THEIRS, kind: 'phone', claimed: 1 }
+    ]);
+    try {
+      await withPhoneItem('phone', async () => {
+        // Synchronous, so a phone whose row is not read yet is held: "cannot say" is not "none".
+        expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: true });
+        await expect(resolvePhone(SRC)).resolves.toEqual({ status: 'none' });
+        expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: false });
+      });
+      // Ruled by slot, not by count.
+      expect(bridgeMock.countItem).not.toHaveBeenCalled();
+    } finally {
+      bridgeMock.itemSlots.mockReturnValue(null);
+    }
   });
 
   it('HasPhoneItem refuses a bad source and one with no character', () => {

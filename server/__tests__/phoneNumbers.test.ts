@@ -141,9 +141,9 @@ beforeEach(() => {
   dbMock.single.mockResolvedValue(null);
   dbMock.insert.mockResolvedValue(1);
   dbMock.update.mockResolvedValue(true);
-  // The `mica_devices` row already exists and names this citizen as its claimed holder, so
-  // `resolvePhone` neither inserts a phone nor hands one over, and every `insert` and
-  // `update` counted below is about a number.
+  // The `mica_devices` row already exists and names this citizen as its claimed owner, so
+  // `resolvePhone` writes nothing, and every `insert` and `update` counted below is about a
+  // number.
   dbMock.query.mockResolvedValue([
     { id: 1, citizenid: CITIZEN, device_id: 'c'.repeat(32), claimed: 1 }
   ]);
@@ -169,33 +169,14 @@ const load = async (src: number): Promise<void> => {
 };
 
 /**
- * The exact statement `Repository.transferDeviceRows` writes when a phone changes hands, and
- * nothing looser: anchored at both ends, so a number-sync `UPDATE` can never match it.
+ * The SQL and parameters of every `update` this test made, in order. A resolve writes none of
+ * its own since MICA-436 took the handover walk out, so every one is the number sync's.
  */
-const HANDOVER_TRANSFER =
-  /^UPDATE `mica_\w+` SET `citizenid` = \?(, `updated_at` = `updated_at`)? WHERE `device_id` = \? AND `citizenid` <> \?( AND `status` NOT IN \('erased', 'expired', 'moderated'\))?$/;
-
-/**
- * The SQL and parameters of every `update` this test made, in order — less the handover walk.
- *
- * A phone's first resolve in a process walks it in full even when its holder is unchanged
- * (MICA-319, `ensureHeld` in `services/Devices.ts`), so every load here also writes one no-op
- * transfer per phone-keyed table. Those are not the number sync under test, and are dropped —
- * after checking each one dropped really is a transfer to one holder, `[holder, phone, holder]`.
- */
-const updates = () => {
-  const all = dbMock.update.mock.calls.map(([sql, params]) => ({
+const updates = () =>
+  dbMock.update.mock.calls.map(([sql, params]) => ({
     sql: String(sql),
     params: params as unknown[]
   }));
-  const isTransfer = (sql: string) => HANDOVER_TRANSFER.test(sql.replace(/\s+/g, ' ').trim());
-  for (const dropped of all.filter((u) => isTransfer(u.sql))) {
-    expect(dropped.params).toHaveLength(3);
-    expect(dropped.params[1]).toMatch(/^[0-9a-f]{32}$/);
-    expect(dropped.params[2]).toBe(dropped.params[0]);
-  }
-  return all.filter((u) => !isTransfer(u.sql));
-};
 
 describe('the generated number', () => {
   const draws = (samples: number): string[] =>
@@ -672,10 +653,10 @@ describe('syncing the number with the phone in hand', () => {
     expect(params).toContain(PHONE_ID);
   });
 
-  it('moves a number to whoever is holding the phone it is on, and writes it back', async () => {
-    // Steal a phone, steal the number. The row named the previous holder; it now names this
-    // one, the reverse lookup answers this one, and the framework is told so every other
-    // resource on the server dials the right person.
+  it("puts a number recorded against somebody else back with the phone's owner", async () => {
+    // A handover before MICA-436 left the number naming whoever held the phone then. The phone
+    // is this citizen's, so the number row is put back with them, the reverse lookup answers
+    // them, and the framework is told so every other resource dials the right person.
     framework.kind = 'qb';
     holding();
     dbMock.single.mockResolvedValueOnce(row('5561111', 'active', OTHER));
@@ -689,6 +670,23 @@ describe('syncing the number with the phone in hand', () => {
     expect(updates()[0].sql).not.toContain('AND `citizenid`');
     expect(updates()[0].params).toEqual([CITIZEN, 42]);
     expect(player.setPhone).toHaveBeenCalledWith('5561111');
+  });
+
+  it('never hands a number to somebody holding a phone that is not theirs (MICA-436)', async () => {
+    // Taken: the item is in this citizen's hand, and the phone's row names its owner.
+    framework.kind = 'qb';
+    holding();
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: OTHER, device_id: PHONE_ID, claimed: 1 }]);
+    dbMock.single.mockResolvedValue(row('5561111', 'active', OTHER));
+    rememberNumber(CITIZEN, '5559876');
+
+    await load(5);
+
+    // The resolve refuses the phone, so the sync never reads or writes its number.
+    expect(updates()).toEqual([]);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+    expect(citizenIdForNumber('5561111')).not.toBe(CITIZEN);
+    expect(player.setPhone).not.toHaveBeenCalledWith('5561111');
   });
 
   it('leaves everything alone for a player holding no phone on a gated server', async () => {
@@ -892,6 +890,8 @@ describe('syncing the number with the phone in hand', () => {
 
     expect(usePhoneItem, 'the phone item registers a usable-item callback').toBeTypeOf('function');
     usePhoneItem!(5, { slot: 8 });
+    // The use reads whose phone slot 8 is before it records it (MICA-436).
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await syncNumber(5);
 
     expect(numberFor(CITIZEN)).toBe('5558888');

@@ -770,9 +770,9 @@ describe('boot', () => {
 
 /**
  * MICA-431: a value on a phone's own table is bound to the phone, not the character, so it
- * survives the handover that rewrites the row's `citizenid` — and every value sealed before
- * still opens, because a character-bound value's authenticated data is byte for byte what it
- * was.
+ * opens whatever `citizenid` the row carries — a row a handover rewrote before MICA-436 took the
+ * handover out included — and every value sealed before still opens, because a character-bound
+ * value's authenticated data is byte for byte what it was.
  */
 describe('the binding (MICA-431)', () => {
   const notes = {
@@ -818,12 +818,12 @@ describe('the binding (MICA-431)', () => {
     ]);
   });
 
-  it('opens a phone-bound value after a handover rewrites the citizenid', async () => {
+  it('opens a phone-bound value whatever citizenid the row carries', async () => {
     useKeyFile(keyFile([`k1 ${b64()}`]));
     const row = { id: 1, citizenid: 'C1', device_id: 'abc', content: 'shopping list' };
     const sealed = await sealRow('test_notes', row);
     expect(isSealed(sealed.content)).toBe(true);
-    // The handover: same phone, a new holder.
+    // Same phone, another citizenid: what a handover before MICA-436 left.
     expect(openRow('test_notes', { ...sealed, citizenid: 'C2' }).content).toBe('shopping list');
     // The positive twin: another phone's row will not open it.
     expect(openRow('test_notes', { ...sealed, device_id: 'xyz' }).content).toBe(UNREADABLE_CONTENT);

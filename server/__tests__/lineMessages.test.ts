@@ -716,8 +716,8 @@ describe('a line thread the player left before leaving deleted it', () => {
     expect(db.participants.filter((p) => p.conversation_id === 500)).toEqual([
       expect.objectContaining({ citizenid: 'CIT_A', device_id: PHONE, left_at: null })
     ]);
-    // Not versioned (MICA-430 review): a membership names its phone's holder, which the
-    // phone's own row keeps one version a handover of.
+    // Not versioned (MICA-430 review): a membership names its phone's owner, which nothing
+    // moves (MICA-436).
     expect(versionCalls).toEqual([]);
   });
 
@@ -746,11 +746,11 @@ describe('a line thread the player left before leaving deleted it', () => {
   });
 
   /**
-   * MICA-428 review: a dead character's erased membership on the phone, which the handover
-   * left naming them. It holds no seat, so the phone's next holder joins beside it; it is never
-   * reopened and never re-pointed at them.
+   * MICA-428 review: an erased membership on the phone naming somebody else — what a handover
+   * before MICA-436 left of a dead character. It holds no seat, so the phone joins beside it;
+   * it is never reopened and never re-pointed at the phone's owner.
    */
-  it("seats the phone's next holder beside a dead character's erased membership", async () => {
+  it("seats the phone's owner beside a dead character's erased membership", async () => {
     register();
     seed({ id: 502, participant_a: PHONE, participant_b: LINE_KEY }, [
       { citizenid: 'CIT_GONE', device_id: PHONE }

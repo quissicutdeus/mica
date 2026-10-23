@@ -248,8 +248,8 @@ export abstract class Repository<T> {
   }
 
   /**
-   * The table this repository writes, for a caller that has to name it — a log line saying which
-   * table a handover left behind. Read-only: the name is fixed at construction.
+   * The table this repository writes, for a caller that has to name it. Read-only: the name is
+   * fixed at construction.
    */
   public get table(): string {
     return this.tableName;
@@ -422,93 +422,6 @@ export abstract class Repository<T> {
     if (deviceId) params.push(deviceId);
 
     return Boolean(await Database.single<unknown>(query, params));
-  }
-
-  /**
-   * The phone changed hands: every row on it now belongs to whoever is holding it (MICA-282).
-   *
-   * This is the write that makes a device-owned table follow the device. §2.9's predicate is
-   * unchanged — every read and write still names `citizenid` **and** `device_id` — and what
-   * moves is which citizen the rows name. The caller is `services/Devices.ts`, which has just
-   * established through the inventory's own export that this player holds the item carrying
-   * this id; nothing reaching here comes from a payload. A named method over a raw statement
-   * rather than a service-level bypass, which is where §2.9 puts a privileged write.
-   *
-   * `updated_at` is pinned, so a handover does not look like an edit: the restore window
-   * `Repository.restore` reads off it stays honest, and a thread's inbox order stays put.
-   *
-   * Refused on a table with no `device_id` — there is nothing on it that follows a phone —
-   * and on one with no `citizenid`, which has no holder to move to.
-   */
-  async transferDeviceRows(
-    deviceId: string,
-    citizenid: string,
-    /**
-     * Keep who held the rows before, as a version (MICA-430). The phone's own row passes
-     * `handover`, so the ledger holds every holder a phone has had, one version a handover;
-     * every other row on the phone keeps its `device_id` and `created_at`, from which that
-     * chain says who held the phone when the row was written.
-     */
-    version?: VersionReason
-  ): Promise<boolean> {
-    if (!this.hasDeviceColumn) {
-      throw new Error(
-        `[Repository] transferDeviceRows on '${this.tableName}': no 'device_id' column. This ` +
-          `table belongs to the citizen, not the device.`
-      );
-    }
-    if (!this.hasOwnerColumn) {
-      throw new Error(
-        `[Repository] transferDeviceRows on '${this.tableName}': no 'citizenid' column.`
-      );
-    }
-    if (!deviceId || !citizenid) {
-      throw new Error(`[Repository] transferDeviceRows requires both a device id and a citizenid.`);
-    }
-    /**
-     * Never under a value bound to the character (MICA-431). This statement rewrites
-     * `citizenid`, so every such value on the moved rows would stop opening — silently, at the
-     * first handover, after every suite had passed. A `deviceOwned` declaration binds its
-     * sealed columns to the phone instead (`defineService`); one that reaches here bound to the
-     * character was registered by hand, and is refused before a row moves.
-     */
-    const boundToCharacter = encryptedColumnsOf(this.tableName).find(
-      (entry) => (entry.binding ?? 'citizen') === 'citizen'
-    );
-    if (boundToCharacter) {
-      throw new Error(
-        `[Repository] transferDeviceRows on '${this.tableName}': ` +
-          `${boundToCharacter.column} is sealed to the character, and a handover rewrites ` +
-          'citizenid. Bind it to the phone (deviceOwned) before rows can change hands.'
-      );
-    }
-    const pin = this.hasColumn('updated_at') ? ', `updated_at` = `updated_at`' : '';
-    /**
-     * Never a row the holder did not make and cannot see (MICA-428 review): one a purge erased,
-     * one a window expired, one a moderator holds. Each is evidence, and its `citizenid` is
-     * its real author; stamping the next holder's on it would misattribute it to them.
-     */
-    const live = this.hasStatusColumn
-      ? " AND `status` NOT IN ('erased', 'expired', 'moderated')"
-      : '';
-    const where = `\`device_id\` = ? AND \`citizenid\` <> ?${live}`;
-    const query = `UPDATE \`${this.tableName}\` SET \`citizenid\` = ?${pin} WHERE ${where}`;
-    if (version) {
-      const moved = await writeVersioned({
-        table: this.tableName,
-        values: ['citizenid'],
-        context: [],
-        hasUpdatedAt: this.hasColumn('updated_at'),
-        where,
-        whereParams: [deviceId, citizenid],
-        next: { citizenid },
-        reason: version,
-        editedBy: null,
-        set: { sql: `\`citizenid\` = ?${pin}`, params: [citizenid] }
-      });
-      return moved.applied;
-    }
-    return await Database.update(query, [citizenid, deviceId, citizenid]);
   }
 
   /** Reject any key that is not a real column on this table. */

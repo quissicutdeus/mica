@@ -911,7 +911,11 @@ export function registerPublicApi(): void {
    * `true` when the server requires no item — `mica_phone_item` empty or not a valid item
    * name, or `mica_standalone` — because on such a server every player has a phone. Also
    * `true` when an item is set but no inventory here can count it, the same fail-open the
-   * gate itself takes (`lib/deviceItem.ts`). `false` only for a counted zero.
+   * gate itself takes (`lib/deviceItem.ts`). `false` for a counted zero, and since MICA-436 for
+   * a player whose every phone is somebody else's — a phone belongs to the citizen who first
+   * used it. Synchronous, because it is a public contract other resources call, so a phone whose
+   * row this process has not read yet counts as held: the answer can say `true` for a phone
+   * that is not theirs until the gate's own pass, or any request, reads that row.
    */
   publish(
     'HasPhoneItem',

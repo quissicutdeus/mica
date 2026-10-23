@@ -167,8 +167,8 @@ class ContactRepository extends SchemaRepository<Contact> {
    * as the player keeps it, name included.
    *
    * Found the way the key found it — by phone and `phone_key`, and by no citizen: a live row
-   * there can still name the phone's previous holder while a handover is unwalked, and the key
-   * refuses on it all the same. Server-internal, like the seed's read: the id is only answered
+   * there written before MICA-436 can name a holder the phone has since been taken from, and
+   * the key refuses on it all the same. Server-internal, like the seed's read: the id is only answered
    * to the resource that asked, and the row is on the phone this citizen is on.
    */
   async addForPlayer(citizenid: string, item: Partial<Contact>): Promise<number> {

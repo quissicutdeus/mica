@@ -26,7 +26,6 @@ import { conversationsContract } from '@mica/shared/contracts/conversations';
 import { isDuplicateKey, reasonOf } from '../lib/sqlErrors';
 import { phoneForCitizen, deviceForRequest } from '../lib/deviceIdentity';
 import { readPhoneIdByNumber } from '../lib/phoneNumbers';
-import { onDeviceHandover } from './Devices';
 import { onBeforeSelfServiceDelete } from './Privacy';
 import { registerSharedRows } from '../lib/orphanSweep';
 
@@ -50,8 +49,9 @@ const PAIR_KEY_MAX_LENGTH = PARTICIPANT_KEY_MAX_LENGTH * 2 + 1;
  * *visibility*, and that is decided by the participants join table, which every custom
  * action below checks. Rename is one of those since MICA-339: it rode the ownership-scoped
  * generic update, which asked the row's `citizenid` and so stayed with the creator after the
- * phone the thread is on changed hands. It is the custom `update` below now, authorized by the
- * admin membership on the phone in hand, and the generic one is off.
+ * phone the thread is on changed hands, as phones did before MICA-436. It is the custom `update`
+ * below now, authorized by the admin membership on the phone in hand, and the generic one is
+ * off.
  *
  * That split is exactly why `access` has two axes rather than one `scope`: this table
  * needs ownership-scoped writes *and* membership-scoped reads at the same time, which a
@@ -234,27 +234,27 @@ export const conversations = defineService<ConversationRow, typeof conversations
           type: 'string',
           citizenId: true,
           notNull: true
-          // Not versioned (MICA-430 review): it always names the phone's holder, and the
-          // phone's own row (`mica_devices`) keeps one version a handover.
+          // Not versioned (MICA-430 review): it always names the phone's owner, and nothing
+          // moves it (MICA-436).
         },
         /**
          * The phone this membership is on (MICA-282). A thread lives on the device: the
-         * participant row names the phone, `citizenid` names whoever holds that phone now,
-         * and the handover hook below moves the latter when the phone changes hands. Nullable
+         * participant row names the phone, and `citizenid` names that phone's owner, which
+         * nothing moves (MICA-436): a thread on a phone somebody else holds waits there. Nullable
          * for the same reason `deviceOwned` columns are — the migration backfills it — and
          * because a child table has no repository to refuse a NULL through.
          */
         device_id: { type: 'string', length: 32 },
         /**
          * The phone, while the membership is not `erased` (MICA-428 review). What the
-         * one-row-per-phone key is over, so a dead character's erased membership — which keeps
-         * naming its real member when the phone changes hands (`transferParticipants`) — never
-         * refuses the phone's next holder the same thread. Before MICA-428 the purge deleted
-         * that row, which freed the slot.
+         * one-row-per-phone key is over, so an erased membership — kept, naming its real
+         * member — never refuses the phone the same thread again: the owner who erased their
+         * own data and keeps the phone can rejoin. Before MICA-428 the purge deleted that row,
+         * which freed the slot.
          *
          * A `moderated` membership still holds it, on purpose: freed, the line thread's rejoin
-         * (`ensureLineParticipant`) would insert past a takedown. A `removed` one moves with the
-         * phone, so it is never another citizen's. Restated, frozen, by
+         * (`ensureLineParticipant`) would insert past a takedown. A `removed` one is the phone
+         * owner's, so it is never another citizen's. Restated, frozen, by
          * `0015_hidden_rows_are_kept`.
          */
         live_device: {
@@ -294,8 +294,8 @@ export const conversations = defineService<ConversationRow, typeof conversations
          * Bob and a thread between my main phone and Bob are two threads.
          *
          * Over `live_device` since MICA-428, as `conversation_live_device`: an erased
-         * membership, which the handover leaves with its real member, holds no slot, so the
-         * phone's next holder can open the same thread. `0015_hidden_rows_are_kept` swaps it
+         * membership, kept naming its real member, holds no slot, so the phone can open the
+         * same thread again. `0015_hidden_rows_are_kept` swaps it
          * for `conversation_device_unique`, the name 0008 gave it.
          *
          * It replaces `conversation_participant_unique` on `(conversation_id, citizenid)`,
@@ -772,12 +772,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 /**
  * Rename a thread (MICA-339). **Only the thread's admin, on the phone in their hand.**
  *
- * The admin is the membership `create` writes for the creator, and it moves with the phone
- * when the phone changes hands (`transferParticipants`), so the person holding the phone the
- * thread was started on is the one who may rename it — not whoever started it, who may have
- * sold that phone and left. Same answer as the old owner-scoped generic update in every case
- * but that one. Other members are refused as before, with `false` and no toast; the rename UI
- * is optimistic and does not say so either.
+ * The admin is the membership `create` writes for the creator, on the phone the thread was
+ * started on, and only that phone's owner can use it (MICA-436): somebody else holding it is
+ * refused the phone before this runs. Other members are refused as before, with `false` and no
+ * toast; the rename UI is optimistic and does not say so either.
  */
 app.registerEvent('update', async (source, cbId, data, citizenid) => {
   const deviceId = await deviceForRequest(source, citizenid);
@@ -871,18 +869,6 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
     return true;
   }
 });
-
-/**
- * A phone changed hands: its memberships now belong to whoever holds it (MICA-282).
- *
- * `mica_messages_participants` is a child table with no repository of its own, so the
- * automatic walk over `deviceKeyedRepositories` in `services/Devices.ts` cannot reach it; this
- * is the one hook that list needs. The thread stays the phone's — `device_id` and the pair
- * columns are untouched — and the person reading it is now the holder.
- */
-onDeviceHandover('conversations', (deviceId, citizenid) =>
-  conversationRepo.transferParticipants(deviceId, citizenid)
-);
 
 /**
  * A player's own delete is about to take them out of every thread: unpair each 1:1 first

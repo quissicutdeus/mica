@@ -89,9 +89,10 @@ const AAD_DOMAIN = 'micaOS content v1';
 
 /**
  * The domain of a value bound to a **phone** rather than a character (MICA-431): a column of a
- * `deviceOwned` table, whose rows a handover moves to a new holder by rewriting `citizenid`
- * (`Repository.transferDeviceRows`). Bound to `citizenid` such a value would stop opening at the
- * first handover; bound to `device_id`, which nothing rewrites, it moves with the phone.
+ * `deviceOwned` table, whose rows belong to the device. Bound to `device_id`, which nothing
+ * rewrites, a value opens only on its own phone. When MICA-431 chose this, a handover moved a
+ * phone's rows to a new holder by rewriting `citizenid`; MICA-436 removed the handover, so the
+ * binding no longer has a move to survive, but it still keeps a value off every other phone.
  *
  * A separate domain rather than the device id in the citizen slot, so no value sealed under one
  * meaning can ever be read under the other.
@@ -196,7 +197,7 @@ export const sealedKeyId = (value: unknown): string | null => {
 
 /**
  * Who a value belongs to (MICA-431): the character (`citizenid`), or the phone (`device_id`) for
- * a `deviceOwned` table, whose `citizenid` a handover rewrites, or the row itself (`seal_key`,
+ * a `deviceOwned` table, whose rows belong to the device, or the row itself (`seal_key`,
  * MICA-432) for a table whose `citizenid` passes from one owner to the next.
  */
 export type ContentBinding = 'citizen' | 'device' | 'row';
@@ -374,10 +375,10 @@ export const contentContext = (entry: EncryptedColumn, row: object): ContentCont
   /**
    * A phone-bound row with no `device_id` — one written before phones were items, which no
    * phone's read reaches — binds to its own `citizenid` instead, tagged so it can never be
-   * mistaken for a device id. That citizenid is as fixed as a device id would be: a handover
-   * moves rows by `device_id` (`Repository.transferDeviceRows`), so it never touches one with
-   * none, and nothing in micaOS assigns a phone to such a row. Code that ever does must re-seal
-   * the row's values under its new device id first, or they stop opening.
+   * mistaken for a device id. That citizenid is as fixed as a device id would be: nothing in
+   * micaOS rewrites a device-owned row's `citizenid` (MICA-436), and nothing assigns a phone to
+   * a row with none. Code that ever does either must re-seal the row's values under its new
+   * owner first, or they stop opening.
    *
    * Not one shared empty owner for every such row: a value moved between two players' rows
    * would then still open, which is the move the owner in the AAD exists to stop.

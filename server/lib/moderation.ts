@@ -399,9 +399,9 @@ export const moderateTarget = async (
  * reopen's to overwrite, and answers false. `status` is checked for shape rather than trusted —
  * it is server-written, off the row itself, but it is about to be written back unscoped.
  *
- * The status only, never the owner: a takedown reopened after its phone changed hands comes
- * back under the character who wrote it, since the handover never moves a moderated row
- * (MICA-428). Right for evidence; the phone's new holder never wrote it.
+ * The status only, never the owner: a takedown reopens under the character who wrote it.
+ * Nothing moves a row to anybody else (MICA-436), and before that the handover never moved a
+ * moderated row (MICA-428). Right for evidence.
  */
 export const restoreTarget = async (
   table: ReportableTable,

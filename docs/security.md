@@ -590,18 +590,18 @@ MICA-432, the names, numbers and codes that identify who and what:
 | `mica_darkchat_members.alias`, `.handle`          | A member's alias and handle                                    | `citizenid`, `channel_id` (both also have a blind index)   |
 | `mica_notifications.title`, `.body`               | A notification                                                 | the phone, `device_id`                                     |
 
-**A phone's data is bound to the phone, not the character** (MICA-431). A
-handover moves a phone's rows to its new holder by rewriting `citizenid` on
-every one of them (`Repository.transferDeviceRows`), so a value bound to the
-character would stop opening at the first handover and the new holder would find
-a phone full of 🔒. A value on a `deviceOwned` table is instead sealed under its
-own domain, with the `device_id` where a character would be, and nothing
-rewrites a `device_id`. A row with no phone, one written before phones were
-items, binds to its own character, tagged so it can never be mistaken for a
-device id. `transferDeviceRows` refuses a table that has a column sealed to the
-character, before moving a row: a handover must never strand ciphertext. Values
-sealed before MICA-431 open as they did, since a character-bound value's bytes
-did not change.
+**A phone's data is bound to the phone, not the character** (MICA-431). A value
+on a `deviceOwned` table is sealed under its own domain, with the `device_id`
+where a character would be, and nothing rewrites a `device_id`, so the value
+opens on that phone and on no other: a ciphertext copied onto a row of another
+phone does not open, even one of the same character's. MICA-431 chose this while
+a handover rewrote `citizenid` on every row of a phone, which a value bound to
+the character would not have survived (the new holder would have found a phone
+full of 🔒). MICA-436 removed the handover, so that reason is gone; the binding
+stays for what it still does. A row with no phone, one written before phones
+were items, binds to its own character, tagged so it can never be mistaken for a
+device id. Values sealed before MICA-431 open as they did, since a
+character-bound value's bytes did not change.
 
 Encrypting inside the application, not with MySQL's `AES_ENCRYPT`, is the whole
 point: that would put the key in every statement, so in the query log and the
@@ -1013,9 +1013,11 @@ What a purge leaves as it is:
   purge. A resolved report goes with the rest.
 - **The device's rows, live**: `mica_devices`, `mica_phone_numbers`,
   `mica_battery` and `mica_lockscreen`. The phone item can outlive its
-  character, and an erased device row would refuse the next holder's phone for
-  good (`device_id_unique`). The player's own delete keeps them too, and also
-  keeps open invoices they owe and the import ledger.
+  character. Erased, the device row would make the next holder's resolve try to
+  create it again, which `device_id_unique` refuses; left live, it still names
+  the deleted character, so the phone reads closed to whoever holds it, like any
+  phone that is not theirs (MICA-436). The player's own delete keeps them too,
+  and also keeps open invoices they owe and the import ledger.
 - **A group thread or channel others are still in** (`registerSharedRows`). The
   owner's own membership and messages are erased, but the thread or channel
   stays live while another member is `active`, and the next orphan sweep erases
@@ -1126,17 +1128,29 @@ by this list until someone re-weighs it.
   re-minted rather than trusted. What is **not** claimed: a phone id is not a
   secret, and nothing should ever be authorized by one alone.
 
-  **MICA-282 made holding the item the thing that moves rows**, and it is worth
-  saying exactly what is trusted. When `resolvePhone` finds an item in a
-  player's inventory carrying a phone id whose `mica_devices` row names somebody
-  else, every table with a `device_id` column gets its `citizenid` rewritten to
-  the holder (`Repository.transferDeviceRows`). The predicate on every read and
-  write is unchanged — still `citizenid` **and** `device_id` — so what is
-  trusted is the inventory resource's own export saying "this player holds this
-  item", which is the same trust the framework's `GetPlayer` is given. The
-  residual risk is therefore the inventory's: a resource that can write item
-  metadata can hand any phone, and everything on it, to any player. No client
-  can; item metadata is server-authoritative in every inventory micaOS reads.
+  **MICA-282 made holding the item the thing that moved rows, and MICA-436 took
+  that back.** For a time, when `resolvePhone` found an item in a player's
+  inventory carrying a phone id whose `mica_devices` row named somebody else,
+  every table with a `device_id` column had its `citizenid` rewritten to the
+  holder. The predicate on every read and write was unchanged, but the trust was
+  not small: item metadata that any resource can write, and a passcode that only
+  the client enforces, stood between a duplicated or stolen item and a full read
+  of its owner's phone. It had never run in a live server, and it was removed
+  rather than switched off. **A phone now belongs to the citizen who first used
+  it, for good.** A resolve that finds a carried id whose row names somebody
+  else skips that slot, writes nothing, and answers a player left with no slot
+  of their own as one who holds no phone (`server.phone.notHeld`); the item gate
+  counts by the same rule (`judgeRow` in `server/services/Devices.ts`), so the
+  shell stays shut for them. The predicate is still `citizenid` **and**
+  `device_id`, and the `citizenid` it names is now never the holder's unless the
+  holder is the owner.
+
+  The residual risk is therefore narrower than it was: a resource that can write
+  item metadata can make a player _hold_ any phone, which is refused, and it can
+  no longer hand one over. What it can still do is deny. Stripping or replacing
+  the id on an item makes the next resolve mint, or adopt, a phone of its own
+  and leaves the old phone's rows on an id no item carries. No client can write
+  item metadata; it is server-authoritative in every inventory micaOS reads.
   What stays with the person regardless — money, listings, social accounts,
   authored messages — is listed in `docs/schema-and-services.md`, and a table is
   moved onto the phone only by declaring `deviceOwned` on it.
@@ -1146,7 +1160,7 @@ by this list until someone re-weighs it.
   write metadata could copy a phone's id onto a tablet item, or the reverse. A
   carried id is therefore honoured only when its `mica_devices` row is of the
   same `kind` as the item it came from; otherwise it is refused and a fresh one
-  minted, before any handover runs. A tablet never adopts an unclaimed row the
+  minted, before ownership is judged. A tablet never adopts an unclaimed row the
   way a phone adopts the identity phone, and never gets a phone number. The
   device a request names — the third argument of every `ServiceEndpoint` event —
   is attacker-controlled as well, and only ever chooses between the caller's own
@@ -1453,17 +1467,25 @@ by this list until someone re-weighs it.
     sharing a contact or a live location, marking a listing sold or removing it,
     and declining an invoice. `SetPhoneEnabled(false)` is still enforced by the
     player's own client only.
-  - **A stolen phone keeps receiving its old owner's new rows until the thief
-    first opens it.** Notifications, line texts and dropped photos for a
-    character are filed on the phone they last used. Once someone else is seen
-    holding it, micaOS stops (MICA-339's F7). Before that, nothing tells a
-    stolen phone from one in a stash, and the owner chose that a stashed or
-    confiscated phone keeps receiving, like a real one. So a stolen phone gets
-    the victim's new rows until the thief's first use hands them over.
+  - **A stolen phone keeps receiving its owner's new rows, and nobody but the
+    owner can read them.** Notifications, line texts and dropped photos for a
+    character are filed on the phone they last used, and a text or call to its
+    number is filed on the phone that owns the number. Nothing tells a stolen
+    phone from one in a stash, and the owner chose that a stashed or confiscated
+    phone keeps receiving, like a real one (MICA-339). Before MICA-436 the
+    thief's first use moved those rows to them; now the thief is refused the
+    phone, so they wait on it, readable by the owner only if it comes back. What
+    `phoneForCitizen` files (`server/services/Devices.ts`) stops landing there
+    when the owner starts using another phone; what is addressed to the number
+    keeps landing there, because the number stays with the phone.
   - **A number that moved to another phone can show on a call for a while after
     a restart.** On qb, `charinfo.phone` is no longer used once another citizen
     holds that number, but until the new holder's number syncs after a resource
-    restart nothing says so.
+    restart nothing says so. Since MICA-436 nothing moves a number to another
+    citizen, so this is reachable only through a `mica_phone_numbers` row
+    written before it that still names a previous holder. `claimRow` puts that
+    row back with the phone's owner on the owner's next resolve of the phone,
+    and until then qb's `charinfo.phone` can lag.
   - **Media rows and Blabber avatars written before this fix may hold a remote
     URL.** Avatars written since, by a player or by `micaimport`, must be an
     inline image. The old media rows are kept, but nothing draws them: a

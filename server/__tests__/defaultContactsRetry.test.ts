@@ -78,8 +78,6 @@ type DeviceRow = {
   setup_pending?: number;
 };
 let phoneRows: DeviceRow[];
-/** Gates a table's next handover transfer waits on, in order. */
-let transferGates: Record<string, Promise<void>[]>;
 /** Each contacts insert, by its position across the whole case, that throws (once). */
 let failInsert: Set<number>;
 let insertCount: number;
@@ -126,16 +124,6 @@ const hold = () => {
   return release;
 };
 
-/** Hold a table's next handover transfer open until the test lets it through. */
-const holdTransfer = (table: string) => {
-  let release!: () => void;
-  (transferGates[table] ??= []).push(new Promise<void>((resolve) => (release = resolve)));
-  return release;
-};
-
-const TRANSFER =
-  /^UPDATE `(mica_\w+)` SET `citizenid` = \?.* WHERE `device_id` = \? AND `citizenid` <> \?( AND `status` NOT IN \('erased', 'expired', 'moderated'\))?$/;
-
 /** The columns and values of an INSERT, as a record. */
 const inserted = (sql: string, values: unknown[]): Record<string, unknown> => {
   const columns = /\(([^)]*)\) VALUES/
@@ -155,7 +143,6 @@ beforeEach(() => {
   convar.mica_default_contacts = JSON.stringify(SEED);
   contactRows = [];
   phoneRows = [];
-  transferGates = {};
   failInsert = new Set();
   insertCount = 0;
   gates = [];
@@ -242,21 +229,9 @@ beforeEach(() => {
       row.setup_pending = 0;
       return true;
     }
-    const match = TRANSFER.exec(flat);
-    if (!match) return true;
-    const gate = transferGates[match[1]]?.shift();
-    if (gate) await gate;
-    const [to, phone] = params as string[];
-    const rows: { device_id: string; citizenid: string }[] =
-      match[1] === 'mica_contacts' ? contactRows : match[1] === 'mica_devices' ? phoneRows : [];
-    let moved = 0;
-    for (const row of rows) {
-      if (row.device_id === phone && row.citizenid !== to) {
-        row.citizenid = to;
-        moved++;
-      }
-    }
-    return moved > 0;
+    // Nothing else here writes a citizenid since MICA-436: say so if something starts to.
+    if (/SET `citizenid`/.test(flat)) throw new Error(`a phone's rows moved: ${flat}`);
+    return true;
   });
   dbMock.single.mockResolvedValue(null);
   bridgeMock.getPlayer.mockImplementation((src: number) =>
@@ -364,77 +339,72 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
     expect(numbersOn(deviceId)).toEqual(['911', '5550100', '555-0101', '555-0102', '555-0103']);
   });
 
-  describe('against a handover', () => {
+  /**
+   * MICA-436: a phone is its first user's for good. Somebody else resolving it while a seed is
+   * running, or queued, is refused it, and every default lands with the owner it was for.
+   */
+  describe('against somebody else holding the phone (MICA-436)', () => {
     beforeEach(() => {
       convar.mica_phone_item = 'phone';
       bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     });
 
-    /** Every contact on the phone, and the phone row, name this citizen. */
-    const allHeldBy = (citizenid: string) => {
+    /** Every default on the phone, and the phone row, name the owner. */
+    const allOwnedBy = (citizenid: string) => {
       expect(numbersOn(CARRIED)).toEqual(SEED.map((entry) => entry.number));
       expect(contactRows.map((row) => row.citizenid)).toEqual(SEED.map(() => citizenid));
       expect(phoneRows.map((row) => row.citizenid)).toEqual([citizenid]);
     };
 
-    it('finishes the first seed before the next holder is handed the phone', async () => {
-      // The same race on the first run: its first insert is held, and B takes the phone.
+    it('refuses them while the first seed runs, and the seed lands with the owner', async () => {
+      // The first run's first insert is held, and B resolves the phone meanwhile.
       const release = hold();
       await resolvePhone(SRC);
       await settle();
-      const handedOver = resolvePhone(SRC_B);
+      const refused = resolvePhone(SRC_B);
       await settle();
 
       release();
-      await handedOver;
+      await expect(refused).resolves.toEqual({ status: 'none' });
       await settle();
-      allHeldBy(CID_B);
+      allOwnedBy(CID);
     });
 
-    it('finishes a retry already running before the next holder is handed the phone', async () => {
+    it('refuses them while a retry runs, and the retry lands with the owner', async () => {
       failInsert.add(3);
       await resolvePhone(SRC);
       await settle();
       expect(numbersOn(CARRIED)).toEqual(['911', '555-0100']);
 
-      // A's retry starts and is held on its first insert; B takes the phone meanwhile.
+      // A's retry starts and is held on its first insert; B resolves the phone meanwhile.
       const release = hold();
       await resolvePhone(SRC);
       await settle();
-      const handedOver = resolvePhone(SRC_B);
+      const refused = resolvePhone(SRC_B);
       await settle();
 
       release();
-      await expect(handedOver).resolves.toMatchObject({ status: 'active' });
+      await expect(refused).resolves.toEqual({ status: 'none' });
       await settle();
-      // The retry wrote A's rows before B's walk ran, and the walk moved them with the rest.
-      allHeldBy(CID_B);
+      allOwnedBy(CID);
 
-      // B is cached with nothing left behind.
+      // B is cached as refused: asked again, nothing is read.
       dbMock.query.mockClear();
-      await resolvePhone(SRC_B);
-      await settle();
+      await expect(resolvePhone(SRC_B)).resolves.toEqual({ status: 'none' });
       expect(dbMock.query).not.toHaveBeenCalled();
     });
 
-    it('seeds for whoever holds the phone when a queued retry finally runs', async () => {
+    it('seeds for the owner when a queued retry finally runs behind their refusal', async () => {
       failInsert.add(3);
       await resolvePhone(SRC);
       await settle();
 
-      // A's resolve is queued first and cached; B's walk queues behind it and is held mid-way.
-      const release = holdTransfer('mica_contacts');
       const again = resolvePhone(SRC);
-      const handedOver = resolvePhone(SRC_B);
+      const refused = resolvePhone(SRC_B);
+      await expect(again).resolves.toMatchObject({ status: 'active' });
+      await expect(refused).resolves.toEqual({ status: 'none' });
       await settle();
-
-      release();
-      await Promise.all([again, handedOver]);
-      await settle();
-      // Queue order: A's cached resolve, then B's walk, then the retry A's resolve queued once
-      // it was answered. So B holds the phone when the retry runs, and its rows name B — not
-      // A, who asked for it, which would leave them behind with B cached.
-      allHeldBy(CID_B);
+      allOwnedBy(CID);
     });
   });
 
@@ -529,7 +499,7 @@ describe('a set-up a restart interrupted (MICA-335)', () => {
     expect(pendingOf(CARRIED)).toBe(0);
   });
 
-  it('lands with whoever holds the phone after the restart', async () => {
+  it('is left for the owner when somebody else resolves the phone after the restart', async () => {
     convar.mica_phone_item = 'phone';
     bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -537,13 +507,19 @@ describe('a set-up a restart interrupted (MICA-335)', () => {
     await resolvePhone(SRC);
     await settle();
 
+    // B is refused the phone (MICA-436), and nothing is seeded for them.
     restart();
-    await resolvePhone(SRC_B);
+    await expect(resolvePhone(SRC_B)).resolves.toEqual({ status: 'none' });
     await settle();
+    expect(numbersOn(CARRIED)).toEqual(['911', '555-0100']);
+    expect(pendingOf(CARRIED)).toBe(1);
 
+    // The owner's next resolve finishes it, under them.
+    await resolvePhone(SRC);
+    await settle();
     expect(numbersOn(CARRIED)).toEqual(seeded);
-    expect(contactRows.map((row) => row.citizenid)).toEqual(seeded.map(() => CID_B));
-    expect(phoneRows.map((row) => row.citizenid)).toEqual([CID_B]);
+    expect(contactRows.map((row) => row.citizenid)).toEqual(seeded.map(() => CID));
+    expect(phoneRows.map((row) => row.citizenid)).toEqual([CID]);
   });
 
   /**

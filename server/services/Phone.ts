@@ -705,10 +705,13 @@ export type PlaceCallResult =
   'placed' | 'unreachable' | 'busy' | 'caller_has_no_phone' | 'invalid_target';
 
 /**
- * Whether `src` holds a phone, where this server requires one to (MICA-339): the same count
- * `ServiceEndpoint` asks for a device-owned request, and open wherever that is — no item gate,
- * standalone, an inventory that cannot count. Synchronous, so the `answer` handler can ask it
- * without giving up the ordering that keeps two answers from both winning a group call.
+ * Whether `src` holds a phone of their own, where this server requires one to (MICA-339,
+ * MICA-436): the rule `ServiceEndpoint` holds a request to, and open wherever that is — no item
+ * gate, standalone, an inventory that cannot count. Synchronous, so the `answer` handler can ask
+ * it without giving up the ordering that keeps two answers from both winning a group call — and
+ * so it counts a slot whose row this process has not read yet as held. Somebody else's phone is
+ * refused here once anything has read its row: the gate's own pass on load and on every relayed
+ * inventory change, or any request.
  */
 const holdsPhone = (src: number): boolean => {
   const player = FrameworkBridge.getPlayer(src);

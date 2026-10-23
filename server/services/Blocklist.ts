@@ -75,8 +75,8 @@ export const blocklist = defineService<BlockedNumber>({
  * *enforcement* is by citizen: a number blocked on any phone a player holds is blocked for
  * that player. The alternative — enforcing per phone — needs the callee's phone resolved
  * from the dialled number on every call and every delivery, for a distinction (a number
- * blocked on my burner still ringing my main phone) nobody has asked for. Since a stolen
- * phone's rows move to its holder, this stays consistent with the model either way.
+ * blocked on my burner still ringing my main phone) nobody has asked for. A stolen phone's
+ * rows stay its owner's (MICA-436), so its blocks keep applying to the owner either way.
  *
  * A plain exported function rather than a raw table read from `Phone.ts`/`Messages.ts` —
  * both need this question answered and neither owns `mica_blocklist`, the same reason

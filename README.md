@@ -1259,15 +1259,16 @@ the convar is invisible until the resource restarts.
   who and what: a contact's number and picture, a mail's subject and sender, an
   invoice's memo and sender, a thread's name, a saved place's position, and Dark
   Chat's channel names, join codes, aliases and handles. A phone's content is
-  tied to the phone, not the character, so it survives a handover. A value that
-  is looked up or kept unique (a contact's number, a join code, an alias) has a
-  keyed blind index beside it; the index key is derived from the content key and
-  is not the sealing key, so rotating the content key means running the backfill
-  to re-index. Run `micaschema apply` first (migrations 0013 and 0014 widen and
-  add columns; 0014 copies several tables, so allow for the time on a large
-  one), then `micacrypt backfill --apply` once to seal what was already there.
-  **This defends a leaked dump, not a curious operator** — whoever runs the
-  server has the key — and a backup taken before the backfill stays readable.
+  tied to the phone, not the character, so a value copied onto a row of another
+  phone does not open. A value that is looked up or kept unique (a contact's
+  number, a join code, an alias) has a keyed blind index beside it; the index
+  key is derived from the content key and is not the sealing key, so rotating
+  the content key means running the backfill to re-index. Run `micaschema apply`
+  first (migrations 0013 and 0014 widen and add columns; 0014 copies several
+  tables, so allow for the time on a large one), then
+  `micacrypt backfill --apply` once to seal what was already there. **This
+  defends a leaked dump, not a curious operator** — whoever runs the server has
+  the key — and a backup taken before the backfill stays readable.
   [`docs/security.md`](docs/security.md#message-bodies-at-rest) has what stays
   readable and why. Keep the real file out of the database backup and out of git
   (the server warns at start when it sits inside `mica` or inside
@@ -1672,6 +1673,19 @@ screen, and its number is what the framework now reports for you. A player
 holding no phone at all sees a closed phone and, if a script asks anyway, is
 told they are not holding one.
 
+**A phone belongs to the first citizen who uses it, for good** (MICA-436). The
+id travels with the item, but the ownership does not: a player holding somebody
+else's used phone, whether stolen, bought second-hand, duplicated or taken in a
+search, has a closed phone, and a request that reaches the server anyway is
+refused with "You are not holding a phone." Nothing moves, so there is nothing
+to hand back: the owner has their phone again the moment they have the item
+again. A phone nobody has used has no owner yet, so a shop's stock is
+unaffected. The price is that a used phone cannot be sold on to a second player
+until its owner can reset it (MICA-437). On qb-inventory, which lists one slot,
+a player holding their own phone and somebody else's can be refused, depending
+on which slot the inventory reports. `docs/phone-as-an-item.md` has what a
+robbery, a confiscation and a burner look like on top of this.
+
 **This needs `ox_inventory`.** It is the only inventory with real per-item
 metadata to mint an id into, and it is what qbx_core uses. On qb-inventory it
 depends on whether your build exposes `SetItemData`. es_extended's own inventory
@@ -1683,11 +1697,12 @@ id on its own grants nothing.
 
 **A number belongs to the phone.** On standalone and on both qb cores micaOS is
 the source of truth for phone numbers, recorded in `mica_phone_numbers` against
-the phone they are on. Using a phone makes its number your number; a phone that
-changes hands takes its number with it, and rings for whoever is holding it.
-Nothing changes for an existing server on upgrade — the migration copies every
-character's `charinfo.phone` in, and a new character keeps the number qb issued
-— and whenever your active phone changes, its number is written back into
+the phone they are on. Using a phone makes its number your number; a phone keeps
+its number, and the phone stays with the citizen who first used it (above), so a
+phone that is taken does not ring for whoever took it. Nothing changes for an
+existing server on upgrade — the migration copies every character's
+`charinfo.phone` in, and a new character keeps the number qb issued — and
+whenever your active phone changes, its number is written back into
 `charinfo.phone` through the framework's own export (`SetCharInfo` on qbx_core,
 `SetPlayerData` on qb-core), so `GetPlayerByPhone`, dispatch and job scripts
 keep working unmodified. A player holding no phone keeps the last value the
@@ -1699,14 +1714,14 @@ always has.
 
 **The phone's data follows it too.** Contacts, notes, photos, saved places, the
 passcode, settings, notifications, the call log, the block list, message threads
-and the battery charge belong to the phone: steal one and they come with it,
-carry two and each has its own, and a message sent to a number reaches whichever
-phone that number is on. A battery bank charges the phone in your hand, and a
-phone another script locked (`LockPhone`) stays locked in whoever's hand it
-lands. Bank, Hodlr, Marketplace listings, Blabber, mail and high scores stay
-with the character. The migration that ships this puts every existing row on its
-owner's phone, and the first phone item a character uses picks that phone up;
-`docs/schema-and-services.md` has the table-by-table split.
+and the battery charge belong to the phone: carry two and each has its own, and
+a message sent to a number reaches whichever phone that number is on, taken or
+not. A battery bank charges the phone in your hand, and a phone another script
+locked (`LockPhone`) stays locked. Bank, Hodlr, Marketplace listings, Blabber,
+mail and high scores stay with the character. The migration that ships this puts
+every existing row on its owner's phone, and the first phone item a character
+uses picks that phone up; `docs/schema-and-services.md` has the table-by-table
+split.
 
 **Standalone ignores the gate.** With no framework there is no inventory to hold
 the item in, so `mica_standalone` with `mica_phone_item` set is reported once at
@@ -1732,7 +1747,8 @@ that list is kept by the player's game client, so it shows on both devices.
 Without `mica_tablet_item` (the default) a character has exactly one tablet,
 which nobody can hand to anyone else. With it, the tablet is the item: its id is
 written into the item's metadata the first time it is used, and a tablet passed
-to another character carries its data with it, as a phone does.
+to another character is closed to them and keeps its first user's data, as a
+phone does.
 
 `mica_tablet_item` gates it on an inventory item exactly as `mica_phone_item`
 gates the phone (above), and the two are independent: holding a phone does not

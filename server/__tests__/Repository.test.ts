@@ -17,7 +17,6 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { Repository } from '../lib/Repository';
-import { registerEncryptedColumn, unregisterEncryptedColumnForTests } from '../lib/contentCipher';
 
 interface TestRow {
   id: number;
@@ -622,117 +621,5 @@ describe('scoping by phone id', () => {
     expect(repo.filterableColumns).not.toContain('citizenid');
     // The column the table is actually for is untouched.
     expect(repo.writableColumns).toContain('body');
-  });
-});
-
-/**
- * MICA-282: the write that makes a device-owned table follow the device. §2.9's predicate is
- * untouched — what moves is which citizen the rows name — so the assertions are about the
- * statement's shape (a phone in the `WHERE`, the holder in the `SET`, the timestamp pinned) and
- * about the tables that refuse it.
- */
-describe('handing a phone over', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    dbMock.update.mockResolvedValue(true);
-  });
-
-  it('moves every row on the phone to its new holder, pinning updated_at', async () => {
-    const repo = new DeviceOwnedRepo();
-
-    await repo.transferDeviceRows('PHONE_X', 'CIT_THIEF');
-
-    const [sql, params] = dbMock.update.mock.calls[0];
-    expect(String(sql).replace(/\s+/g, ' ')).toBe(
-      'UPDATE `mica_device_owned` SET `citizenid` = ?, `updated_at` = `updated_at` ' +
-        "WHERE `device_id` = ? AND `citizenid` <> ? AND `status` NOT IN ('erased', 'expired', 'moderated')"
-    );
-    expect(params).toEqual(['CIT_THIEF', 'PHONE_X', 'CIT_THIEF']);
-  });
-
-  /**
-   * MICA-428 review (Gregor): the handover rewrote `citizenid` on every row on the phone, so a
-   * dead character's erased rows, its expired ones and a moderator's held one came to name the
-   * phone's next holder — evidence misattributed to somebody who never wrote it. The statement
-   * is applied to rows in every status, as MariaDB would apply its `WHERE`.
-   */
-  it('leaves an erased, expired or taken-down row naming its real author (MICA-428)', async () => {
-    const rows = ['active', 'deleted', 'erased', 'expired', 'moderated'].map((status, i) => ({
-      id: i + 1,
-      device_id: 'PHONE_X',
-      citizenid: 'CIT_GONE',
-      status
-    }));
-    dbMock.update.mockImplementation(async (sql: string, params: unknown[]) => {
-      const [to, phone, other] = params as string[];
-      const excluded = /`status` NOT IN \(([^)]*)\)/.exec(String(sql))?.[1] ?? '';
-      for (const row of rows) {
-        if (row.device_id !== phone || row.citizenid === other) continue;
-        if (excluded.includes(`'${row.status}'`)) continue;
-        row.citizenid = to;
-      }
-      return true;
-    });
-
-    await new DeviceOwnedRepo().transferDeviceRows('PHONE_X', 'CIT_THIEF');
-
-    expect(rows.map((r) => `${r.status}:${r.citizenid}`)).toEqual([
-      'active:CIT_THIEF',
-      'deleted:CIT_THIEF',
-      'erased:CIT_GONE',
-      'expired:CIT_GONE',
-      'moderated:CIT_GONE'
-    ]);
-  });
-
-  it('refuses on a table with no device_id — those rows belong to the citizen', async () => {
-    const repo = new TestRepo();
-    await expect(repo.transferDeviceRows('PHONE_X', 'CIT_THIEF')).rejects.toThrow(
-      /no 'device_id' column/
-    );
-    expect(dbMock.update).not.toHaveBeenCalled();
-  });
-
-  it('refuses without both a phone and a holder', async () => {
-    const repo = new DeviceOwnedRepo();
-    await expect(repo.transferDeviceRows('', 'CIT_THIEF')).rejects.toThrow(/both/);
-    await expect(repo.transferDeviceRows('PHONE_X', '')).rejects.toThrow(/both/);
-  });
-
-  /**
-   * MICA-431: a handover rewrites `citizenid`, so a sealed value bound to the character would
-   * stop opening on every moved row — silently, at the first handover. Refused before a row
-   * moves; bound to the phone, the same table moves as it always did.
-   */
-  it('refuses to move rows holding a value sealed to the character, not one sealed to the phone', async () => {
-    const repo = new DeviceOwnedRepo();
-    registerEncryptedColumn({
-      table: 'mica_device_owned',
-      column: 'title',
-      scope: [],
-      hasUpdatedAt: true
-    });
-    try {
-      await expect(repo.transferDeviceRows('PHONE_X', 'CIT_THIEF')).rejects.toThrow(
-        /sealed to the character/
-      );
-      expect(dbMock.update).not.toHaveBeenCalled();
-    } finally {
-      unregisterEncryptedColumnForTests('mica_device_owned', 'title');
-    }
-
-    registerEncryptedColumn({
-      table: 'mica_device_owned',
-      column: 'title',
-      scope: [],
-      hasUpdatedAt: true,
-      binding: 'device'
-    });
-    try {
-      await repo.transferDeviceRows('PHONE_X', 'CIT_THIEF');
-      expect(dbMock.update).toHaveBeenCalledTimes(1);
-    } finally {
-      unregisterEncryptedColumnForTests('mica_device_owned', 'title');
-    }
   });
 });
