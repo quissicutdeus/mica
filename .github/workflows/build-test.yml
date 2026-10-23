@@ -519,6 +519,13 @@ jobs:
     # A Forgejo runner puts the steps in a container on a per-job network with the
     # service, where it answers by its service name and nothing is published to
     # localhost -- the harness reported ECONNREFUSED 127.0.0.1:3306 there.
+    #
+    # The port is ephemeral for the same reason. A fixed `3306:3306` binds the host's 3306,
+    # and the Forgejo runner runs `schema` and `endpoints` at once against one shared docker
+    # daemon, so the second to start failed with "Bind for 0.0.0.0:3306". GitHub reports the
+    # port it picked as `job.services.mariadb.ports['3306']` (the `job` context exists only
+    # in steps, so MICA_DB_PORT is set per step, not here); on Forgejo the service name is
+    # reached on the container's own 3306.
     env:
       MICA_DB_HOST: ${{ github.server_url == 'https://github.com' && 'localhost' || 'mariadb' }}
     strategy:
@@ -538,7 +545,7 @@ jobs:
           --health-timeout=5s
           --health-retries=5
         ports:
-          - 3306:3306
+          - 3306
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -555,13 +562,13 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Test migrations
         env:
-          MICA_DB_PORT: 3306
+          MICA_DB_PORT: ${{ github.server_url == 'https://github.com' && job.services.mariadb.ports['3306'] || 3306 }}
           MICA_DB_USER: root
           MICA_DB_PASSWORD: mica-test
         run: node scripts/test-migrations.js
       - name: Test schemas
         env:
-          MICA_DB_PORT: 3306
+          MICA_DB_PORT: ${{ github.server_url == 'https://github.com' && job.services.mariadb.ports['3306'] || 3306 }}
           MICA_DB_USER: root
           MICA_DB_PASSWORD: mica-test
         run: node scripts/test-schema.js
@@ -578,6 +585,7 @@ jobs:
     runs-on: ubuntu-26.04
     # Same carve-out as `verify` above, for the reason `schema` gives.
     if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    # Host and port as `schema` explains: ephemeral, so the two jobs cannot collide on 3306.
     env:
       MICA_DB_HOST: ${{ github.server_url == 'https://github.com' && 'localhost' || 'mariadb' }}
     strategy:
@@ -595,7 +603,7 @@ jobs:
           --health-timeout=5s
           --health-retries=5
         ports:
-          - 3306:3306
+          - 3306
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -612,7 +620,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Test endpoints
         env:
-          MICA_DB_PORT: 3306
+          MICA_DB_PORT: ${{ github.server_url == 'https://github.com' && job.services.mariadb.ports['3306'] || 3306 }}
           MICA_DB_USER: root
           MICA_DB_PASSWORD: mica-test
         run: node scripts/test-endpoints.js
