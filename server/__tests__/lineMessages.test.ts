@@ -254,6 +254,11 @@ import {
 import { __resetRateLimits } from '../lib/rateLimit';
 import { openLineThread, type ConversationRow } from '../repositories/ConversationRepository';
 import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
+import { versionedWrites, type VersionedCall } from './versionedWrites';
+
+/** The versioned writes this test made (MICA-430). */
+let versionCalls: VersionedCall[] = [];
+import { Database } from '../lib/Database';
 
 const PLAYER = { citizenid: 'CIT_A', source: 5, phone: '5550100' };
 const LINE = '5550199';
@@ -285,6 +290,8 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 let errors: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionCalls = versionedWrites(Database as unknown as Record<string, any>);
   db.nextId = 1;
   db.conversations.clear();
   db.participants.length = 0;
@@ -709,6 +716,9 @@ describe('a line thread the player left before leaving deleted it', () => {
     expect(db.participants.filter((p) => p.conversation_id === 500)).toEqual([
       expect.objectContaining({ citizenid: 'CIT_A', device_id: PHONE, left_at: null })
     ]);
+    // Not versioned (MICA-430 review): a membership names its phone's holder, which the
+    // phone's own row keeps one version a handover of.
+    expect(versionCalls).toEqual([]);
   });
 
   it('is restored when the player opens it from the phone', async () => {

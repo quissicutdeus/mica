@@ -76,15 +76,17 @@ describe('which services answer the tablet (MICA-264)', () => {
     // These register no action through `ServiceEndpoint`: `devices`, `phonenumbers`, the
     // import ledger and, since MICA-414, the blocklist have none a client may reach, and
     // `battery` and `signal` answer raw guarded events (`battery:load`) that read no device and
-    // are the phone's alone. A service added to either side of this list is a decision about
-    // the tablet, made here.
+    // are the phone's alone. The version ledger (MICA-430) has none: staff read it through
+    // `reports`. A service added to either side of this list is a decision about the tablet,
+    // made here.
     const noEndpointAction = [
       'battery',
       'blocklist',
       'devices',
       'importledger',
       'phonenumbers',
-      'signal'
+      'signal',
+      'versions'
     ];
     expect([...outcome.keys()].sort()).toEqual(
       [...new Set(knownServices())].filter((id) => !noEndpointAction.includes(id)).sort()

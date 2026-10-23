@@ -719,3 +719,89 @@ describe('the walk is bounded', () => {
     }
   });
 });
+
+/**
+ * MICA-430: the version ledger keeps what an edit replaced, sealed as the row held it. A key
+ * rotation that left those behind would strand every old version the moment the old key came
+ * out of the file, so the walk reaches them too, and no key is called retirable while one does.
+ */
+describe("the version ledger's snapshots (MICA-430)", () => {
+  const context = { citizenid: 'CIT_A', thread_id: 7 };
+  const version = (
+    id: number,
+    values: Record<string, unknown>,
+    ctx: Record<string, unknown> = context
+  ): Row => ({
+    id,
+    source_table: THREADS.table,
+    snapshot: JSON.stringify({ values, context: ctx, written_at: null })
+  });
+  const versions = (): Row[] => store.tables.get('mica_versions')!;
+
+  beforeEach(() => {
+    store.capacity.set('mica_versions.snapshot', 16_777_215);
+    store.tables.set('mica_versions', []);
+  });
+
+  it('counts a version under an older key, re-seals it, and only then calls the key retirable', async () => {
+    const oldLine = keyLine('old');
+    useKeys(keyFileOf([oldLine]));
+    const before = await seal(THREADS, { id: 1, ...context, body: null }, 'what it said before');
+    store.tables.set('mica_versions', [version(1, { body: before })]);
+    useKeys(keyFileOf([keyLine('new'), oldLine]));
+
+    const status = await walkContent({ apply: false, pause: noPause });
+    expect(status.snapshots).toMatchObject({ rows: 1, values: 1, active: 0, older: { old: 1 } });
+    expect(formatStatus(status)).toContain(
+      "[micacrypt] key 'old': still used by 1 — 0 value(s), 0 index(es), 1 in version " +
+        'snapshots; keep it in the key file, and run micacrypt backfill --apply to move them to ' +
+        'the active key.'
+    );
+
+    const applied = await walkContent({ apply: true, pause: noPause });
+    expect(applied.snapshots).toMatchObject({ sealed: 1, raced: 0, unreadable: 0 });
+    const stored = JSON.parse(String(versions()[0].snapshot));
+    expect(sealedKeyId(stored.values.body)).toBe('new');
+    // It opens from the context kept beside it, which the walk never changes.
+    expect(stored.context).toEqual(context);
+    expect(openContent(contentContext(THREADS, stored.context), stored.values.body)).toBe(
+      'what it said before'
+    );
+
+    const after = await walkContent({ apply: false, pause: noPause });
+    expect(after.snapshots).toMatchObject({ active: 1, older: {} });
+    expect(formatStatus(after)).toContain(
+      "[micacrypt] key 'old': nothing uses it — no value, no index and no version snapshot; it " +
+        'can be retired from the key file.'
+    );
+  });
+
+  it('leaves a version it cannot open, or cannot parse, exactly as it is', async () => {
+    useKeys(keyFile(['lost']));
+    const lost = await seal(THREADS, { id: 1, ...context, body: null }, 'gone with its key');
+    useKeys(keyFile(['new']));
+    store.tables.set('mica_versions', [
+      version(1, { body: lost }),
+      { id: 2, source_table: THREADS.table, snapshot: '{not json' },
+      // Sealed for another thread: the context the version kept does not match it.
+      version(3, { body: lost }, { citizenid: 'CIT_B', thread_id: 8 })
+    ]);
+    const kept = JSON.stringify(versions());
+
+    const report = await walkContent({ apply: true, pause: noPause });
+    expect(report.snapshots).toMatchObject({ rows: 3, unreadable: 3, sealed: 0 });
+    expect(JSON.stringify(versions())).toBe(kept);
+  });
+
+  it('says nothing is retirable while the ledger is not in the database', async () => {
+    store.capacity.delete('mica_versions.snapshot');
+    const oldLine = keyLine('old');
+    useKeys(keyFileOf([keyLine('new'), oldLine]));
+    const report = await walkContent({ apply: false, pause: noPause });
+    expect(report.snapshots.missing).toBe(true);
+    expect(formatStatus(report)).toContain(
+      "[micacrypt] key 'old': uses nothing that could be counted, but a table is missing; keep " +
+        'it until micaschema apply has run and this says it can go.'
+    );
+  });
+});

@@ -97,6 +97,7 @@ import {
 } from '../repositories/MessageRepository';
 import { NOT_HELD_REPLY, refusePhone, TEST_PHONE_ID } from './phoneStub';
 import { responseEventFor } from '@mica/shared/rpc';
+import { versionedWrites } from './versionedWrites';
 
 const call = async (service: string, action: string, payload: unknown) => {
   const handler = handlers.get(`mica:server:${service}:${action}`);
@@ -156,6 +157,8 @@ const BURNER_THREAD = {
 };
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   fw.kind = 'qb';
   fw.citizenid = 'CIT_A';
@@ -708,7 +711,9 @@ describe('conversations:update — rename is the admin on the phone in hand (F15
   });
 
   it('answers false, as the generic update did, when the caller is not the admin', async () => {
-    dbMock.update.mockResolvedValueOnce(false);
+    // Not the admin: the rename's own predicate finds no row to read, and none to write.
+    versionedWrites(dbMock, { rows: () => [] });
+    dbMock.update.mockResolvedValue(false);
 
     await expect(call('conversations', 'update', { id: 1, name: 'Crew' })).resolves.toBe(false);
   });

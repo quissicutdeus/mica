@@ -214,7 +214,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
      * Nullable, because a plain mouth has nothing of its own to say. `create` enforces the
      * real rule — a Blab needs a body *or* something to mouth — which the DDL cannot express.
      */
-    body: { type: 'string', length: 280 },
+    body: { type: 'string', length: 280, versioned: true },
     /**
      * The post this replies to, or null for a top-level Blab. Self-referencing rather than a
      * separate replies table: a reply is a Blab, and duplicating the shape would mean

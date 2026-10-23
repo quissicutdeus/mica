@@ -199,7 +199,7 @@ export const accounts = defineService<Account, typeof accountsContract>({
       clientWritable: false,
       clientFilterable: true
     },
-    display_name: { type: 'string', length: 50 },
+    display_name: { type: 'string', length: 50, versioned: true },
     /**
      * An inline image only (MICA-339). Every feed, profile and DM row draws this as an `<img
      * src>` for whoever reads it, so a remote address here is a beacon: a modified client
@@ -207,8 +207,8 @@ export const accounts = defineService<Account, typeof accountsContract>({
      * and nothing in the column's length could say "inline", so `accepts` does. At 255
      * characters only a very small raster or SVG fits; widening it is a schema change.
      */
-    avatar: { type: 'string', length: 255, accepts: isInlineImage },
-    bio: { type: 'string', length: 160 }
+    avatar: { type: 'string', length: 255, accepts: isInlineImage, versioned: true },
+    bio: { type: 'string', length: 160, versioned: true }
   },
   indexes: [
     /**

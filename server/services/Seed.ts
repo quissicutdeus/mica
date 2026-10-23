@@ -107,7 +107,14 @@ const runSeedCommand = async (source: number, args: string[]): Promise<void> => 
   const sub = (args[0] ?? '').toLowerCase();
 
   if (sub === 'clear') {
-    await clearSeed();
+    if (!(await clearSeed())) {
+      respond(
+        source,
+        'Nothing removed: run micaschema apply first (the console says why).',
+        'error'
+      );
+      return;
+    }
     respond(source, 'Seed data removed.');
     return;
   }

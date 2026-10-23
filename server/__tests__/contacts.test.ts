@@ -44,10 +44,13 @@ import { contacts } from '../services/Contacts';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { TEST_PHONE_ID } from './phoneStub';
 import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
+import { versionedWrites } from './versionedWrites';
 
 const SHARE_EVENT = 'mica:server:contacts:share';
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   __resetRateLimits();
   dbMock.query.mockResolvedValue([]);

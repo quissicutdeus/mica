@@ -6,6 +6,7 @@ import { PlayerFacingError } from '../lib/errors';
 import { randomBytes, scrypt } from 'node:crypto';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { AuditLogger } from '../lib/AuditLogger';
 import { lockscreenContract } from '@mica/shared/contracts/lockscreen';
 
 /**
@@ -54,8 +55,8 @@ export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
    * `findForPhone` reads only an `active` row, so the phone is unlocked, and the next `upsert`
    * brings the row back under `device_id_unique` with the new passcode.
    */
-  async clear(citizenid: string, deviceId: string): Promise<void> {
-    await Database.query(
+  async clear(citizenid: string, deviceId: string): Promise<boolean> {
+    return await Database.update(
       `UPDATE mica_lockscreen SET status = 'deleted' ` +
         `WHERE citizenid = ? AND device_id = ? AND status = 'active'`,
       [citizenid, deviceId]
@@ -296,6 +297,19 @@ app.registerEvent('set', async (source, cbId, data, citizenid, _player, deviceId
   const salt = randomBytes(16).toString(HASH_ENCODING);
   const hash = await hashPasscode(passcode, salt);
   await repo.upsert(citizenid, deviceId as string, hash, salt);
+  // That it changed, never what it was (MICA-430): no version of a passcode is kept.
+  const row = await repo.findForPhone(citizenid, deviceId as string);
+  if (row) {
+    await AuditLogger.log({
+      citizenid,
+      action: 'changed',
+      service: 'lockscreen',
+      method: 'set',
+      targetId: Number(row.id),
+      targetTable: 'mica_lockscreen',
+      details: { what: 'passcode' }
+    });
+  }
   // Setting a passcode clears any standing lockout: the person who just set it is not the
   // person the lockout was slowing down.
   attempts.delete(citizenid);
@@ -354,6 +368,19 @@ app.registerEvent('check', async (source, cbId, data, citizenid, _player, device
 
 /** `clear` — remove the caller's own passcode. Idempotent: clearing an unset one is still `ok`. */
 app.registerEvent('clear', async (source, cbId, data, citizenid, _player, deviceId) => {
-  await repo.clear(citizenid, deviceId as string);
+  const row = await repo.findForPhone(citizenid, deviceId as string);
+  const removed = await repo.clear(citizenid, deviceId as string);
+  // A passcode removed is a change too (MICA-430 review): that it went, never what it was.
+  if (row && removed) {
+    await AuditLogger.log({
+      citizenid,
+      action: 'changed',
+      service: 'lockscreen',
+      method: 'clear',
+      targetId: Number(row.id),
+      targetTable: 'mica_lockscreen',
+      details: { what: 'passcode', removed: true }
+    });
+  }
   return { ok: true };
 });

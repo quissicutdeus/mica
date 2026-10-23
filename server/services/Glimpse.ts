@@ -193,7 +193,7 @@ export const glimpse = defineService<GlimpsePost, typeof glimpseContract>({
       references: { table: 'mica_accounts', column: 'id' }
     },
     /** 500 characters, enforced from this declaration (§2.9). The one generic-editable field. */
-    caption: { type: 'string', length: 500 }
+    caption: { type: 'string', length: 500, versioned: true }
   },
   /**
    * One account's grid. Single-column, as Blabber's is: InnoDB appends the primary key, so this

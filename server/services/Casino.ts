@@ -5,6 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { statusWritesMayRun } from '../lib/statusWrites';
 import { appEventChannel } from '../lib/appEvents';
 import type { FrameworkPlayer } from '../lib/FrameworkBridge';
 import { pageBounds } from '../lib/payload';
@@ -934,6 +935,9 @@ const isStale = (row: StaleCandidate, now: number): boolean => {
  * its timer exists or its citizen has a start in flight.
  */
 export const sweepStaleCrashRounds = async (citizenid?: string): Promise<number> => {
+  if (!(await statusWritesMayRun('the Crash round sweep', { mica_casino_rounds: ['settled'] }))) {
+    return 0;
+  }
   const rows = await Database.query<StaleCandidate[]>(
     citizenid === undefined
       ? 'SELECT `id`, `citizenid`, `crash_point`, `result` FROM `mica_casino_rounds` ' +

@@ -205,8 +205,8 @@ export const contacts = defineService<Contact, typeof contactsContract>({
    */
   encryptionScope: [],
   schema: {
-    firstname: { type: 'string', length: 50, notNull: true, encrypted: true },
-    lastname: { type: 'string', length: 50, encrypted: true },
+    firstname: { type: 'string', length: 50, notNull: true, encrypted: true, versioned: true },
+    lastname: { type: 'string', length: 50, encrypted: true, versioned: true },
     /**
      * Sealed (MICA-432), and found by its blind index, `phone_index`, scoped to the phone: one
      * number on two phones gives two unrelated indexes. Not filterable — a client finds a contact
@@ -217,9 +217,11 @@ export const contacts = defineService<Contact, typeof contactsContract>({
       length: 20,
       notNull: true,
       encrypted: true,
-      blindIndex: { scope: ['device_id'], normalize: contactNumberKey }
+      blindIndex: { scope: ['device_id'], normalize: contactNumberKey },
+      // What an edit replaces is kept (MICA-430).
+      versioned: true
     },
-    email: { type: 'string', length: 100, encrypted: true },
+    email: { type: 'string', length: 100, encrypted: true, versioned: true },
     /**
      * Base64 image data. Retyped from `mediumblob` and sealed (MICA-432): a sealed value is
      * text. ASCII, so a byte a character, as the photo bound is (MICA-431).

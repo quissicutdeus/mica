@@ -64,6 +64,10 @@ import {
 } from '../lib/deviceItem';
 import { __resetLockState, isDeviceLocked, setDeviceLocked } from '../lib/LockState';
 import { who } from '../lib/who';
+import { versionedWrites, type VersionedCall } from './versionedWrites';
+
+/** The versioned writes this test made (MICA-430). */
+let versionCalls: VersionedCall[] = [];
 
 /**
  * `deviceItem.ts` registers its usable-item callback at import time, and `clearAllMocks`
@@ -93,6 +97,8 @@ const gateOn = (item = 'phone') => {
 };
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionCalls = versionedWrites(dbMock);
   vi.clearAllMocks();
   __resetDeviceState();
   __resetLastUsedPhone();
@@ -336,6 +342,13 @@ describe('the phone a request is for', () => {
       expect(t.params).toEqual([CID, 'a'.repeat(32), CID]);
     }
     expect(hook).toHaveBeenCalledWith('a'.repeat(32), CID);
+    // The phone's own row keeps who held it before, as a version (MICA-430).
+    expect(versionCalls.map((c) => [c.table, c.reason, c.editedBy, c.applied])).toEqual([
+      ['mica_devices', 'handover', null, 1]
+    ]);
+    expect(versionCalls[0].snapshot).toContain(
+      "JSON_OBJECT('citizenid', `mica_devices`.`citizenid`)"
+    );
   });
 
   it('re-checks a phone once per process when its holder is unchanged, and asks nothing twice', async () => {

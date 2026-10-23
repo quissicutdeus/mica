@@ -10,7 +10,8 @@ import {
   loadPendingReports,
   loadReportHistory,
   reopenReport,
-  resolveReport
+  resolveReport,
+  loadReportVersions
 } from '../../services/reports';
 export { pendingReportCount };
 
@@ -22,7 +23,8 @@ export function reports() {
     loadPendingReports,
     loadReportHistory,
     resolveReport,
-    reopenReport
+    reopenReport,
+    loadReportVersions
   };
 }
 

@@ -47,6 +47,29 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply`: every edit keeps the version it replaced (MICA-430).**
+Run it straight after updating: until it has created the new table, every edit
+listed here is refused with a message saying so. Editing a message, a Blab, a
+Glimpse caption, a note, a contact, a place, an account's name, bio or avatar, a
+Spark profile or a thread's name now copies the old text into a new table first,
+in the same transaction, so a version exists exactly when the edit applied. So
+does a phone number changing hands, a phone's handover to a new holder, and a
+line thread's rejoin. Sealed values are copied sealed, and `micacrypt status`
+and `backfill` now count and re-seal them too; keep a key line until `status`
+says it can be retired. Only staff can read versions, through the report review,
+and each read is audited. Players still see only the latest text, a player's
+export leaves versions out, and a privacy delete erases a player's versions like
+their other rows. State is not versioned: battery, settings, scores, balances,
+and read and archive flags.
+
+`micaschema apply` creates the table `mica_versions` (`id`, `citizenid`,
+`source_table`, `source_id`, `edited_by`, `reason`, `snapshot`, `op_key`,
+`status`, `created_at`, `updated_at`; keys `status`, `citizenid_status`,
+`source_row`, `op_key`). Migration `0017_audit_records_a_change` appends
+`changed` to `mica_audit_logs`' `action`, which records a lockscreen passcode
+being set, changed or removed, or a Dark Chat code rotation, without keeping the
+old value.
+
 **Run `micaschema apply`: follows, blocks, reactions and Spark history are kept
 too (MICA-429).** The last tables that still deleted rows now change their
 status instead. Unfollowing, unblocking, removing a reaction, un-earing a Blab,
@@ -952,6 +975,12 @@ saved charge was `phone_battery` loads at 100% once and is saved normally from
 then on.
 
 ### Added
+
+**`micastorage` shows where the database's space goes.** Nothing is deleted any
+more, so the tables only grow. The new command lists every `mica_` table,
+largest first, with its data and index size and its rows by status, keeping
+`active` apart from every hidden or settled status. It changes nothing, and is
+admin-gated like `micamedia`.
 
 **The tablet has a battery of its own (MICA-337).** It drains while carried and
 charges on its own, separately from the phone, and shows its own flat-battery

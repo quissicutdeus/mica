@@ -37,7 +37,7 @@ let checksRun = 0;
  * (MICA-299). Plus MICA-275's line membership, eleven checks on each shape. Plus MICA-293's
  * hosted quota and drop race, fourteen checks and the seeded schema's one on each shape. Plus
  * MICA-168's player export and delete, twelve checks and the seeded schema's one on each
- * shape, and its erase over shared rows, fourteen and the seeded schema's one on each shape. Plus
+ * shape, and its erase over shared rows, fifteen and the seeded schema's one on each shape. Plus
  * MICA-300's deleted character, cleaned up by the hook (ten and the seeded schema's one) and by
  * the sweep (twelve and the seeded schema's one), on each shape, and two that `mica.sql`
  * refuses an es_extended database. Since MICA-428 every one of those reads a status where it
@@ -57,7 +57,7 @@ const EVIDENCE_CHECKS = 13;
 const LINE_CHECKS = 11;
 const HOSTED_CHECKS = 15;
 const PRIVACY_CHECKS = 13;
-const CASCADE_CHECKS = 15;
+const CASCADE_CHECKS = 16;
 /** MICA-300: the seeded schema's one and ten, on each shape; the sweep adds two more. */
 const HOOK_CHECKS = 11;
 const SWEEP_CHECKS = 13;
@@ -100,8 +100,18 @@ const MODERATION_CHECKS = 11;
  */
 const LOG_SALT_CHECKS = 4;
 const PURGE_MODERATED_CHECKS = 10;
+/**
+ * MICA-430: an edit keeps what it replaced, on each shape — one version and only when the edit
+ * applies (another owner, a takedown, and a takedown that lands while the edit waits on the row
+ * all write neither), opened from its snapshot, and carried through a key rotation. And the
+ * MICA-430 review's three: a save that changes nothing keeps nothing; a row that moved after the
+ * read is neither versioned nor written; an edit window is judged on one clock, open or closed;
+ * and two edits at once both land, in order, each keeping what it replaced.
+ */
+const VERSION_CHECKS = 14;
 const MINIMUM_CHECKS =
   52 +
+  VERSION_CHECKS * 2 +
   REVIVE_CHECKS * 2 +
   MODERATION_CHECKS * 2 +
   LOG_SALT_CHECKS * 2 +
@@ -306,6 +316,8 @@ const loadServerModule = async () => {
     `export { places } from '${root}/server/services/Places.ts';`,
     `export { hodlr } from '${root}/server/services/Hodlr.ts';`,
     `export { walkContent } from '${root}/server/lib/contentBackfill.ts';`,
+    // MICA-430: the version ledger's write and its staff read.
+    `export { readVersions, writeVersioned, __setVersionReadForTests } from '${root}/server/lib/versions.ts';`,
     `export { seedFor } from '${root}/server/lib/seed.ts';`,
     `export { blindIndexFor, blindIndexOf, contentContext, encryptedColumn, openContent, plaintextBytesSql, registerEncryptedColumn, resetContentCipherForTests, sealContent, sealedKeyId, unregisterEncryptedColumnForTests } from '${root}/server/lib/contentCipher.ts';`
   ].join('\n');
@@ -2246,6 +2258,9 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
        (75, 'CIT_C', 'spark', 'c_s')`,
     [A, B]
   );
+  // A name for the delete's scrub to blank: a scrub of a field already blank keeps no version
+  // (MICA-430 review), and 52 below is the one this blanking keeps.
+  await q("UPDATE mica_accounts SET display_name = 'Alice S' WHERE id = 73");
   // Review: 76 is A's, under a takedown when A deletes; 77 was erased before any of this, and
   // still holds a live follow. Neither is the purge's to reach.
   await q(
@@ -2265,6 +2280,12 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
   );
   await q(
     'INSERT INTO mica_blabber_ears (id, blab_id, account_id) VALUES (40, 710, 70), (41, 710, 72)'
+  );
+  // MICA-430: a version of A's post, and one of B's reply. A privacy delete erases A's.
+  await q(
+    `INSERT INTO mica_versions (id, citizenid, source_table, source_id, edited_by, reason, snapshot, op_key)
+     VALUES (50, ?, 'mica_blabber', 700, ?, 'edit', '{}', 'a'), (51, ?, 'mica_blabber', 710, ?, 'edit', '{}', 'b')`,
+    [A, A, B, B]
   );
   await q(
     "INSERT INTO mica_spark (id, citizenid, account_id, age) VALUES (90, ?, 73, 30), (91, ?, 74, 30), (92, 'CIT_C', 75, 30)",
@@ -2399,6 +2420,12 @@ const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }
       ['40 erased', '41 erased', '42 active', '43 erased', '44 erased'],
       []
     ]
+  );
+  check(
+    `${label}: A's versions are erased and kept; B's stay (MICA-430)`,
+    await statusById('mica_versions'),
+    // 52: the delete's own Spark removal blanked A's Spark name, an edit it kept, then erased.
+    ['50 erased', '51 active', '52 erased']
   );
   check(
     `${label}: a kick keeps removed and its own left time; a membership is erased and left`,
@@ -2922,6 +2949,233 @@ const keyLine = (kid) => `${kid} ${crypto.randomBytes(32).toString('base64')}`;
  * an edit that only changed case, which `utf8mb4_unicode_ci` would call equal; and that the
  * column capacities come back from `information_schema` as the walk expects.
  */
+/**
+ * MICA-430's version ledger on a real engine. A note is sealed to its phone; each edit through
+ * the declared repository writes the version and the edit in one transaction, under the edit's
+ * own predicate, so a version exists exactly when the edit applied. The race is a second
+ * connection holding the row while it takes it down: the edit waits on the lock, then finds the
+ * row taken down, and writes neither. Then a rotation: the backfill re-seals the version, which
+ * opens with only the new key.
+ */
+const runVersionsVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const PHONE = 'f'.repeat(32);
+  const label = `versions on ${framework}`;
+  step(`${label} (MICA-430)`);
+
+  const database = await seedFrameworkAndMica({
+    connection,
+    schemaFile,
+    hasPlayers,
+    suffix: 'versions'
+  });
+  modules.__setResourceLookup(FRAMEWORK[framework]);
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mica-versions-'));
+  const writeKeys = (name, lines) => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, `${lines.join('\n')}\n`, { mode: 0o600 });
+    return file;
+  };
+  const oldLine = keyLine('old');
+  const newLine = keyLine('new');
+  const previousConvar = globalThis.GetConvar;
+  const useKeys = (file) => {
+    globalThis.GetConvar = (name, fallback) => (name === 'mica_content_key_file' ? file : fallback);
+    modules.resetContentCipherForTests();
+  };
+  const versions = async () =>
+    modules.readVersions(
+      'mica_notes',
+      await q(
+        'SELECT id, citizenid, edited_by, reason, snapshot, created_at FROM mica_versions ORDER BY id'
+      )
+    );
+  const titles = async () => (await versions()).map((v) => v.values.map((x) => x.value).join('|'));
+
+  let other;
+  try {
+    useKeys(writeKeys('old.key', [oldLine]));
+    const repo = modules.notes.repo;
+    const id = await repo.create({
+      citizenid: A,
+      device_id: PHONE,
+      title: 'first',
+      content: 'body'
+    });
+
+    check(
+      `${label}: an edit applies, and keeps the title it replaced`,
+      [await repo.update(id, { title: 'second' }, A, PHONE), await titles()],
+      [true, ['first']]
+    );
+    const [row] = await q(
+      'SELECT citizenid, edited_by, reason, source_id, snapshot FROM mica_versions'
+    );
+    const snapshot = JSON.parse(row.snapshot);
+    check(
+      `${label}: sealed as the row held it, beside the phone it is bound to`,
+      [
+        row.citizenid,
+        row.edited_by,
+        row.reason,
+        row.source_id,
+        modules.sealedKeyId(snapshot.values.title),
+        snapshot.context.device_id
+      ],
+      [A, A, 'edit', id, 'old', PHONE]
+    );
+
+    check(
+      `${label}: another owner's edit applies to nothing, and writes no version`,
+      [await repo.update(id, { title: 'stolen' }, B, PHONE), await titles()],
+      [false, ['first']]
+    );
+    await q("UPDATE mica_notes SET status = 'moderated' WHERE id = ?", [id]);
+    check(
+      `${label}: nor does an edit of a taken-down note`,
+      [await repo.update(id, { title: 'over the takedown' }, A, PHONE), await titles()],
+      [false, ['first']]
+    );
+    await q("UPDATE mica_notes SET status = 'active' WHERE id = ?", [id]);
+
+    // The race: a second connection holds the row, and takes it down while the edit waits.
+    other = await connectSingleStatement(database);
+    await other.query('START TRANSACTION');
+    await other.query('SELECT id FROM mica_notes WHERE id = ? FOR UPDATE', [id]);
+    let settled = false;
+    const editing = repo.update(id, { title: 'raced' }, A, PHONE).then((result) => {
+      settled = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const waited = !settled;
+    await other.query("UPDATE mica_notes SET status = 'moderated' WHERE id = ?", [id]);
+    await other.query('COMMIT');
+    check(
+      `${label}: an edit waits on a row another connection holds, then writes neither`,
+      [waited, await editing, await titles()],
+      [true, false, ['first']]
+    );
+    await q("UPDATE mica_notes SET status = 'active' WHERE id = ?", [id]);
+
+    check(
+      `${label}: the edit after it keeps the title it found, which is the second`,
+      [await repo.update(id, { title: 'third' }, A, PHONE), await titles()],
+      [true, ['first', 'second']]
+    );
+
+    // MICA-430 review: the same title again opens to what is stored, so no version.
+    check(
+      `${label}: a save that leaves the title as it is keeps no version, and still saves`,
+      [await repo.update(id, { title: 'third' }, A, PHONE), await titles()],
+      [true, ['first', 'second']]
+    );
+    // And a row that moved between the read and the write: the guard names what was read.
+    modules.__setVersionReadForTests(async () => [
+      { id, title: 'not what is stored', citizenid: A, device_id: PHONE }
+    ]);
+    let moved;
+    try {
+      moved = await repo.update(id, { title: 'over a newer edit' }, A, PHONE);
+    } finally {
+      modules.__setVersionReadForTests(null);
+    }
+    check(
+      `${label}: a row that moved after the read is neither versioned nor written`,
+      [moved, await titles(), (await repo.findById(id, A, PHONE)).title],
+      [false, ['first', 'second'], 'third']
+    );
+
+    useKeys(writeKeys('rotated.key', [newLine, oldLine]));
+    const before = await modules.walkContent({ apply: false });
+    check(`${label}: micacrypt counts the versions on the old key`, before.snapshots.older, {
+      old: 2
+    });
+    const applied = await modules.walkContent({ apply: true });
+    check(
+      `${label}: the backfill re-seals them, and leaves nothing on the old key`,
+      [applied.snapshots.sealed, (await modules.walkContent({ apply: false })).snapshots.older],
+      [2, {}]
+    );
+    useKeys(writeKeys('new.key', [newLine]));
+    check(
+      `${label}: they open with only the new key, from the context kept beside them`,
+      await titles(),
+      ['first', 'second']
+    );
+
+    // MICA-430 re-review: two edits of one row at once. Both read it before either writes; the
+    // second's guard misses on what the first wrote, so it reads again and writes over it.
+    let reads = 0;
+    modules.__setVersionReadForTests(async (sql, params) => {
+      reads += 1;
+      return await q(sql, params);
+    });
+    let both;
+    try {
+      both = await Promise.all([
+        repo.update(id, { title: 'fifth A' }, A, PHONE),
+        repo.update(id, { title: 'fifth B' }, A, PHONE)
+      ]);
+    } finally {
+      modules.__setVersionReadForTests(null);
+    }
+    check(
+      `${label}: two edits at once both land in order, each keeping what it replaced`,
+      [both, reads, (await repo.findById(id, A, PHONE)).title, await titles()],
+      [[true, true], 3, 'fifth B', ['first', 'second', 'third', 'fifth A']]
+    );
+
+    // MICA-430 review: an edit window judged once, by `SET @mica_versions_now`, on this engine.
+    const windowed = await repo.create({
+      citizenid: A,
+      device_id: PHONE,
+      title: 'in time',
+      content: 'body'
+    });
+    const inWindow = (title) =>
+      modules.writeVersioned({
+        table: 'mica_notes',
+        values: ['title'],
+        context: ['citizenid'],
+        hasUpdatedAt: true,
+        where: '`id` = ? AND `citizenid` = ? AND `created_at` > NOW() - INTERVAL ? SECOND',
+        whereParams: [windowed, A, 3600],
+        next: { title },
+        reason: 'edit',
+        editedBy: A,
+        set: { sql: '`title` = ?', params: [title] }
+      });
+    const windowedVersions = async () =>
+      Number(
+        (await q('SELECT COUNT(*) AS n FROM mica_versions WHERE source_id = ?', [windowed]))[0].n
+      );
+    check(
+      `${label}: an edit inside its window is versioned and written, on one clock`,
+      [await inWindow('still in time'), await windowedVersions()],
+      [{ changed: 1, applied: true }, 1]
+    );
+    await q(
+      'UPDATE mica_notes SET created_at = created_at - INTERVAL 2 HOUR, updated_at = updated_at WHERE id = ?',
+      [windowed]
+    );
+    check(
+      `${label}: one past it writes neither`,
+      [await inWindow('too late'), await windowedVersions()],
+      [{ changed: 0, applied: false }, 1]
+    );
+  } finally {
+    if (other) await other.end();
+    globalThis.GetConvar = previousConvar;
+    modules.resetContentCipherForTests();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+};
+
 const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   const framework = hasPlayers ? 'qb' : 'esx';
   const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
@@ -4203,6 +4457,13 @@ const main = async () => {
       ['mica.esx.sql', false]
     ]) {
       await runContentCipherVariant({ connection, schemaFile, hasPlayers, modules });
+    }
+
+    for (const [schemaFile, hasPlayers] of [
+      ['mica.sql', true],
+      ['mica.esx.sql', false]
+    ]) {
+      await runVersionsVariant({ connection, schemaFile, hasPlayers, modules });
     }
 
     if (checksRun < MINIMUM_CHECKS) {

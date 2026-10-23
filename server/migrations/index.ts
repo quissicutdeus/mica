@@ -16,5 +16,24 @@ import { migration as m12 } from './0013_private_content_widens_its_columns';
 import { migration as m13 } from './0014_private_lookups_get_blind_indexes';
 import { migration as m14 } from './0015_hidden_rows_are_kept';
 import { migration as m15 } from './0016_child_rows_are_kept';
+import { migration as m16 } from './0017_audit_records_a_change';
 
-export const migrations = [m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15];
+export const migrations = [
+  m0,
+  m1,
+  m2,
+  m3,
+  m4,
+  m5,
+  m6,
+  m7,
+  m8,
+  m9,
+  m10,
+  m11,
+  m12,
+  m13,
+  m14,
+  m15,
+  m16
+];

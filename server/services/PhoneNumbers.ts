@@ -79,7 +79,7 @@ export const phoneNumbers = defineService<PhoneNumberRow>({
      * that is true on half the servers is a lie, and the resolver in `Devices.ts` is what keeps
      * the two tables in step instead.
      */
-    device_id: { type: 'string', length: 32, clientWritable: false }
+    device_id: { type: 'string', length: 32, clientWritable: false, versioned: true }
   },
   indexes: [
     /**

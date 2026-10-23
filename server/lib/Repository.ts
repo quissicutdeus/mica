@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from './Database';
+import { versionContext, writeVersioned, type VersionReason } from './versions';
 import { PlayerFacingError } from './errors';
 import { citizenIdColumnWidth } from './ownerWidth';
 import {
@@ -130,6 +131,13 @@ export abstract class Repository<T> {
    * generated column, nor `citizenid` or `device_id`, which the revive's predicate pins.
    */
   protected reviveResets: readonly string[] = [];
+
+  /**
+   * The columns whose replaced values are kept (MICA-430): an update or a revive that changes
+   * one writes a version first (`lib/versions.ts`). Empty — the default, and every hand-written
+   * repository's — writes as it always did. `SchemaRepository` fills it from `versioned: true`.
+   */
+  protected versionedColumns: readonly string[] = [];
 
   /** See `reviveKeys`. Read by `defineService` to refuse a `'revive'` its factory dropped. */
   public get revivesUnder(): readonly (readonly string[])[] {
@@ -432,7 +440,17 @@ export abstract class Repository<T> {
    * Refused on a table with no `device_id` — there is nothing on it that follows a phone —
    * and on one with no `citizenid`, which has no holder to move to.
    */
-  async transferDeviceRows(deviceId: string, citizenid: string): Promise<boolean> {
+  async transferDeviceRows(
+    deviceId: string,
+    citizenid: string,
+    /**
+     * Keep who held the rows before, as a version (MICA-430). The phone's own row passes
+     * `handover`, so the ledger holds every holder a phone has had, one version a handover;
+     * every other row on the phone keeps its `device_id` and `created_at`, from which that
+     * chain says who held the phone when the row was written.
+     */
+    version?: VersionReason
+  ): Promise<boolean> {
     if (!this.hasDeviceColumn) {
       throw new Error(
         `[Repository] transferDeviceRows on '${this.tableName}': no 'device_id' column. This ` +
@@ -473,11 +491,24 @@ export abstract class Repository<T> {
     const live = this.hasStatusColumn
       ? " AND `status` NOT IN ('erased', 'expired', 'moderated')"
       : '';
-    return await Database.update(
-      `UPDATE \`${this.tableName}\` SET \`citizenid\` = ?${pin} ` +
-        `WHERE \`device_id\` = ? AND \`citizenid\` <> ?${live}`,
-      [citizenid, deviceId, citizenid]
-    );
+    const where = `\`device_id\` = ? AND \`citizenid\` <> ?${live}`;
+    const query = `UPDATE \`${this.tableName}\` SET \`citizenid\` = ?${pin} WHERE ${where}`;
+    if (version) {
+      const moved = await writeVersioned({
+        table: this.tableName,
+        values: ['citizenid'],
+        context: [],
+        hasUpdatedAt: this.hasColumn('updated_at'),
+        where,
+        whereParams: [deviceId, citizenid],
+        next: { citizenid },
+        reason: version,
+        editedBy: null,
+        set: { sql: `\`citizenid\` = ?${pin}`, params: [citizenid] }
+      });
+      return moved.applied;
+    }
+    return await Database.update(query, [citizenid, deviceId, citizenid]);
   }
 
   /** Reject any key that is not a real column on this table. */
@@ -743,10 +774,33 @@ export abstract class Repository<T> {
       "`status` = 'active'",
       ...(this.hasColumn('created_at') ? ['`created_at` = CURRENT_TIMESTAMP'] : [])
     ];
-    const revived = await Database.update(
-      `UPDATE \`${this.tableName}\` SET ${assignments.join(', ')} WHERE \`id\` = ? AND ${owner}`,
-      [...written.map((column) => data[column]), id, ...ownerParams]
+    const setParams = written.map((column) => data[column]);
+    const query = `UPDATE \`${this.tableName}\` SET ${assignments.join(', ')} WHERE \`id\` = ? AND ${owner}`;
+    const params = [...setParams, id, ...ownerParams];
+    // A revive writes over the deleted row's values: kept first, as an edit's are (MICA-430).
+    const versioned = this.versionedColumns.filter(
+      (column) => written.includes(column) || this.reviveResets.includes(column)
     );
+    const revived =
+      versioned.length > 0
+        ? (
+            await writeVersioned({
+              table: this.tableName,
+              values: versioned,
+              context: versionContext(this.tableName, versioned, this.hasOwnerColumn),
+              hasUpdatedAt: this.hasColumn('updated_at'),
+              where: `\`id\` = ? AND ${owner}`,
+              whereParams: [id, ...ownerParams],
+              // A column reset to its DEFAULT is left out, and so counts as changed.
+              next: Object.fromEntries(
+                versioned.filter((column) => written.includes(column)).map((c) => [c, data[c]])
+              ),
+              reason: 'revive',
+              editedBy: citizenid,
+              set: { sql: assignments.join(', '), params: setParams }
+            })
+          ).applied
+        : await Database.update(query, params);
     return revived ? Number(id) : null;
   }
 
@@ -924,10 +978,22 @@ export abstract class Repository<T> {
    * has already authorized the write. A controller cannot reach this directly,
    * which keeps `update` the only generic mutation path.
    */
-  protected async updateUnscoped(id: number | string, data: Partial<T>): Promise<boolean> {
+  protected async updateUnscoped(
+    id: number | string,
+    data: Partial<T>,
+    /** Why, when the write replaces a versioned value (MICA-430). */
+    reason: VersionReason = 'edit'
+  ): Promise<boolean> {
     // Deliberately takes no phone id. There is no owner predicate here to narrow, and a
     // phone-only `WHERE` is precisely the shape §2.9 forbids.
-    return await this.applyUpdate(id, data as Record<string, unknown>);
+    return await this.applyUpdate(
+      id,
+      data as Record<string, unknown>,
+      undefined,
+      false,
+      undefined,
+      reason
+    );
   }
 
   private async applyUpdate(
@@ -935,7 +1001,8 @@ export abstract class Repository<T> {
     data: Record<string, unknown>,
     citizenid?: string,
     enforceEditWindow = false,
-    deviceId?: string
+    deviceId?: string,
+    reason: VersionReason = 'edit'
   ): Promise<boolean> {
     // Before the SQL is built, so an unknown key is still refused by `prepareColumns` below —
     // `sealForUpdate` names no identifier from `data` in its own read.
@@ -944,16 +1011,17 @@ export abstract class Repository<T> {
     const { keys, values } = this.prepareColumns(sealed, 'update');
     const setClause = keys.map((key) => `\`${key}\` = ?`).join(', ');
 
-    let query = `UPDATE \`${this.tableName}\` SET ${setClause} WHERE \`id\` = ?`;
-    const params: unknown[] = [...values, id];
+    // The predicate on its own, so a versioned write locks, snapshots and writes by exactly it.
+    let where = '`id` = ?';
+    const whereParams: unknown[] = [id];
 
     if (citizenid) {
-      query += ' AND `citizenid` = ?';
-      params.push(citizenid);
+      where += ' AND `citizenid` = ?';
+      whereParams.push(citizenid);
 
       const phone = this.devicePredicate('update', deviceId);
-      query += phone.sql;
-      if (phone.param !== undefined) params.push(phone.param);
+      where += phone.sql;
+      if (phone.param !== undefined) whereParams.push(phone.param);
 
       /**
        * An owner may not edit content a moderator has removed.
@@ -974,7 +1042,7 @@ export abstract class Repository<T> {
        * that have to reach these rows.
        */
       if (this.hasStatusColumn) {
-        query += " AND `status` NOT IN ('moderated', 'erased', 'expired')";
+        where += " AND `status` NOT IN ('moderated', 'erased', 'expired')";
       }
 
       /**
@@ -985,11 +1053,36 @@ export abstract class Repository<T> {
        * what makes it immune to skew.
        */
       if (enforceEditWindow && this.editWindow !== null && this.hasColumn('created_at')) {
-        query += ' AND `created_at` > NOW() - INTERVAL ? SECOND';
-        params.push(this.editWindow);
+        where += ' AND `created_at` > NOW() - INTERVAL ? SECOND';
+        whereParams.push(this.editWindow);
       }
     }
 
+    const query = `UPDATE \`${this.tableName}\` SET ${setClause} WHERE ${where}`;
+    const params: unknown[] = [...values, ...whereParams];
+
+    /**
+     * A write that changes a versioned column keeps what it replaces (MICA-430): the old values
+     * go into the version ledger in the same transaction, under the same predicate, so a version
+     * exists exactly when the write applies. Every other write is the single statement it was.
+     */
+    const versioned = this.versionedColumns.filter((column) => keys.includes(column));
+    if (versioned.length > 0) {
+      const written = await writeVersioned({
+        table: this.tableName,
+        values: versioned,
+        context: versionContext(this.tableName, versioned, this.hasOwnerColumn),
+        hasUpdatedAt: this.hasColumn('updated_at'),
+        where,
+        whereParams,
+        // As the caller sent it, before sealing: a sealed value is compared as what it opens to.
+        next: Object.fromEntries(versioned.map((column) => [column, data[column]])),
+        reason,
+        editedBy: citizenid ?? null,
+        set: { sql: setClause, params: values }
+      });
+      return written.applied;
+    }
     return await Database.update(query, params);
   }
 

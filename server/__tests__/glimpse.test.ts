@@ -70,6 +70,7 @@ import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { isReactableTable } from '../lib/reactions';
 import { isReportableTable } from '../lib/moderation';
+import { versionedWrites } from './versionedWrites';
 
 type AnyRow = Record<string, any>;
 
@@ -120,6 +121,8 @@ const blocked = (blocker: number, target: number) =>
 const post = (id: number) => w.posts.find((p) => p.id === id);
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   __resetRateLimits();
   installTestPhone();
@@ -586,7 +589,8 @@ describe('the generic caption edit and delete', () => {
     expect(one(sql)).toMatch(
       /^UPDATE `mica_glimpse` SET `caption` = \? WHERE `id` = \? AND `citizenid` = \?/
     );
-    expect(one(sql)).toContain('`created_at` > NOW() - INTERVAL ? SECOND');
+    // The window judged on the transaction's one clock (MICA-430 review), not NOW() again.
+    expect(one(sql)).toContain('`created_at` > @mica_versions_now - INTERVAL ? SECOND');
     expect(params).toEqual(expect.arrayContaining(['fixed', 10, 'CIT_A', 900]));
   });
 

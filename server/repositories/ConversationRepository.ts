@@ -17,6 +17,7 @@ import {
 import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
 import { PHONE_NUMBERS_TABLE } from '../lib/phoneNumbers';
 import { isDuplicateKey } from '../lib/sqlErrors';
+import { versionContext, writeVersioned } from '../lib/versions';
 
 /**
  * A conversation as the server holds it — the row, not what a phone is shown (MICA-339).
@@ -496,18 +497,29 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     );
     if (typeof sealKey !== 'string' || sealKey === '') return false;
     const sealed = await sealRow('mica_messages_conversations', { seal_key: sealKey, name });
-    return await Database.update(
-      `UPDATE mica_messages_conversations c
-          SET c.name = ?
-        WHERE c.id = ? AND c.seal_key = ? AND c.status = 'active'
+    const where = `c.id = ? AND c.seal_key = ? AND c.status = 'active'
           AND EXISTS (
               SELECT 1 FROM mica_messages_participants p
                WHERE p.conversation_id = c.id
                  AND p.citizenid = ? AND p.device_id = ?
                  AND p.role = 'admin' AND p.status = 'active' AND p.left_at IS NULL
-          )`,
-      [sealed.name, conversationId, sealKey, citizenid, deviceId]
-    );
+          )`;
+    const whereParams = [conversationId, sealKey, citizenid, deviceId];
+    // The name it replaces is kept, sealed as it was (MICA-430).
+    const renamed = await writeVersioned({
+      table: 'mica_messages_conversations',
+      alias: 'c',
+      values: ['name'],
+      context: versionContext('mica_messages_conversations', ['name'], true),
+      hasUpdatedAt: true,
+      where,
+      whereParams,
+      next: { name },
+      reason: 'rename',
+      editedBy: citizenid,
+      set: { sql: 'c.name = ?', params: [sealed.name] }
+    });
+    return renamed.applied;
   }
 
   /**
@@ -752,9 +764,10 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     citizenid: string,
     deviceId: string
   ): Promise<void> {
+    // Not versioned (MICA-430 review): a membership's citizenid is always its phone's holder,
+    // and `mica_devices` keeps one version a handover, so who held it is already on record.
     const restored = await Database.update(
-      `UPDATE mica_messages_participants
-          SET left_at = NULL, status = 'active', citizenid = ?
+      `UPDATE mica_messages_participants SET left_at = NULL, status = 'active', citizenid = ?
         WHERE conversation_id = ? AND device_id = ? AND status = 'left' AND left_at IS NOT NULL`,
       [citizenid, conversationId, deviceId]
     );

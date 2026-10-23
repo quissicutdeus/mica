@@ -91,7 +91,7 @@ export const conversations = defineService<ConversationRow, typeof conversations
     // and never read from a payload. See the note on `isGroup` in the create handler.
     is_group: { type: 'bool', notNull: true, default: 0, clientWritable: false },
     // Written by the custom `update` only (MICA-339), as the thread's admin. Sealed (MICA-432).
-    name: { type: 'string', length: 50, encrypted: true },
+    name: { type: 'string', length: 50, encrypted: true, versioned: true },
     /**
      * The two sides of a 1:1 thread, snapshotted at creation (MICA-161's half of
      * MICA-156). Null for a group thread — there is no pair for a generated column to
@@ -234,6 +234,8 @@ export const conversations = defineService<ConversationRow, typeof conversations
           type: 'string',
           citizenId: true,
           notNull: true
+          // Not versioned (MICA-430 review): it always names the phone's holder, and the
+          // phone's own row (`mica_devices`) keeps one version a handover.
         },
         /**
          * The phone this membership is on (MICA-282). A thread lives on the device: the

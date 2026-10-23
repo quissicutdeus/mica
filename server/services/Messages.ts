@@ -95,7 +95,7 @@ export const messages = defineService<MessageRow, typeof messagesContract>({
      * Sealed at rest (MICA-165), bound to its conversation: a `text` holds 65,535 bytes, so a
      * body is at most `MESSAGE_BODY_MAX` characters, the most whose sealed form still fits.
      */
-    message: { type: 'text', notNull: true, encrypted: true },
+    message: { type: 'text', notNull: true, encrypted: true, versioned: true },
     /**
      * The message this one quotes, or NULL (MICA-209). Nullable and unreferenced on
      * purpose: a quoted message can be unsent (soft-deleted, never removed), and a foreign

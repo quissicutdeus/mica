@@ -45,6 +45,7 @@ import {
 // reactions tests below run the real one rather than a stand-in registered by hand.
 import '../services/DirectMessages';
 import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
+import { versionedWrites } from './versionedWrites';
 
 /** A statement on one line, as the assertions below spell it. */
 const oneLine = (sql: unknown): string => String(sql).replace(/\s+/g, ' ').trim();
@@ -65,6 +66,8 @@ const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
 };
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(7);

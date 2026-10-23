@@ -20,6 +20,7 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { SEED_CHARACTERS, clearSeed, seedFor } from '../lib/seed';
+import { __setStatusWritesForTests } from '../lib/statusWrites';
 import {
   blindIndexCandidates,
   blindIndexOf,
@@ -100,6 +101,20 @@ describe('seed characters', () => {
 });
 
 describe('clearSeed', () => {
+  /** MICA-430 re-review: `erased` before `micaschema apply` could land as '' (statusWrites). */
+  it('erases nothing while the database is behind the code, and says it did not', async () => {
+    __setStatusWritesForTests(false);
+    try {
+      dbMock.query.mockResolvedValue([]);
+      expect(await clearSeed()).toBe(false);
+      expect(dbMock.query).not.toHaveBeenCalled();
+    } finally {
+      __setStatusWritesForTests(true);
+    }
+    expect(await clearSeed()).toBe(true);
+    expect(dbMock.query).toHaveBeenCalled();
+  });
+
   it('never erases a contact on a seed number that the seed did not write', async () => {
     // The defect: `DELETE FROM mica_contacts WHERE phone IN (...)` and nothing else,
     // so a player who had saved 5550101 themselves lost it whenever an admin ran

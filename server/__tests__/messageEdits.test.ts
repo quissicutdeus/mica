@@ -45,6 +45,7 @@ import { messages } from '../services/Messages';
 import { MessageRepository } from '../repositories/MessageRepository';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { TEST_PHONE_ID } from './phoneStub';
+import { versionedWrites } from './versionedWrites';
 
 /** The row `findById` will answer with, or null for "no such message of yours". */
 const world = {
@@ -68,6 +69,8 @@ const messageUpdates = () =>
   );
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   __resetRateLimits();
   world.row = {

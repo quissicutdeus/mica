@@ -32,7 +32,8 @@ export class PhoneNumberRepository extends SchemaRepository<PhoneNumberRow> {
    * the caller reads the winner back rather than pre-checking (see `numberForPhone`).
    */
   async attachToPhone(rowId: number, deviceId: string): Promise<boolean> {
-    return await this.updateUnscoped(rowId, { device_id: deviceId });
+    // The phone it was on before, if any, is kept (MICA-430).
+    return await this.updateUnscoped(rowId, { device_id: deviceId }, 'handover');
   }
 
   /**

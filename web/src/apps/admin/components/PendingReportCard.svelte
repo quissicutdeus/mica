@@ -15,9 +15,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     busy: boolean;
     onallow: () => void;
     onremove: () => void;
+    /** Opens what earlier edits replaced (MICA-430). */
+    onhistory: () => void;
   }
 
-  let { report, busy, onallow, onremove }: Props = $props();
+  let { report, busy, onallow, onremove, onhistory }: Props = $props();
 
   const { t } = useLocale();
   const category = $derived(
@@ -46,6 +48,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       note={report.note}
       reporterLabel={report.reporter_label}
     />
+    <div class="mt-2 flex justify-end">
+      <button
+        type="button"
+        onclick={onhistory}
+        class="text-primary hover:bg-surface-container-high duration-short ease-standard text-body-small cursor-pointer rounded-box px-2 py-1 transition-colors"
+      >
+        {$t('admin.editHistory')}
+      </button>
+    </div>
   </div>
 
   <div class="bg-surface-container-high grid grid-cols-2 gap-px">

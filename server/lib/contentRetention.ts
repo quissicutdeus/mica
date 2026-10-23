@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from './Database';
+import { statusWritesMayRun } from './statusWrites';
 import { declaredServices, type ColumnDef, type ColumnType } from './defineService';
 import { SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
 import { whenSchemaReady } from './schemaReady';
@@ -537,6 +538,8 @@ export const pruneTable = async (policy: RetentionPolicy): Promise<number> => {
       return 0;
     }
     const table = identifier(policy.table, 'a retention table');
+    // Never while the database is behind the code: the status it writes may not exist yet.
+    if (!(await statusWritesMayRun(`retention on ${table}`, { [table]: [EXPIRED] }))) return 0;
     if (!(await preflight(policy))) return 0;
 
     const selectHold = holdClause(policy, 't');

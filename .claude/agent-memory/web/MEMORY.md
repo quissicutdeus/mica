@@ -108,3 +108,6 @@ its one-line summary.
 - [An unsynced key needs a synced owner](unsynced-key-needs-a-synced-owner.md) —
   the sweep skips `sync: false`; gate it on a synced fingerprint. Mock strip
   must cover named routes, not just the generic branch
+- [A new core call needs the facet](new-core-call-needs-the-facet.md) — app
+  can't reach `services/`; sdk facet type, host facet and iframe twin all
+  change; ask for them

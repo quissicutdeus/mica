@@ -59,13 +59,15 @@ const ADDED_BY_0016 = new Set([
   'mica_spark_photos',
   'mica_spark_swipes',
   'mica_spark_matches',
-  'mica_hodlr_price_history'
+  'mica_hodlr_price_history',
+  // And a table that came after both (MICA-430).
+  'mica_versions'
 ]);
 
 const declared = (): Map<string, readonly string[]> => {
   const out = new Map<string, readonly string[]>();
   for (const service of declaredServices) {
-    out.set(service.table, service.statuses);
+    if (!ADDED_BY_0016.has(service.table)) out.set(service.table, service.statuses);
     for (const child of service.childTables) {
       const spec = child.columns.status;
       if (ADDED_BY_0016.has(child.name)) continue;

@@ -8,6 +8,8 @@ import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { ERASED } from '../lib/statuses';
 import { registerDependentRows } from '../lib/orphanSweep';
+import { versionContext, writeVersioned } from '../lib/versions';
+import { statusWritesMayRun } from '../lib/statusWrites';
 import { joinedMedia } from '../lib/media/joined';
 import { openRow } from '../lib/contentCipher';
 import { appEventChannel } from '../lib/appEvents';
@@ -158,9 +160,14 @@ export const spark = defineService<ProfileRow, typeof sparkContract>({
       references: { table: 'mica_accounts', column: 'id' }
     },
     /** In character, at least 18 (`AGE_MIN`). */
-    age: { type: 'int', notNull: true, clientWritable: false },
-    bio: { type: 'string', length: BIO_MAX, clientWritable: false },
-    looking_for: { type: 'string', length: LOOKING_FOR_MAX, clientWritable: false },
+    age: { type: 'int', notNull: true, clientWritable: false, versioned: true },
+    bio: { type: 'string', length: BIO_MAX, clientWritable: false, versioned: true },
+    looking_for: {
+      type: 'string',
+      length: LOOKING_FOR_MAX,
+      clientWritable: false,
+      versioned: true
+    },
     /**
      * The citizenid while the profile is not hidden — not `deleted`, and since MICA-428 not
      * `expired` or `erased` either; carries the one-live-profile key. An erased profile must not
@@ -833,8 +840,19 @@ app.registerEvent('save', async (_source, _cbId, data, citizenid) => {
   if (existing && existing.status !== 'active') throw takenDown();
 
   const accountId = await sparkAccountOf(citizenid, displayName);
-  // The owner-scoped update, which names the citizen and never reaches a moderated row.
-  await accounts.repo.update(accountId, { display_name: displayName }, citizenid);
+  // The owner-scoped update, which names the citizen and never reaches a moderated row. Not
+  // written means the save is not reported ok (MICA-430 re-review): said as the account's state
+  // when that is why, generically otherwise.
+  if (!(await accounts.repo.update(accountId, { display_name: displayName }, citizenid))) {
+    const live = await Database.single<unknown>(
+      "SELECT 1 FROM `mica_accounts` WHERE `id` = ? AND `status` = 'active' LIMIT 1",
+      [accountId]
+    );
+    if (!live) throw accountUnavailable();
+    throw new Error(
+      `[spark] the name on account ${accountId} was not written; nothing reported ok.`
+    );
+  }
 
   let profileId: number;
   if (existing) {
@@ -856,14 +874,33 @@ app.registerEvent('save', async (_source, _cbId, data, citizenid) => {
     }
   }
 
-  const updated = await Database.update(
-    `UPDATE \`${PROFILES}\` SET \`age\` = ?, \`bio\` = ?, \`looking_for\` = ?
-     WHERE \`id\` = ? AND \`citizenid\` = ? AND \`status\` = 'active'`,
-    [data.age, bio, lookingFor, profileId, citizenid]
-  );
+  // What the edit replaces is kept (MICA-430), in the transaction of the edit itself.
+  const where = "`id` = ? AND `citizenid` = ? AND `status` = 'active'";
+  const whereParams = [profileId, citizenid];
+  // A profile this save just created already holds these values, so it keeps no version.
+  const { applied: updated } = await writeVersioned({
+    table: PROFILES,
+    values: ['age', 'bio', 'looking_for'],
+    context: versionContext(PROFILES, ['age', 'bio', 'looking_for'], true),
+    hasUpdatedAt: true,
+    where,
+    whereParams,
+    next: { age: data.age, bio, looking_for: lookingFor },
+    reason: 'edit',
+    editedBy: citizenid,
+    set: {
+      sql: '`age` = ?, `bio` = ?, `looking_for` = ?',
+      params: [data.age, bio, lookingFor]
+    }
+  });
   if (!updated) {
     const now = await liveProfileOf(citizenid);
     if (!now || now.status !== 'active') throw takenDown();
+    // Live, and still not written (MICA-430 re-review): never answered as saved. Generic, and
+    // logged with the profile, since nothing the player sent was wrong.
+    throw new Error(
+      `[spark] the save of profile ${profileId} was not written; nothing reported ok.`
+    );
   }
 
   // One transaction, so two saves at once cannot leave both photo sets on the profile.
@@ -1170,6 +1207,7 @@ let sweeping = false;
 /** Delete expired passes in bounded batches. Answers how many went; never throws. */
 export const sweepSparkPasses = async (): Promise<number> => {
   if (sweeping) return 0;
+  if (!(await statusWritesMayRun('the Spark pass sweep', { [SWIPES]: ['expired'] }))) return 0;
   sweeping = true;
   let removed = 0;
   try {

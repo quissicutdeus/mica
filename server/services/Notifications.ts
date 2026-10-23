@@ -6,6 +6,8 @@ import { EXPIRED } from '../lib/statuses';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { NotificationItem } from '@mica/shared/types';
 import { Database } from '../lib/Database';
+import { statusWritesMayRun } from '../lib/statusWrites';
+import { whenSchemaReady } from '../lib/schemaReady';
 import { notificationsContract } from '@mica/shared/contracts/notifications';
 import { phoneForCitizen } from '../lib/deviceIdentity';
 import { reasonOf, traceOf } from '../lib/sqlErrors';
@@ -218,6 +220,10 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
    * `updated_at` is pinned: expiring is not an edit.
    */
   async pruneStale(retentionDays: number): Promise<number> {
+    // Never before `micaschema apply` gives the ENUM `expired`: `sql_mode=''` would write ''.
+    if (!(await statusWritesMayRun('the notification prune', { mica_notifications: [EXPIRED] }))) {
+      return 0;
+    }
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
     const result = await Database.query<{ affectedRows?: number }>(
       `UPDATE mica_notifications SET status = ?, updated_at = updated_at
@@ -336,6 +342,19 @@ const getRetentionDays = (): number => {
   return 30;
 };
 
-getNotificationsRepository()
-  ?.pruneStale(getRetentionDays())
-  .catch(() => {});
+/**
+ * Once the resource has started and the schema check has settled, never at import: a write at
+ * import ran before anything knew whether the database was current, and on a server not yet
+ * through `micaschema apply` it blanked the status of every old notification (the prune also
+ * asks `statusWritesMayRun` itself). A failure is said, never swallowed.
+ */
+on('onResourceStart', (resourceName: string) => {
+  if (resourceName !== GetCurrentResourceName()) return;
+  whenSchemaReady(async () => {
+    try {
+      await getNotificationsRepository()?.pruneStale(getRetentionDays());
+    } catch (error) {
+      console.error('[mica] the notification prune failed:', traceOf(error));
+    }
+  });
+});

@@ -100,6 +100,8 @@ import type { Catalog } from '../i18n';
 import type { ReactionStore } from '../kit/createReactionStore';
 import type { AppComponent, AppManifest, AppPermission, AppDevice } from '../manifest';
 import type { KeybindAction } from '@mica/shared/keybinds';
+import type { ActionOutput } from '@mica/shared/contract';
+import type { reportsContract } from '@mica/shared/contracts/reports';
 import type {
   Account,
   BankHistorySource,
@@ -1133,6 +1135,12 @@ export interface Facets {
     loadReportHistory: () => Promise<void>;
     resolveReport: (id: number, action: 'moderate' | 'dismiss') => Promise<void>;
     reopenReport: (id: number) => Promise<void>;
+    /**
+     * MICA-430: every earlier version of a reported row's content, newest first. Rejects
+     * when the read fails, so a failure is never shown as "never edited". Behind `admin`
+     * like the rest of this facet, which no `core: false` add-on may declare.
+     */
+    loadReportVersions: (id: number) => Promise<ActionOutput<typeof reportsContract, 'versions'>>;
   };
   /**
    * MICA-286: an app's own rows in the phone's search, without the app handing a function

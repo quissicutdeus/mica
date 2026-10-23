@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { SchemaMigrator } from '../lib/SchemaMigrator';
+import { resetStatusWrites } from '../lib/statusWrites';
 import { runPendingMigrations, reportPendingMigrations } from '../lib/migrations';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
@@ -75,6 +76,8 @@ export const runApply = async (source: number): Promise<void> => {
   if (dropped > 0) console.log(`[mica] dropped ${dropped} foreign key(s) onto players.`);
 
   const result = await runPendingMigrations();
+  // Some may have applied even if one failed: the held sweeps ask again (`lib/statusWrites.ts`).
+  resetStatusWrites();
   for (const id of result.applied) console.log(`[mica] applied migration ${id}`);
   if (result.failed) {
     console.error(`[mica] migration ${result.failed.id} failed: ${result.failed.error}`);
@@ -86,6 +89,8 @@ export const runApply = async (source: number): Promise<void> => {
   }
 
   const additive = await SchemaMigrator.apply();
+  // Whatever applied, the sweeps held on the schema ask again (`lib/statusWrites.ts`).
+  resetStatusWrites();
   for (const line of additive.applied) console.log(`[mica] ${line}`);
   if (additive.failed) {
     console.error(`[mica] ${additive.failed.description} failed: ${additive.failed.error}`);

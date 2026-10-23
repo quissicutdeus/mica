@@ -13,6 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     registerMessages,
     useReports,
+    useAppLevels,
     onAppForeground,
     formatRelativeTime,
     type AppProps
@@ -22,6 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import de from './locales/de.json';
   import ReportPreview from './components/ReportPreview.svelte';
   import ResolveDialog from './components/ResolveDialog.svelte';
+  import EditHistoryDialog from './components/EditHistoryDialog.svelte';
   import { CATEGORY_KEYS, RESOLUTION_KEYS, type ResolveAction } from './components/labels';
 
   // The same catalog as the phone root: one app, two layouts, never two wordings.
@@ -37,12 +39,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     loadPendingReports,
     loadReportHistory,
     resolveReport,
-    reopenReport
+    reopenReport,
+    loadReportVersions
   } = useReports();
 
   type Tab = 'pending' | 'history';
   let tab = $state<Tab>('pending');
   let confirming = $state<{ report: Report; action: ResolveAction } | null>(null);
+  /** The report whose edit history is open (MICA-430), or none. */
+  let historyFor = $state<Report | null>(null);
+
+  // Back closes the open dialog before it leaves the app; Backspace is the shell's, so the
+  // levels have to claim it (`useAppLevels`) rather than ride `<Screen onback>`.
+  const app = useAppLevels({
+    appId: 'admin',
+    title: () => $t('admin.title'),
+    onback: () => onback?.(),
+    levels: [
+      { open: () => historyFor !== null, close: () => (historyFor = null) },
+      { open: () => confirming !== null, close: () => (confirming = null) }
+    ]
+  });
 
   onAppForeground('admin', () => {
     void loadPendingReports();
@@ -103,7 +120,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   };
 </script>
 
-<Screen title={$t('admin.title')} {onback}>
+<Screen title={app.title} onback={app.back}>
   <div class="flex min-h-0 flex-1">
     <!-- The queue. `w-96` is 384px, the phone's screen width exactly — the list is the same
          list, just permanently on screen — and it stops short of the home pill, which a
@@ -202,6 +219,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </p>
           </div>
 
+          <button
+            type="button"
+            onclick={() => (historyFor = report)}
+            class="text-primary hover:bg-surface-container-high duration-short ease-standard text-body-small cursor-pointer rounded-box px-2 py-1 transition-colors"
+          >
+            {$t('admin.editHistory')}
+          </button>
+
           {#if tab === 'pending'}
             <div class="flex gap-3">
               <button
@@ -239,4 +264,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if confirming}
   <ResolveDialog pending={confirming} onconfirm={decide} oncancel={() => (confirming = null)} />
+{/if}
+
+{#if historyFor}
+  <EditHistoryDialog
+    report={historyFor}
+    load={loadReportVersions}
+    onclose={() => (historyFor = null)}
+  />
 {/if}

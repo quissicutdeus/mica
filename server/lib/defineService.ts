@@ -18,6 +18,7 @@ import type { ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
 import { registerServerOnlyColumns } from './replyShape';
 import { ERASED } from './statuses';
+import { assertSnapshotFits } from './versions';
 import type { ServiceContract } from '@mica/shared/contract';
 import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
 import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@mica/shared/devices';
@@ -288,6 +289,14 @@ export interface ColumnDef {
     readonly scope?: readonly string[];
     readonly normalize?: (value: string) => string;
   };
+  /**
+   * Keep every value an edit replaces (MICA-430): before a write that changes this column, its
+   * old value — sealed as stored, with the columns its seal binds — goes into the version ledger
+   * in the same transaction (`lib/versions.ts`). Player content only: a column that is state, a
+   * credential or a copy is left out, with its reason in `versionDecisions.test.ts`, which fails
+   * on a sealed or player-writable text column that is neither.
+   */
+  versioned?: boolean;
 }
 
 /**
@@ -751,6 +760,8 @@ export interface ResolvedService {
   childTables: readonly ChildTableDefinition[];
   /** The `encrypted: true` columns, in declaration order (MICA-165). */
   encryptedColumns: string[];
+  /** The `versioned: true` columns, in declaration order (MICA-430). */
+  versioned: string[];
   /** `ServiceDefinition.encryptionScope`; `[]` when nothing is encrypted. */
   encryptionScope: string[];
   /** What the encrypted columns are bound to (MICA-431, MICA-432). */
@@ -772,6 +783,55 @@ const MAX_VARCHAR_CHARS = 16383;
 /** An encrypted `string`'s width once sealed: its plaintext bound, at its bytes a character. */
 const storedWidth = (def: ColumnDef): number =>
   def.ascii === true ? sealedLength(def.length ?? 255) : sealedLengthForChars(def.length ?? 255);
+
+/**
+ * The most bytes a column's value can take, for sizing a version snapshot (MICA-430); null for
+ * one with no useful bound. A sealed `string` is its stored width; a `text` is its capacity.
+ */
+const valueBytes = (def: ColumnDef): number | null => {
+  switch (def.type) {
+    case 'string':
+      return def.encrypted ? storedWidth(def) : (def.length ?? 255) * 4;
+    case 'text':
+      return 65_535;
+    case 'mediumtext':
+      return null;
+    case 'enum':
+      return Math.max(1, ...(def.values ?? []).map((value) => value.length));
+    default:
+      return 32;
+  }
+};
+
+/** The most a context column (an owner, a phone, a seal key, a scope id) takes in a snapshot. */
+const CONTEXT_BYTES = 255;
+
+/**
+ * The versioned columns of one table, checked (MICA-430): never a generated one, which holds
+ * nothing to keep, and never so many or so wide that a snapshot could outgrow the ledger.
+ */
+const versionedColumnsOf = (
+  id: string,
+  table: string,
+  fields: readonly { name: string; def: ColumnDef }[]
+): string[] => {
+  const versioned = fields.filter((field) => field.def.versioned === true);
+  for (const { name, def } of versioned) {
+    if (def.generatedAs) {
+      throw new Error(
+        `defineService('${id}'): '${name}' is 'versioned' but generated; it holds no value of ` +
+          'its own to keep.'
+      );
+    }
+  }
+  if (versioned.length === 0) return [];
+  assertSnapshotFits(table, {
+    ...Object.fromEntries(versioned.map(({ name, def }) => [name, valueBytes(def)])),
+    // The owner, a phone, a seal key and the scope a sealed value binds, at most.
+    '(context)': CONTEXT_BYTES * 8
+  });
+  return versioned.map(({ name }) => name);
+};
 
 /** What an `encrypted: true` column may not also be (MICA-165). */
 const assertEncryptedColumn = (id: string, name: string, def: ColumnDef): void => {
@@ -1487,6 +1547,14 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   }
 
   const resolvedChildren = childTables.map((child) => resolveChildEncryption(id, child));
+  // A child table's versioned columns are written by named SQL (MICA-430); checked the same.
+  for (const child of childTables) {
+    versionedColumnsOf(
+      id,
+      child.name,
+      Object.entries(child.columns).map(([name, spec]) => ({ name, def: normalizeColumn(spec) }))
+    );
+  }
 
   const isPrivate = (column: string): boolean =>
     fields.some((f) => f.name === column && f.def.private === true);
@@ -1550,6 +1618,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     childTables: resolvedChildren.map((r) => r.child),
     childEncryption: resolvedChildren.flatMap((r) => (r.encryption ? [r.encryption] : [])),
     encryptedColumns,
+    versioned: versionedColumnsOf(id, table, fields),
     encryptionScope,
     encryptionBinding: deviceOwned
       ? 'device'
@@ -1587,6 +1656,7 @@ export class SchemaRepository<T> extends Repository<T> {
     this.membership = resolved.membership;
     this.columnRules = resolved.columnRules;
     this.editWindow = resolved.editWindow;
+    this.versionedColumns = resolved.versioned;
     if (resolved.uniqueAfterDelete === 'revive') {
       // A generated copy is compared as the column it copies (`reviveAs`, MICA-428).
       const reviveAs = new Map(

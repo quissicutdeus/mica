@@ -35,7 +35,14 @@ type AuditAction =
    * for an operator reading something is otherwise unrecoverable after the fact: there is
    * no row a read leaves behind on its own, so this is the only place it is ever recorded.
    */
-  | 'viewed';
+  | 'viewed'
+  /**
+   * A credential was replaced (MICA-430): a phone's passcode, a Dark Chat channel's join code.
+   * Every edit of a player's content keeps the value it replaced (`lib/versions.ts`); a
+   * credential's old value is never kept, since a history of PIN hashes is a history of PINs.
+   * This is the record that it changed, by whom and when — never what it was or is.
+   */
+  | 'changed';
 
 export interface AuditLogOptions {
   citizenid: string;

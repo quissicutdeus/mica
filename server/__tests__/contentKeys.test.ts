@@ -131,6 +131,8 @@ describe('status and backfill', () => {
     expect(logged).toEqual([
       '[micacrypt] no content key is set; new bodies are stored as plaintext.',
       '[micacrypt] no encrypted column is registered.',
+      // MICA-430: the version ledger's snapshots, walked with the columns.
+      '[micacrypt] mica_versions.snapshot: not in the database; run micaschema apply.',
       '[micacrypt] DM notifications still holding a body: 3.',
       // MICA-340: the import ledger's message keys, after the bodies.
       '[micacrypt] mica_import_ledger (message keys): not in the database; nothing to key.'

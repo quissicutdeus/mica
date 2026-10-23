@@ -30,6 +30,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import { onAccountBlocked, registerAccountAppPolicy, scrubAccount } from '../services/Accounts';
+import { versionedWrites } from './versionedWrites';
 
 /**
  * Per-app account policy (MICA-255): a cap other than the convar's, and an app whose accounts
@@ -62,6 +63,8 @@ const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
 const flat = (sql: unknown) => String(sql).replace(/\s+/g, ' ');
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(7);

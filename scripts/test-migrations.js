@@ -86,12 +86,14 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * and over an empty one) to 531, and MICA-389's `runApplyFinishesHalfCreated` (11 on each
  * shape) to 553, and MICA-432's `runBlindIndexMigration`s (10 on each shape) to 573, and
  * MICA-428's `runHiddenRowsMigration`s (13 on each shape) to 599, and MICA-429's
- * `runChildRowsMigration`s (12 on each shape) to 623 — so the margin here is eight again.
+ * `runChildRowsMigration`s (12 on each shape) to 623, and MICA-430's `runAuditChangedMigration`s
+ * (7 on each shape) to 637, and the held-before-apply runs (5 on each shape) to 647 — so the
+ * margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 623;
+const MINIMUM_CHECKS = 647;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -261,7 +263,10 @@ const loadServerModule = async () => {
     `export { runApply } from '${root}/server/services/Schema.ts';`,
     `export { reportOwnerForeignKeys } from '${root}/server/lib/ownerForeignKeys.ts';`,
     // MICA-389. The first-start bootstrap's statements and table order, to stop one part-way.
-    `export { bootstrapTables, createStatements } from '${root}/server/lib/schemaSql.ts';`
+    `export { bootstrapTables, createStatements } from '${root}/server/lib/schemaSql.ts';`,
+    // Review of MICA-428–430: the notification prune and the gate every such write asks.
+    `export { getNotificationsRepository } from '${root}/server/services/Notifications.ts';`,
+    `export { resetStatusWrites } from '${root}/server/lib/statusWrites.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-migration-harness.mjs');
@@ -2526,6 +2531,8 @@ const runHiddenRowsMigration = async ({ connection, schemaFile, hasPlayers, serv
         AND table_name LIKE 'mica|_%' ESCAPE '|'`
   );
   for (const { t, type } of enums) {
+    // The version ledger (MICA-430) came after 0015 and was declared with `erased`.
+    if (t === 'mica_versions') continue;
     const old = [...String(type).matchAll(/'([^']*)'/g)]
       .map((m) => m[1])
       .filter((value) => value !== 'erased' && (value !== 'expired' || t === 'mica_invoices'));
@@ -2936,6 +2943,214 @@ const runChildRowsMigration = async ({ connection, schemaFile, hasPlayers, serve
 
   const second = await server.runPendingMigrations();
   check(`${label}: a second run applies nothing`, second.applied, []);
+};
+
+const AUDIT_CHANGED_MIGRATION = '0017_audit_records_a_change';
+
+/**
+ * MICA-430's 0017, executed: the audit ledger's `action` put back to the list before it, a row of
+ * every action that list had, the real `micaschema apply`, and then a `changed` row. Run twice:
+ * the second `up()` issues no DDL at all, and leaves every row as it was.
+ */
+const runAuditChangedMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} audit changed`;
+  step(`${schemaFile} — MICA-430 ${AUDIT_CHANGED_MIGRATION}, on a ${variant} database`);
+
+  const fresh = async (database) => {
+    await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+    await connection.query(`CREATE DATABASE \`${database}\``);
+    await connection.changeUser({ database });
+    if (hasPlayers) await connection.query(PLAYERS_TABLE);
+    await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  };
+  await fresh(`mica_audit_changed_shape_${variant}`);
+  const shape = {
+    columns: (await wholeSchema(connection)).toSorted(),
+    keys: await allIndexes(connection)
+  };
+
+  await fresh(`mica_audit_changed_${variant}`);
+  const OLD = [
+    'archived',
+    'unarchived',
+    'deleted',
+    'left',
+    'removed',
+    'moderated',
+    'unmoderated',
+    'viewed'
+  ];
+  await connection.query(
+    `ALTER TABLE mica_audit_logs MODIFY COLUMN action ENUM(${OLD.map((a) => `'${a}'`).join(', ')}) NOT NULL`
+  );
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [
+    AUDIT_CHANGED_MIGRATION
+  ]);
+  for (const action of OLD) {
+    await connection.query(
+      "INSERT INTO mica_audit_logs (citizenid, action, service, method, target_id) VALUES ('CIT_A', ?, 'test', 'm', 1)",
+      [action]
+    );
+  }
+  const rows = async () =>
+    (await connection.query('SELECT id, action FROM mica_audit_logs ORDER BY id'))[0].map(
+      (r) => `${r.id} ${r.action}`
+    );
+  const before = await rows();
+  check(
+    `${label}: the regressed ledger refuses changed`,
+    await rejects(() =>
+      connection.query(
+        "INSERT INTO mica_audit_logs (citizenid, action, service, method, target_id) VALUES ('CIT_A', 'changed', 'test', 'm', 1)"
+      )
+    ),
+    'WARN_DATA_TRUNCATED'
+  );
+
+  runningFramework(server, hasPlayers);
+  const apply = await captured(() => server.runApply(0));
+  check(
+    `${label}: apply runs 0017, failing nothing`,
+    [
+      apply.lines.includes(`[mica] applied migration ${AUDIT_CHANGED_MIGRATION}`),
+      apply.lines.filter((line) => /fail/i.test(line))
+    ],
+    [true, []]
+  );
+  check(`${label}: every row keeps its action`, await rows(), before);
+  check(
+    `${label}: every column a fresh import has, and every key`,
+    [(await wholeSchema(connection)).toSorted(), await allIndexes(connection)],
+    [shape.columns, shape.keys]
+  );
+  check(
+    `${label}: and changed now writes`,
+    await rejects(() =>
+      connection.query(
+        "INSERT INTO mica_audit_logs (citizenid, action, service, method, target_id) VALUES ('CIT_A', 'changed', 'test', 'm', 1)"
+      )
+    ),
+    null
+  );
+
+  const settled = { schema: await wholeSchema(connection), rows: await rows() };
+  const ddl = [];
+  const query = connection.query.bind(connection);
+  connection.query = (sql, ...rest) => {
+    if (/^\s*(ALTER|CREATE|DROP)\b/i.test(String(sql))) ddl.push(String(sql));
+    return query(sql, ...rest);
+  };
+  try {
+    await server.migrations.find((m) => m.id === AUDIT_CHANGED_MIGRATION).up();
+  } finally {
+    connection.query = query;
+  }
+  check(
+    `${label}: running up() a second time issues no DDL, and changes nothing`,
+    [ddl, await wholeSchema(connection), await rows()],
+    [[], settled.schema, settled.rows]
+  );
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+};
+
+/**
+ * The write a server makes between deploying new code and `micaschema apply` (review of
+ * MICA-428–430, found replaying 0013–0016 on a copy of a live database). A pre-0015
+ * `mica_notifications` has no `expired` in its ENUM; under `sql_mode=''` MariaDB takes the old
+ * code's write anyway and stores `''`, and the row's status is gone. The new code asks
+ * `statusWritesMayRun` first: the prune and the purge write nothing and say once that the
+ * database needs `micaschema apply`; after it runs, the prune does its work.
+ */
+const runHeldBeforeApply = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} held before apply`;
+  step(`${schemaFile} — sweeps held until micaschema apply, on a ${variant} database, sql_mode ''`);
+
+  await connection.query(`DROP DATABASE IF EXISTS \`mica_held_${variant}\``);
+  await connection.query(`CREATE DATABASE \`mica_held_${variant}\``);
+  await connection.changeUser({ database: `mica_held_${variant}` });
+  if (hasPlayers) await connection.query(PLAYERS_TABLE);
+  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  const A = hasPlayers ? 'CIT_A' : SWEEP_LIVE;
+  await connection.query("SET SESSION sql_mode = ''");
+  try {
+    // Before 0015: no `expired` and no `erased` on the notifications ENUM, and 0015 pending.
+    await connection.query(
+      "ALTER TABLE mica_notifications MODIFY COLUMN status ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active'"
+    );
+    await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [
+      HIDDEN_ROWS_MIGRATION
+    ]);
+    const old = 'NOW() - INTERVAL 90 DAY';
+    await connection.query(
+      `INSERT INTO mica_notifications (id, citizenid, app, kind, title, body, created_at)
+       VALUES (1, ?, 'mail', 'info', 't', 'b', ${old}), (2, ?, 'mail', 'info', 't', 'b', ${old})`,
+      [A, A]
+    );
+    await connection.query("INSERT INTO mica_notes (id, citizenid, title) VALUES (1, ?, 'kept')", [
+      A
+    ]);
+    const statusOf = async (table, id) =>
+      String(
+        (await connection.query(`SELECT status FROM ${table} WHERE id = ?`, [id]))[0][0].status
+      );
+
+    // What the old code did: the same statement, unguarded.
+    await connection.query(
+      "UPDATE mica_notifications SET status = 'expired', updated_at = updated_at WHERE id = 2"
+    );
+    check(
+      `${label}: the old code's write under sql_mode '' blanks the status`,
+      await statusOf('mica_notifications', 2),
+      ''
+    );
+
+    server.resetStatusWrites();
+    runningFramework(server, hasPlayers);
+    const pruned = await captured(() => server.getNotificationsRepository().pruneStale(30));
+    check(
+      `${label}: the new prune writes nothing, and says micaschema apply is needed`,
+      [
+        pruned.result,
+        await statusOf('mica_notifications', 1),
+        pruned.lines.some(
+          (l) =>
+            l.includes('the notification prune is held') && l.includes("Run 'micaschema apply'")
+        )
+      ],
+      [0, 'active', true]
+    );
+    const purged = await captured(() => server.purgeOwnedRows(A));
+    check(
+      `${label}: nor does a purge, held whole as one failure`,
+      [
+        purged.result.erased,
+        purged.result.failures.map((f) => f.table),
+        await statusOf('mica_notes', 1)
+      ],
+      [0, ['*'], 'active']
+    );
+
+    const apply = await captured(() => server.runApply(0));
+    check(
+      `${label}: micaschema apply runs 0015`,
+      apply.lines.includes(`[mica] applied migration ${HIDDEN_ROWS_MIGRATION}`),
+      true
+    );
+    check(
+      `${label}: after which the prune runs, and writes expired`,
+      [
+        await server.getNotificationsRepository().pruneStale(30),
+        await statusOf('mica_notifications', 1)
+      ],
+      [1, 'expired']
+    );
+  } finally {
+    await connection.query('SET SESSION sql_mode = @@GLOBAL.sql_mode');
+    server.resetStatusWrites();
+  }
 };
 
 const WIDEN_MIGRATION = '0004_citizenid_widens_on_esx';
@@ -4693,6 +4908,24 @@ const main = async () => {
     // MICA-429. 0016 through `micaschema apply`, on both shapes, then what its keys free.
     await runChildRowsMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runChildRowsMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // Review of MICA-428–430: nothing writes a status before `micaschema apply`, under sql_mode ''.
+    await runHeldBeforeApply({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runHeldBeforeApply({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, server });
+
+    // MICA-430. 0017 through `micaschema apply`, on both shapes, then a second `up()`.
+    await runAuditChangedMigration({
+      connection,
+      schemaFile: 'mica.sql',
+      hasPlayers: true,
+      server
+    });
+    await runAuditChangedMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

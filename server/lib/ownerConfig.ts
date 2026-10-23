@@ -413,7 +413,9 @@ export const NEVER_REFUSED_SERVICES: readonly string[] = [
   'reports',
   'settings',
   'shell',
-  'signal'
+  'signal',
+  // The version ledger (MICA-430): a table with no actions, and no app's.
+  'versions'
 ];
 
 /**

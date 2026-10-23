@@ -56,8 +56,8 @@ export const notes = defineService<Note, typeof notesContract>({
    */
   encryptionScope: [],
   schema: {
-    title: { type: 'string', length: 255, encrypted: true },
-    content: { type: 'text', encrypted: true }
+    title: { type: 'string', length: 255, encrypted: true, versioned: true },
+    content: { type: 'text', encrypted: true, versioned: true }
   },
   indexes: [{ name: 'citizenid_status_updated', columns: ['citizenid', 'status', 'updated_at'] }]
 });

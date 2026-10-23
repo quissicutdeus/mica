@@ -130,14 +130,26 @@ export const places = defineService<SavedPlace, typeof placesContract>({
    */
   encryptionScope: [],
   schema: {
-    name: { type: 'string', length: MAX_NAME_LENGTH, notNull: true, encrypted: true },
-    street_label: { type: 'string', length: MAX_STREET_LABEL_LENGTH, encrypted: true },
+    name: {
+      type: 'string',
+      length: MAX_NAME_LENGTH,
+      notNull: true,
+      encrypted: true,
+      versioned: true
+    },
+    street_label: {
+      type: 'string',
+      length: MAX_STREET_LABEL_LENGTH,
+      encrypted: true,
+      versioned: true
+    },
     position: {
       type: 'string',
       length: POSITION_MAX,
       clientWritable: false,
       encrypted: true,
-      ascii: true
+      ascii: true,
+      versioned: true
     }
   },
   // No extra indexes: `citizenid_status` is already emitted for every primary table, and

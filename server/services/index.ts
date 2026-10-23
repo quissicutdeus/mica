@@ -48,3 +48,4 @@ import './Source';
 import './Spark';
 import './Storage';
 import './Store';
+import './Versions';

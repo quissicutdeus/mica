@@ -12,6 +12,7 @@ import { appEventChannel } from '../lib/appEvents';
 import { payToSociety, transfer, type PaymentOutcome } from '../lib/Payments';
 import { onResourceReleased } from '../lib/resourceStop';
 import { startupJobsMayRunNow, whenSchemaReady } from '../lib/schemaReady';
+import { statusWritesMayRun } from '../lib/statusWrites';
 import { traceOf } from '../lib/sqlErrors';
 import { who } from '../lib/who';
 
@@ -99,6 +100,9 @@ const nowSeconds = (): number => Math.floor(Date.now() / 1000);
  * check the date themselves.
  */
 export const expireDueInvoices = async (): Promise<void> => {
+  if (!(await statusWritesMayRun('the invoice expiry sweep', { mica_invoices: ['expired'] }))) {
+    return;
+  }
   try {
     await repo.expireDue(nowSeconds());
   } catch (error) {

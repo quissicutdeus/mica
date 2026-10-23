@@ -73,6 +73,10 @@ import { invoices } from '../services/Invoices';
 import { liveChannelByCode } from '../services/Darkchat';
 import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 import { MAIL_CONTENT_MAX } from '@mica/shared/contracts/mail';
+import { versionedWrites, type VersionedCall } from './versionedWrites';
+
+/** The versioned writes this test made (MICA-430). */
+let versionCalls: VersionedCall[] = [];
 
 const ROOT = join(__dirname, '..', '..');
 
@@ -902,6 +906,8 @@ const call = async (service: string, action: string, data: unknown, src = 5) => 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionCalls = versionedWrites(dbMock);
   __resetRateLimits();
   resetContentCipherForTests();
   withKey = true;
@@ -1787,6 +1793,16 @@ describe('lookups and moved owners (MICA-432)', () => {
       opened('mica_messages_conversations', 'name', { seal_key: 'k'.repeat(32), name: params[0] })
     ).toBe('Crew');
     expect(params[2]).toBe('k'.repeat(32));
+    // The name it replaced is kept, sealed as the row held it, beside its seal key (MICA-430).
+    expect(versionCalls.map((c) => [c.table, c.reason, c.editedBy])).toEqual([
+      ['mica_messages_conversations', 'rename', 'CIT_A']
+    ]);
+    expect(versionCalls[0].snapshot).toContain(
+      "JSON_OBJECT('values', JSON_OBJECT('name', c.`name`), 'context', JSON_OBJECT('citizenid', c.`citizenid`, 'seal_key', c.`seal_key`)"
+    );
+    expect(versionCalls[0].lock).toMatch(
+      /^SELECT c\.`id` FROM `mica_messages_conversations` c WHERE c\.id = \?/
+    );
   });
 });
 

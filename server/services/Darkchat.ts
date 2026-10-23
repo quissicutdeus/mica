@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { AuditLogger } from '../lib/AuditLogger';
 import { appEventChannel } from '../lib/appEvents';
 import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
 import {
@@ -864,6 +865,16 @@ app.registerEvent('rotateCode', async (_source, _cbId, data, citizenid) => {
       ]
     );
     if (!moved) throw notOwner();
+    // That it changed, never what it was (MICA-430): the old code is a credential, not kept.
+    await AuditLogger.log({
+      citizenid,
+      action: 'changed',
+      service: 'darkchat',
+      method: 'rotateCode',
+      targetId: data.channel_id,
+      targetTable: CHANNELS,
+      details: { what: 'join code' }
+    });
     return { code };
   });
 });

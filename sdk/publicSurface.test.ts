@@ -2183,6 +2183,7 @@ const ADD_ON_HOOK_OMISSIONS: Record<string, string[]> = {
   useReports: [
     'loadPendingReports',
     'loadReportHistory',
+    'loadReportVersions',
     'pendingReportCount',
     'pendingReports',
     'reopenReport',

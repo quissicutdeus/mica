@@ -82,6 +82,10 @@ import '../services/Reports';
 import { REPORTABLE } from '../lib/moderation';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { NOT_HELD_REPLY, installTestPhone, refusePhone } from './phoneStub';
+import { versionedWrites, type VersionedCall } from './versionedWrites';
+
+/** The versioned writes this test made (MICA-430). */
+let versionCalls: VersionedCall[] = [];
 
 type Row = Record<string, any>;
 
@@ -669,6 +673,16 @@ beforeEach(() => {
     nextId: 1000
   };
   install();
+  // MICA-430: a versioned write, through this suite's own stand-in, reading this world's rows,
+  // so a save that changes nothing is seen as one (MICA-430 review).
+  versionCalls = versionedWrites(dbMock, {
+    rows: (query, params) => {
+      const table = /FROM `(mica_\w+)`/.exec(query)?.[1];
+      const rows =
+        table === 'mica_spark' ? w.profiles : table === 'mica_accounts' ? w.accounts : [];
+      return rows.filter((row) => Number(row.id) === Number(params[0])).map((row) => ({ ...row }));
+    }
+  });
 });
 
 describe('the declaration', () => {
@@ -727,6 +741,54 @@ describe('save', () => {
     });
     expect(second.photo_ids).toEqual([902, 901]);
     expect(second.id).toBe(first.id);
+    // What the second save replaced is kept: the profile's fields, and the account's name
+    // (MICA-430). The photo set is kept as rows, `replaced` (MICA-429).
+    const kept = versionCalls.map((c) => `${c.table} ${c.reason} ${c.editedBy} ${c.applied}`);
+    // One each, from the second save: the first wrote the values it had just inserted, which
+    // replaced nothing (MICA-430 review).
+    expect(kept).toEqual(['mica_accounts edit CIT_A 1', 'mica_spark edit CIT_A 1']);
+    const profileEdit = versionCalls.findLast((c) => c.table === 'mica_spark')!;
+    expect(profileEdit.snapshot).toContain(
+      "JSON_OBJECT('age', `mica_spark`.`age`, 'bio', `mica_spark`.`bio`, 'looking_for', `mica_spark`.`looking_for`)"
+    );
+  });
+
+  /** MICA-430 review: a save of the profile as it is keeps nothing, and still saves. */
+  it('keeps no version of a save that changes nothing, the account name included', async () => {
+    photo(901);
+    const body = { display_name: 'Ada', age: 30, bio: 'Hi', photos: [{ photo_id: 901 }] };
+    expect((await call('spark:save', body)).error).toBeUndefined();
+    const again = await call('spark:save', body);
+    expect(again.error).toBeUndefined();
+    expect(again).toMatchObject({ display_name: 'Ada', age: 30, bio: 'Hi', status: 'active' });
+    expect(versionCalls).toEqual([]);
+  });
+
+  /** MICA-430 re-review: a save is never answered ok with its text unwritten. */
+  it('answers an error, not the profile, when the profile write did not land', async () => {
+    photo(901);
+    const body = { display_name: 'Ada', age: 30, bio: 'Hi', photos: [{ photo_id: 901 }] };
+    expect((await call('spark:save', body)).error).toBeUndefined();
+    const world = dbMock.update.getMockImplementation()!;
+    dbMock.update.mockImplementation(async (sql: string, params: any[] = []) =>
+      /UPDATE `mica_spark` SET `age`/.test(String(sql)) ? false : world(sql, params)
+    );
+    const reply = await call('spark:save', { ...body, bio: 'Changed' });
+    expect(reply.error).toBeDefined();
+    expect(reply.bio).toBeUndefined();
+  });
+
+  it('answers an error, not the profile, when the account name did not land', async () => {
+    photo(901);
+    const body = { display_name: 'Ada', age: 30, bio: 'Hi', photos: [{ photo_id: 901 }] };
+    expect((await call('spark:save', body)).error).toBeUndefined();
+    const world = dbMock.update.getMockImplementation()!;
+    dbMock.update.mockImplementation(async (sql: string, params: any[] = []) =>
+      /`display_name` = \?/.test(String(sql)) ? false : world(sql, params)
+    );
+    const reply = await call('spark:save', { ...body, display_name: 'Ada L' });
+    expect(reply.error).toBeDefined();
+    expect(reply.display_name).toBeUndefined();
   });
 
   it('makes one account and one profile when two first saves race', async () => {
@@ -1344,8 +1406,13 @@ describe('the account and the photo set (review)', () => {
     seed([ME]);
     w.media.push({ id: 902, citizenid: 'CIT_A', status: 'active', kind: 'photo', data: 'img' });
     await call('spark:save', { display_name: 'Ada', age: 30, photos: [{ photo_id: 902 }] });
-    expect(dbMock.transaction).toHaveBeenCalledTimes(1);
-    const [queries] = dbMock.transaction.mock.calls[0];
+    // The photo set's own transaction; the profile's and the account's edits are versioned
+    // writes in theirs (MICA-430).
+    const sets = dbMock.transaction.mock.calls.filter(([batch]: any[]) =>
+      batch.some((q: any) => String(q.query).includes('`mica_spark_photos`'))
+    );
+    expect(sets).toHaveLength(1);
+    const [queries] = sets[0];
     expect(queries.map((q: any) => one(q.query).split(' ').slice(0, 3).join(' '))).toEqual([
       'UPDATE `mica_spark_photos` SET',
       'INSERT INTO `mica_spark_photos`'

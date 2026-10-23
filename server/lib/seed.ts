@@ -11,6 +11,7 @@ import {
   sealRow
 } from './contentCipher';
 import { Database } from './Database';
+import { statusWritesMayRun } from './statusWrites';
 
 /**
  * Seed data for testing the phone against something other than an empty database.
@@ -290,7 +291,18 @@ export const seedFor = async (owner: string): Promise<SeedResult> => {
  * harder, because a contact row is owned by a real player and carries no marker saying the
  * seed wrote it — see below.
  */
-export const clearSeed = async (): Promise<void> => {
+export const clearSeed = async (): Promise<boolean> => {
+  // Never while the database is behind the code (`lib/statusWrites.ts`): `erased` before
+  // `micaschema apply` could be stored as '' under `sql_mode=''`. Held whole, said once.
+  const writes = Object.fromEntries(
+    [
+      'mica_messages',
+      'mica_messages_participants',
+      'mica_messages_conversations',
+      'mica_contacts'
+    ].map((table) => [table, ['erased']])
+  );
+  if (!(await statusWritesMayRun('micaseed clear', writes))) return false;
   const ids = SEED_CHARACTERS.map((c) => c.citizenid);
   const placeholders = ids.map(() => '?').join(',');
 
@@ -321,4 +333,5 @@ export const clearSeed = async (): Promise<void> => {
   }
 
   await clearSeedContacts();
+  return true;
 };

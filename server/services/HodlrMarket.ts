@@ -4,6 +4,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { Database } from '../lib/Database';
+import { statusWritesMayRun } from '../lib/statusWrites';
 import { startupJobsMayRunNow, whenSchemaReady } from '../lib/schemaReady';
 import type { PricePoint } from '@mica/shared/types';
 import { traceOf } from '../lib/sqlErrors';
@@ -303,6 +304,11 @@ const tickMarket = (): void => {
  * yields no id and `0` matches no row, since AUTO_INCREMENT starts at 1.
  */
 const pruneHistory = async (): Promise<void> => {
+  if (
+    !(await statusWritesMayRun('the Hodlr price prune', { [PRICE_HISTORY_TABLE]: ['expired'] }))
+  ) {
+    return;
+  }
   try {
     const newest = await Database.scalar<number | null>(
       `SELECT \`id\` FROM \`${PRICE_HISTORY_TABLE}\` ORDER BY \`id\` DESC LIMIT 1`

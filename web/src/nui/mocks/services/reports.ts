@@ -25,6 +25,46 @@ const mockReports: Report[] = [
   }
 ];
 
+/**
+ * The edit history of the seeded report's message (MICA-430), in `reports:versions`' shape:
+ * what each edit replaced, oldest first. The author softened it twice before it was
+ * reported, and one older version is sealed under a key the server no longer holds, which
+ * the server answers as the padlock. `by_owner: null` is a write the server made itself.
+ */
+const mockVersions = new Map<string, unknown[]>([
+  [
+    'mica_messages:4',
+    [
+      {
+        id: 11,
+        reason: 'edit',
+        replaced_at: '2026-07-30T09:41:00Z',
+        written_at: '2026-07-30T09:38:00Z',
+        by_owner: true,
+        values: [
+          { column: 'body', value: 'I know where you park. <b>You are going to regret that.</b>' }
+        ]
+      },
+      {
+        id: 12,
+        reason: 'handover',
+        replaced_at: '2026-07-30T09:47:00Z',
+        written_at: null,
+        by_owner: null,
+        values: [{ column: 'body', value: '\u{1F512}' }]
+      },
+      {
+        id: 13,
+        reason: 'edit',
+        replaced_at: '2026-07-30T09:52:00Z',
+        written_at: '2026-07-30T09:41:00Z',
+        by_owner: true,
+        values: [{ column: 'body', value: 'you are really going to regret that' }]
+      }
+    ]
+  ]
+]);
+
 let nextReportId = 100;
 
 /**
@@ -142,6 +182,13 @@ export const mocks: Record<string, MockHandler> = {
     }
   },
   'reports:queue': async () => mockReports.filter((r) => r.resolution === 'pending'),
+  // What edits replaced (MICA-430), oldest first as the server answers. Only the seeded
+  // report's message has a history; every report filed in the browser was never edited.
+  'reports:versions': async (data?: { id?: number }) => {
+    const report = mockReports.find((r) => r.id === data?.id);
+    if (!report) return [];
+    return mockVersions.get(`${report.target_table}:${report.target_id}`) ?? [];
+  },
   'reports:history': async () => mockReports.filter((r) => r.resolution !== 'pending'),
   'reports:resolve': async (data?: { id?: number; action?: string }) => {
     const report = mockReports.find((r) => r.id === data?.id);

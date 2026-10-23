@@ -6,6 +6,7 @@ import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { PlayerFacingError } from '../lib/errors';
 import { Database } from '../lib/Database';
 import { AUDIT_LOG_TABLE, AuditLogger } from '../lib/AuditLogger';
+import { VERSIONS_TABLE } from '../lib/versions';
 import { declaredServices, type ColumnDef, type ColumnType } from '../lib/defineService';
 import {
   SEAL_KEY_COLUMN,
@@ -205,8 +206,12 @@ const WITHHELD: Readonly<Record<string, readonly string[]>> = {
  * member's rows describe admin reads and moderation of other players' content, and even
  * without `details` the targets are somebody else's. It is a record about the player, kept
  * for accountability, not the player's own content.
+ *
+ * `mica_versions` is what an edit replaced (MICA-430), kept for staff. A player sees only the
+ * latest version of their own content, in the app and in this export alike; what came before is
+ * evidence, read only through `reports:versions`. A privacy delete erases it with the rest.
  */
-export const EXPORT_EXCLUDED: ReadonlySet<string> = new Set([AUDIT_LOG_TABLE]);
+export const EXPORT_EXCLUDED: ReadonlySet<string> = new Set([AUDIT_LOG_TABLE, VERSIONS_TABLE]);
 
 /**
  * What a player's own delete keeps (MICA-168). The test for each: is this a moderation or

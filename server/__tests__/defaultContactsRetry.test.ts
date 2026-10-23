@@ -35,6 +35,7 @@ import { __resetDeviceState, identityPhone, resolvePhone } from '../services/Dev
 import '../services/Contacts';
 import { __resetOwnerConfig } from '../lib/ownerConfig';
 import { who } from '../lib/who';
+import { versionedWrites } from './versionedWrites';
 
 /**
  * A default-contacts seed that fails part-way finishes on a later resolve (MICA-327).
@@ -145,6 +146,8 @@ const inserted = (sql: string, values: unknown[]): Record<string, unknown> => {
 };
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   __resetDeviceState();
   __resetOwnerConfig();

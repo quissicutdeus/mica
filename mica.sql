@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS `mica_audit_logs` (
         'removed',
         'moderated',
         'unmoderated',
-        'viewed'
+        'viewed',
+        'changed'
     ) NOT NULL,
     `service` varchar(100) NOT NULL,
     `method` varchar(100) NOT NULL,
@@ -994,6 +995,28 @@ CREATE TABLE IF NOT EXISTS `mica_spark_matches` (
         REFERENCES `mica_spark` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'versions' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_versions` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(50) NOT NULL,
+    `source_table` varchar(64) NOT NULL,
+    `source_id` int(11) NOT NULL,
+    `edited_by` varchar(50) DEFAULT NULL,
+    `reason` ENUM('edit', 'rename', 'revive', 'handover', 'rejoin') NOT NULL,
+    `snapshot` mediumtext NOT NULL,
+    `op_key` varchar(32) NOT NULL,
+    `status` ENUM('active', 'deleted', 'erased') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    KEY `source_row` (`source_table`, `source_id`, `id`),
+    KEY `op_key` (`op_key`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Versioned schema migrations ledger.
 CREATE TABLE IF NOT EXISTS `mica_schema_migrations` (
     `id` varchar(255) NOT NULL,
@@ -1019,4 +1042,5 @@ SELECT `id` FROM (
     UNION ALL SELECT '0014_private_lookups_get_blind_indexes'
     UNION ALL SELECT '0015_hidden_rows_are_kept'
     UNION ALL SELECT '0016_child_rows_are_kept'
+    UNION ALL SELECT '0017_audit_records_a_change'
 ) AS `seed` WHERE @mica_fresh_import = 1;

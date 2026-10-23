@@ -7,6 +7,7 @@ import { isReportableTable, recordOwnerDeletion } from '../moderation';
 import { ERASED } from '../statuses';
 import { identifier, type Clause } from './sql';
 import { dependentsOf, eraseDependentsOf } from './dependents';
+import { statusWritesMayRun } from '../statusWrites';
 import { hasStatus, hasUpdatedAt, type OwnedTable } from './tables';
 import type { OwnerScope } from './scope';
 import { traceOf } from '../sqlErrors';
@@ -226,6 +227,25 @@ export const purgePlanned = async (
     console.error(`[${scope.label}] erasing ${table} ${scope.purpose} failed:`, traceOf(error));
     failures.push({ table, error });
   };
+
+  /**
+   * Never while the database is behind the code (`lib/statusWrites.ts`): before `micaschema
+   * apply`, `erased` may not be in a table's ENUM, and under `sql_mode=''` the write would put
+   * `''` there instead, destroying the status it meant to keep. Held whole, as one failure.
+   */
+  const writes: Record<string, string[]> = {};
+  for (const { table } of tables) {
+    writes[table] = [ERASED];
+    for (const rows of dependentsOf(table)) writes[rows.table] = [ERASED];
+  }
+  if (!(await statusWritesMayRun(`${scope.label} purge`, writes))) {
+    return {
+      erased: 0,
+      kept: 0,
+      byTable: {},
+      failures: [{ table: '*', error: new Error('held until micaschema apply has run') }]
+    };
+  }
 
   if (beforeErase) await beforeErase();
 

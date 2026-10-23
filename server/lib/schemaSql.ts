@@ -481,7 +481,9 @@ export const AUDIT_LOG_ACTIONS = [
   'removed',
   'moderated',
   'unmoderated',
-  'viewed'
+  'viewed',
+  // MICA-430: a credential replaced, recorded instead of keeping its old value.
+  'changed'
 ] as const;
 
 /**

@@ -596,7 +596,8 @@ const handOver = async (
       tables.push(repo);
     } else {
       try {
-        await repo.transferDeviceRows(deviceId, citizenid);
+        // The phone's own row keeps who held it before, one version a handover (MICA-430).
+        await repo.transferDeviceRows(deviceId, citizenid, 'handover');
       } catch (error) {
         tables.push(repo);
         console.error(

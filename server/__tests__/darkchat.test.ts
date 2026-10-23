@@ -752,6 +752,24 @@ describe('ownership', () => {
     expect((await call('darkchat:rotateCode', { channel_id: id }, 'CIT_B')).key).toBe(
       'server.darkchat.notOwner'
     );
+    // MICA-430: audited as changed, once, for the rotation that happened, and with neither
+    // code in it — the old code is a credential and is not kept anywhere.
+    const audits = dbMock.insert.mock.calls.filter(([sql]) =>
+      String(sql).includes('mica_audit_logs')
+    );
+    expect(audits.map(([, params]) => params)).toEqual([
+      [
+        'CIT_A',
+        'changed',
+        'darkchat',
+        'rotateCode',
+        id,
+        'mica_darkchat',
+        JSON.stringify({ what: 'join code' })
+      ]
+    ]);
+    expect(JSON.stringify(audits)).not.toContain(code);
+    expect(JSON.stringify(audits)).not.toContain(rotated.code);
   });
 
   it('lets only the owner remove, and never themself', async () => {

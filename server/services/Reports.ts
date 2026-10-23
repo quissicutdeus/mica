@@ -36,6 +36,7 @@ import { messages } from './Messages';
 import { darkchatMessages, retentionHours } from './DarkchatMessages';
 import type { Report, ReportResolution } from '@mica/shared/types';
 import { reasonOf } from '../lib/sqlErrors';
+import { readVersions, VERSIONS_TABLE, type VersionRow } from '../lib/versions';
 
 /**
  * What a reopen restores when the report holds no record of what its takedown replaced: a
@@ -661,6 +662,43 @@ app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
 });
 
 /** Dismiss a report, or moderate what it points at. */
+/**
+ * Every version of a reported row's content (MICA-430): what each edit replaced, oldest first,
+ * opened for staff and for staff alone. The evidence a takedown is decided on is the content as
+ * it was when it was reported, not only as it reads now.
+ *
+ * By report id, so the table and row come from a filed report, never the payload; a table that
+ * is no longer reportable answers nothing. Every read is audited as `viewed`, as the queue's are.
+ * The reply holds no citizenid, phone or binding column (`readVersions`), and is held to the
+ * contract's schema on the way out.
+ */
+app.registerEvent('versions', async (source, cbId, data, citizenid) => {
+  if (!isAdmin(source))
+    throw new PlayerFacingError('Not authorised.', { key: 'server.reports.notAuthorised' });
+
+  const report = (await repo.findById(data.id)) as ReportRow | null;
+  if (!report || !isReportableTable(report.target_table)) return [];
+  const rows = await Database.query<VersionRow[]>(
+    `SELECT \`id\`, \`citizenid\`, \`edited_by\`, \`reason\`, \`snapshot\`,
+            UNIX_TIMESTAMP(\`created_at\`) AS \`created_at\`
+       FROM \`${VERSIONS_TABLE}\`
+      WHERE \`source_table\` = ? AND \`source_id\` = ?
+      ORDER BY \`id\``,
+    [report.target_table, report.target_id]
+  );
+  const versions = readVersions(report.target_table, Array.isArray(rows) ? rows : []);
+  await AuditLogger.log({
+    citizenid,
+    action: 'viewed',
+    service: 'reports',
+    method: 'versions',
+    targetId: report.target_id,
+    targetTable: report.target_table,
+    details: { reportId: report.id, versions: versions.length }
+  });
+  return versions;
+});
+
 app.registerEvent('resolve', async (source, cbId, data, citizenid) => {
   if (!isAdmin(source))
     throw new PlayerFacingError('Not authorised.', { key: 'server.reports.notAuthorised' });

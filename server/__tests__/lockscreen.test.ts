@@ -50,6 +50,7 @@ beforeEach(() => {
   __setLockscreenClock();
   dbMock.single.mockResolvedValue(null);
   dbMock.query.mockResolvedValue(undefined);
+  dbMock.update.mockResolvedValue(false);
 });
 
 describe('lockscreen:status (MICA-60)', () => {
@@ -114,6 +115,34 @@ describe('lockscreen:set (MICA-60)', () => {
     expect(hash).not.toBe('135790');
     expect(hash).toMatch(/^[0-9a-f]{64}$/); // sha256 hex digest
     expect(salt).toMatch(/^[0-9a-f]{32}$/); // 16 random bytes, hex
+  });
+
+  /**
+   * MICA-430: every edit keeps what it replaced, but a passcode is a credential, and a history
+   * of hashes and salts is a history of 4-digit PINs. So the change is audited as `changed`,
+   * with nothing of the passcode in it, and no version is written.
+   */
+  it('audits a passcode change as changed, with nothing of the passcode, and keeps no version', async () => {
+    dbMock.single.mockResolvedValue({ id: 12, citizenid: 'CIT_A', status: 'active' });
+    await call('set', { passcode: '135790' });
+
+    const audit = dbMock.insert.mock.calls.find(([sql]) => String(sql).includes('mica_audit_logs'));
+    expect(audit?.[1]).toEqual([
+      'CIT_A',
+      'changed',
+      'lockscreen',
+      'set',
+      12,
+      'mica_lockscreen',
+      JSON.stringify({ what: 'passcode' })
+    ]);
+    const [, , hash, salt] = queryCalls()[0][1] as string[];
+    expect(JSON.stringify(audit)).not.toMatch(new RegExp(`135790|${hash}|${salt}`));
+    // Nothing of it reaches the version ledger either.
+    const statements = [...dbMock.query.mock.calls, ...dbMock.insert.mock.calls].map(([sql]) =>
+      String(sql)
+    );
+    expect(statements.some((sql) => sql.includes('mica_versions'))).toBe(false);
   });
 
   it('salts each write independently, so two players with the same PIN store different hashes', async () => {
@@ -202,7 +231,7 @@ describe('lockscreen:clear (MICA-60)', () => {
   it("moves the caller's own row to deleted, and keeps it (MICA-428)", async () => {
     const reply = await call('clear', {});
     expect(reply).toEqual({ ok: true });
-    const [sql, params] = queryCalls()[0];
+    const [sql, params] = dbMock.update.mock.calls[0];
     expect(String(sql).replace(/\s+/g, ' ')).toBe(
       "UPDATE mica_lockscreen SET status = 'deleted' " +
         "WHERE citizenid = ? AND device_id = ? AND status = 'active'"
@@ -231,13 +260,47 @@ describe('lockscreen:clear (MICA-60)', () => {
 
   it('clears only the caller citizenid, and refuses a payload that names one', async () => {
     await call('clear', {});
-    expect(queryCalls()[0][1]).toEqual(['CIT_A', TEST_PHONE_ID]);
+    expect(dbMock.update.mock.calls[0][1]).toEqual(['CIT_A', TEST_PHONE_ID]);
 
-    dbMock.query.mockClear();
+    dbMock.update.mockClear();
     const reply = await call('clear', { citizenid: 'CIT_VICTIM' });
 
     expect(reply).toMatchObject({ error: expect.stringContaining('payload') });
-    expect(queryCalls()).toHaveLength(0);
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  /** MICA-430 review: a passcode removed is a change too, audited as `set` is, with no value. */
+  it('audits a passcode removed as changed, with nothing of the passcode', async () => {
+    dbMock.single.mockResolvedValue({
+      id: 12,
+      citizenid: 'CIT_A',
+      status: 'active',
+      passcode_hash: 'f'.repeat(64),
+      passcode_salt: 'e'.repeat(32)
+    });
+    dbMock.update.mockResolvedValue(true);
+    await call('clear', {});
+
+    const audit = dbMock.insert.mock.calls.find(([sql]) => String(sql).includes('mica_audit_logs'));
+    expect(audit?.[1]).toEqual([
+      'CIT_A',
+      'changed',
+      'lockscreen',
+      'clear',
+      12,
+      'mica_lockscreen',
+      JSON.stringify({ what: 'passcode', removed: true })
+    ]);
+    expect(JSON.stringify(audit)).not.toMatch(/f{64}|e{32}/);
+  });
+
+  it('audits nothing when there was no passcode to remove', async () => {
+    dbMock.single.mockResolvedValue(null);
+    await call('clear', {});
+    const audits = dbMock.insert.mock.calls.filter(([sql]) =>
+      String(sql).includes('mica_audit_logs')
+    );
+    expect(audits).toEqual([]);
   });
 });
 

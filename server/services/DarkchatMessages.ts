@@ -6,6 +6,7 @@ import { EXPIRED } from '../lib/statuses';
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { statusWritesMayRun } from '../lib/statusWrites';
 import { appEventChannel } from '../lib/appEvents';
 import { openRow, openRows, storablePlaintext } from '../lib/contentCipher';
 import { evidenceHold, RETENTION_BATCH } from '../lib/contentRetention';
@@ -439,6 +440,7 @@ let sweeping = false;
  */
 export const sweepDarkchat = async (): Promise<number> => {
   if (sweeping) return 0;
+  if (!(await statusWritesMayRun('the Dark Chat sweep', { [TABLE]: [EXPIRED] }))) return 0;
   sweeping = true;
   let removed = 0;
   try {

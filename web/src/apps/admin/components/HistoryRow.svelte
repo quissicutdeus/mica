@@ -13,9 +13,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     report: Report;
     busy: boolean;
     onundo: () => void;
+    /** Opens what earlier edits replaced (MICA-430). */
+    onhistory: () => void;
   }
 
-  let { report, busy, onundo }: Props = $props();
+  let { report, busy, onundo, onhistory }: Props = $props();
 
   const { t } = useLocale();
   const category = $derived(
@@ -57,4 +59,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {$t('admin.reporterAlias')}: {report.reporter_label}
     </p>
   {/if}
+  <div class="flex justify-end px-2 pb-2">
+    <button
+      type="button"
+      onclick={onhistory}
+      class="text-primary hover:bg-surface-container-high duration-short ease-standard text-body-small cursor-pointer rounded-box px-2 py-1 transition-colors"
+    >
+      {$t('admin.editHistory')}
+    </button>
+  </div>
 </div>

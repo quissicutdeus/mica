@@ -104,6 +104,7 @@ import {
 import { __resetDeviceState, deviceForRequest } from '../services/Devices';
 import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/deviceItem';
 import { PhoneNumberRepository } from '../repositories/PhoneNumberRepository';
+import { versionedWrites } from './versionedWrites';
 
 /**
  * `deviceItem.ts` registers its usable-item callback at import time, and `clearAllMocks` wipes
@@ -123,6 +124,8 @@ const duplicate = () =>
   });
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});

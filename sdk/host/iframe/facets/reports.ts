@@ -18,7 +18,8 @@ export function reports(): Twin {
     loadPendingReports: fn('reports', [], 'loadPendingReports'),
     loadReportHistory: fn('reports', [], 'loadReportHistory'),
     resolveReport: fn('reports', [], 'resolveReport'),
-    reopenReport: fn('reports', [], 'reopenReport')
+    reopenReport: fn('reports', [], 'reopenReport'),
+    loadReportVersions: fn('reports', [], 'loadReportVersions')
   };
 }
 // The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of

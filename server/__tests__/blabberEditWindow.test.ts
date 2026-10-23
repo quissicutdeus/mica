@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { standInRead, versionedWrites } from './versionedWrites';
 
 /**
  * The Blab edit window, and the one number behind it (MICA-108).
@@ -49,7 +50,8 @@ const CONVAR = 'mica_blabber_edit_window';
 const MY_ACCOUNT = { id: 1, citizenid: 'CIT_A', app: 'blabber', handle: 'ada', status: 'active' };
 
 /** The predicate `Repository.update` adds when the service declares an edit window. */
-const WINDOW_PREDICATE = /`created_at` > NOW\(\) - INTERVAL \? SECOND/;
+// `@mica_versions_now` inside a versioned write: its transaction's one clock (MICA-430 review).
+const WINDOW_PREDICATE = /`created_at` > (?:NOW\(\)|@mica_versions_now) - INTERVAL \? SECOND/;
 
 /**
  * Load Blabber with the convar set to `value`, or unset.
@@ -67,6 +69,8 @@ const load = async (value?: string) => {
   // `create` needs a phone in hand since MICA-339, and the phone seam is a fresh module now
   // too: `setup.ts` installed the test phone in the graph `resetModules` just dropped.
   (await import('./phoneStub')).installTestPhone();
+  // And the versioned write's first read, for the same reason.
+  (await import('../lib/versions')).__setVersionReadForTests(standInRead);
   return mod.blabber;
 };
 
@@ -94,6 +98,8 @@ const rowPostedSecondsAgo = (ageSeconds: number) => {
 };
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(50);

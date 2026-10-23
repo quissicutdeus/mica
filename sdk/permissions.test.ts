@@ -740,6 +740,7 @@ describe('an add-on can name only what the shell will answer', () => {
     'notificationSettingsWrite.setToastsEnabled',
     'reports.loadPendingReports',
     'reports.loadReportHistory',
+    'reports.loadReportVersions',
     'reports.pendingReportCount',
     'reports.pendingReports',
     'reports.reopenReport',
@@ -760,7 +761,7 @@ describe('an add-on can name only what the shell will answer', () => {
     type Derived = { [F in FacetWithCoreOnly]: `${F}.${CoreOnlyMember<F>}` }[FacetWithCoreOnly];
     const exact: Equal<Derived, (typeof CORE_ONLY)[number]> = true;
     expect(exact).toBe(true);
-    expect(CORE_ONLY).toHaveLength(43);
+    expect(CORE_ONLY).toHaveLength(44);
 
     // The runtime half of the same claim: on neither list a frame is answered from.
     const answered = CORE_ONLY.filter((key) => {

@@ -25,6 +25,7 @@ import {
   type BlindIndex,
   type EncryptedColumn
 } from './contentCipher';
+import { SNAPSHOT_CAPACITY, VERSIONS_TABLE } from './versions';
 
 /**
  * `micacrypt status` and `micacrypt backfill` (MICA-165): walk every encrypted column and bring
@@ -118,6 +119,33 @@ export interface IndexReport {
   raced: number;
 }
 
+/**
+ * The version ledger's snapshots (MICA-430): every sealed value an edit replaced, stored as the
+ * row held it. Walked like a column — counted by key, and brought to the active key by
+ * `--apply` — so retiring a key never strands an old version: a key is retirable only once no
+ * snapshot uses it either (`keyLines`).
+ */
+export interface SnapshotReport {
+  /** The ledger is not in the database: `micaschema apply`. */
+  missing: boolean;
+  /** Ledger rows walked. */
+  rows: number;
+  /** Sealed-column values inside them, empty ones not counted. */
+  values: number;
+  active: number;
+  older: Record<string, number>;
+  /** Plaintext in a sealed column's place: kept from before the column was sealed. */
+  legacy: number;
+  /** A sealed value no loaded key opens, or a snapshot that will not parse. Left as it is. */
+  unreadable: number;
+  /** A snapshot whose re-sealed form would outgrow the ledger. Left as it is. */
+  tooLong: number;
+  /** Snapshots rewritten with the active key (`--apply`). */
+  sealed: number;
+  /** Changed between the read and the write (`--apply`). */
+  raced: number;
+}
+
 export interface NotificationReport {
   /** Rows whose body is not `''` — after `--apply`, the ones the run did not reach. */
   pending: number;
@@ -140,6 +168,7 @@ export interface ContentReport {
   loadedKeys: string[];
   columns: ColumnReport[];
   indexes: IndexReport[];
+  snapshots: SnapshotReport;
   notifications: NotificationReport | null;
 }
 
@@ -362,6 +391,124 @@ const walkColumn = async (
   return report;
 };
 
+type SnapshotRow = { id: number; source_table: unknown; snapshot: unknown };
+
+interface Snapshot {
+  values?: Record<string, unknown>;
+  context?: Record<string, unknown>;
+}
+
+const parseSnapshot = (text: unknown): Snapshot | null => {
+  if (typeof text !== 'string') return null;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return parsed !== null && typeof parsed === 'object' ? (parsed as Snapshot) : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Every snapshot in the ledger, a keyset batch at a time (MICA-430). Each sealed value is judged
+ * as a column's would be, under the context the snapshot kept beside it; `--apply` re-seals
+ * what is not on the active key and writes the snapshot back only if it is still byte for byte
+ * what was read. A value that will not open is never rewritten, and neither is its snapshot.
+ */
+const walkSnapshots = async (
+  options: Required<Pick<WalkOptions, 'apply' | 'batch' | 'pause'>>,
+  active: string | null
+): Promise<SnapshotReport> => {
+  const report: SnapshotReport = {
+    missing: false,
+    rows: 0,
+    values: 0,
+    active: 0,
+    older: {},
+    legacy: 0,
+    unreadable: 0,
+    tooLong: 0,
+    sealed: 0,
+    raced: 0
+  };
+  if (!(await columnExists(VERSIONS_TABLE, 'snapshot'))) {
+    report.missing = true;
+    return report;
+  }
+  let after = 0;
+  for (;;) {
+    const rows = await Database.query<SnapshotRow[]>(
+      `SELECT \`id\`, \`source_table\`, \`snapshot\` FROM ${q(VERSIONS_TABLE)} ` +
+        'WHERE `id` > ? ORDER BY `id` LIMIT ?',
+      [after, options.batch]
+    );
+    const found = Array.isArray(rows) ? rows : [];
+    if (found.length === 0) break;
+    for (const row of found) {
+      report.rows += 1;
+      const snapshot = parseSnapshot(row.snapshot);
+      if (snapshot === null) {
+        report.unreadable += 1;
+        continue;
+      }
+      const table = String(row.source_table);
+      const values = { ...snapshot.values };
+      const context = { ...snapshot.context };
+      let changed = false;
+      let unreadable = false;
+      for (const [column, stored] of Object.entries(values)) {
+        const entry = encryptedColumn(table, column);
+        if (!entry || stored === null || stored === undefined) continue;
+        report.values += 1;
+        const value = String(stored);
+        let plaintext: string | null;
+        let from: string | null = null;
+        if (!isSealed(value)) {
+          plaintext = value;
+          report.legacy += 1;
+        } else {
+          plaintext = openedOrNull(entry, { id: row.id, ...context }, value);
+          from = sealedKeyId(value);
+          if (plaintext === null || from === null) {
+            report.unreadable += 1;
+            unreadable = true;
+            continue;
+          }
+          if (from === active) {
+            report.active += 1;
+            continue;
+          }
+          report.older[from] = (report.older[from] ?? 0) + 1;
+        }
+        if (!options.apply) continue;
+        try {
+          values[column] = await sealContent(contentContext(entry, context), plaintext);
+          changed = true;
+        } catch {
+          report.unreadable += 1;
+          unreadable = true;
+        }
+      }
+      if (!options.apply || !changed || unreadable) continue;
+      const next = JSON.stringify({ ...snapshot, values });
+      if (utf8Bytes(next) > SNAPSHOT_CAPACITY) {
+        report.tooLong += 1;
+        continue;
+      }
+      const written = await Database.update(
+        `UPDATE ${q(VERSIONS_TABLE)} SET \`snapshot\` = ?, \`updated_at\` = \`updated_at\` ` +
+          'WHERE `id` = ? AND CAST(`snapshot` AS BINARY) = ?',
+        [next, row.id, String(row.snapshot)]
+      );
+      if (written) report.sealed += 1;
+      else report.raced += 1;
+    }
+    after = Number(found[found.length - 1].id);
+    if (found.length < options.batch) break;
+    await options.pause();
+  }
+  return report;
+};
+
 const columnExists = async (table: string, column: string): Promise<boolean> => {
   const rows = await Database.query<{ n: number | string }[]>(
     'SELECT COUNT(*) AS `n` FROM information_schema.COLUMNS ' +
@@ -541,6 +688,9 @@ export const walkContent = async (options: WalkOptions): Promise<ContentReport> 
     columns.push(await walkColumn(entry, { apply: options.apply, batch, pause }, active));
   }
 
+  // The version ledger's snapshots, by the same rules (MICA-430).
+  const snapshots = await walkSnapshots({ apply: options.apply, batch, pause }, active);
+
   // After the values are sealed, so every index is read off the value as it now stands.
   const indexes: IndexReport[] = [];
   for (const entry of blindIndexes()) {
@@ -558,8 +708,64 @@ export const walkContent = async (options: WalkOptions): Promise<ContentReport> 
     loadedKeys,
     columns,
     indexes,
+    snapshots,
     notifications
   };
+};
+
+/**
+ * Whether each loaded key other than the active one can come out of the key file (MICA-430).
+ * Only when nothing uses it: no column's value, no blind index, and no version snapshot — an
+ * old version sealed with it would otherwise stop opening for good. Never said while a table it
+ * could be in is missing, which no count can speak for.
+ */
+const keyLines = (report: ContentReport): string[] => {
+  if (report.key.kind !== 'loaded') return [];
+  const unknown =
+    report.columns.some((c) => c.missing) ||
+    report.indexes.some((i) => i.missing) ||
+    report.snapshots.missing;
+  const lines: string[] = [];
+  for (const kid of report.loadedKeys) {
+    if (kid === report.activeKey) continue;
+    const inColumns = report.columns.reduce((sum, c) => sum + (c.older[kid] ?? 0), 0);
+    const inIndexes = report.indexes.reduce((sum, i) => sum + (i.stale[kid] ?? 0), 0);
+    const inSnapshots = report.snapshots.older[kid] ?? 0;
+    const uses = inColumns + inIndexes + inSnapshots;
+    if (uses > 0) {
+      lines.push(
+        `[micacrypt] key '${kid}': still used by ${uses} — ${inColumns} value(s), ${inIndexes} ` +
+          `index(es), ${inSnapshots} in version snapshots; keep it in the key file, and run ` +
+          'micacrypt backfill --apply to move them to the active key.'
+      );
+    } else if (unknown) {
+      lines.push(
+        `[micacrypt] key '${kid}': uses nothing that could be counted, but a table is missing; ` +
+          'keep it until micaschema apply has run and this says it can go.'
+      );
+    } else {
+      lines.push(
+        `[micacrypt] key '${kid}': nothing uses it — no value, no index and no version ` +
+          'snapshot; it can be retired from the key file.'
+      );
+    }
+  }
+  return lines;
+};
+
+/** The snapshot walk's line, for status and for backfill. */
+const snapshotLine = (report: ContentReport): string => {
+  const s = report.snapshots;
+  const name = `${VERSIONS_TABLE}.snapshot`;
+  if (s.missing) return `[micacrypt] ${name}: not in the database; run micaschema apply.`;
+  const counts =
+    `${s.values} sealed-column value(s) in ${s.rows} version(s) — active key ${s.active}, ` +
+    `older keys ${olderText(s.older)}, plaintext ${s.legacy}, unreadable ${s.unreadable}`;
+  if (!report.apply) return `[micacrypt] ${name}: ${counts}.`;
+  return (
+    `[micacrypt] ${name}: ${counts}; rewrote ${s.sealed} version(s), too long ${s.tooLong}, ` +
+    `changed mid-run, left for the next run ${s.raced}.`
+  );
 };
 
 const olderText = (older: Record<string, number>): string => {
@@ -617,11 +823,13 @@ export const formatStatus = (report: ContentReport): string[] => {
         `${staleText(i.stale)}, empty ${i.empty}.`
     );
   }
+  lines.push(snapshotLine(report));
   if (report.notifications) {
     lines.push(
       `[micacrypt] DM notifications still holding a body: ${report.notifications.pending}.`
     );
   }
+  lines.push(...keyLines(report));
   return lines;
 };
 
@@ -680,6 +888,7 @@ export const formatBackfill = (report: ContentReport): string[] => {
       : [`would re-index ${staleText(i.stale)}`, `already on the active key ${i.active}`];
     lines.push(`[micacrypt] ${name}: ${i.rows} row(s) — ${parts.join(', ')}.`);
   }
+  lines.push(snapshotLine(report));
   if (report.notifications) {
     lines.push(
       report.apply

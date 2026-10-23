@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { ActionOutput } from '@mica/shared/contract';
+import type { reportsContract } from '@mica/shared/contracts/reports';
+
 /**
  * The two lookups the queue and the detail pane share (MICA-261).
  *
@@ -29,3 +32,22 @@ export const isImage = (preview?: string): boolean => Boolean(preview?.startsWit
 
 /** Which way a pending report is being decided. */
 export type ResolveAction = 'moderate' | 'dismiss';
+
+/** One earlier version of a reported row (MICA-430), as `reports:versions` answers it. */
+export type ReportVersion = ActionOutput<typeof reportsContract, 'versions'>[number];
+
+/** Why a version was replaced, as catalog keys; an unknown reason shows its raw value. */
+export const REASON_KEYS: Record<string, string> = {
+  edit: 'admin.reasonEdit',
+  rename: 'admin.reasonRename',
+  revive: 'admin.reasonRevive',
+  handover: 'admin.reasonHandover',
+  rejoin: 'admin.reasonRejoin'
+};
+
+/**
+ * What the server answers for a sealed value no loaded key opens: the padlock, U+1F512
+ * (`UNREADABLE_CONTENT` in `server/lib/contentCipher.ts`). Said in words here, so staff read
+ * "sealed" rather than guessing what a lone emoji meant.
+ */
+export const SEALED_VALUE = '\u{1F512}';

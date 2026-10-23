@@ -7,11 +7,33 @@ import { s } from '../schema';
 import type { Report, ReportResolution } from '../types';
 
 /**
- * Moderation: one action anybody may call and four only an admin may.
+ * One version of a reported row's content (MICA-430): what an edit replaced, opened for staff.
+ * `values` are the replaced columns by name, each as text, or null; a sealed one no loaded key
+ * opens reads as the padlock. Never an owner key or a binding column: `by_owner` says whether
+ * the row's own owner made the edit, and null when the server or staff did.
+ */
+const contentVersion = s.object(
+  {
+    id: s.positiveInt(),
+    reason: s.enum(['edit', 'rename', 'revive', 'handover', 'rejoin']),
+    /** When the edit replaced it. */
+    replaced_at: s.string(),
+    /** When the replaced value had itself been written, where the row keeps that. */
+    written_at: s.string().nullable(),
+    by_owner: s.boolean().nullable(),
+    values: s.array(
+      s.object({ column: s.string(), value: s.string().nullable() }, { unknownKeys: 'strip' })
+    )
+  },
+  { unknownKeys: 'strip' }
+);
+
+/**
+ * Moderation: one action anybody may call and five only an admin may.
  *
  * The admin gate stays in the handlers, and this contract does not weaken it. `isAdmin(source)`
  * asks about the connection, not about the payload, so it is not a thing a schema could express
- * — and `queue`, `history`, `reopen` and `resolve` are reachable net events whether or not the
+ * — and `queue`, `history`, `reopen`, `resolve` and `versions` are reachable net events whether or not the
  * Administration app is on screen, which is why the gate is there rather than in the UI.
  */
 export const reportsContract = defineContract({
@@ -59,6 +81,16 @@ export const reportsContract = defineContract({
         action: s.enum(['moderate', 'dismiss'])
       }),
       output: responseType<{ ok: boolean; resolution: ReportResolution }>()
+    },
+
+    /**
+     * Every version of the reported row's content, oldest first (MICA-430): what each edit
+     * replaced. By report, so the table and row come from a filed report and never from the
+     * payload; a real schema, so the reply is held to it on the way out.
+     */
+    versions: {
+      input: s.object({ id: s.positiveInt() }),
+      output: s.array(contentVersion)
     }
   }
 });

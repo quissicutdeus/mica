@@ -1276,3 +1276,95 @@ describe('history and undo', () => {
     expect(audit[1]).toEqual(expect.arrayContaining(['unmoderated']));
   });
 });
+
+/**
+ * MICA-430: staff read what each edit of a reported row replaced. Admin only, by report id,
+ * audited, and with no owner key, phone or binding column in the reply.
+ */
+describe('the versions of a reported row (MICA-430)', () => {
+  const report = {
+    id: 9,
+    citizenid: REPORTER,
+    target_table: 'mica_blabber',
+    target_id: 70,
+    resolution: 'pending',
+    status: 'active'
+  };
+  const version = (id: number, values: Record<string, unknown>, extra: object = {}) => ({
+    id,
+    citizenid: 'AUTHOR1',
+    edited_by: 'AUTHOR1',
+    reason: 'edit',
+    snapshot: JSON.stringify({
+      values,
+      context: { citizenid: 'AUTHOR1' },
+      // Seconds, as `writeVersioned` writes it: UNIX_TIMESTAMP(updated_at).
+      written_at: 1767225600
+    }),
+    // Seconds too: the read selects UNIX_TIMESTAMP(created_at), whatever oxmysql's typeCast does.
+    created_at: 1769904000,
+    ...extra
+  });
+  const versionReads = () =>
+    dbMock.query.mock.calls.filter(([sql]) => String(sql).includes('`mica_versions`'));
+
+  beforeEach(() => {
+    dbMock.single.mockImplementation(async (sql: string) =>
+      String(sql).includes('FROM `mica_reports`') ? { ...report } : null
+    );
+    dbMock.query.mockImplementation(async (sql: string) =>
+      String(sql).includes('`mica_versions`')
+        ? [
+            version(1, { body: 'first draft' }),
+            version(2, { body: 'second draft', citizenid: 'AUTHOR1' }, { edited_by: null })
+          ]
+        : []
+    );
+  });
+
+  it('refuses a player who is not staff, and reads nothing', async () => {
+    const reply = await call('versions', { id: 9 });
+    expect(reply).toMatchObject({ key: 'server.reports.notAuthorised' });
+    expect(versionReads()).toEqual([]);
+  });
+
+  it("answers the reported row's versions oldest first, with no owner key, and audits the read", async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    const reply = await call('versions', { id: 9 }, ADMIN);
+
+    expect(reply).toEqual([
+      {
+        id: 1,
+        reason: 'edit',
+        replaced_at: '2026-02-01T00:00:00.000Z',
+        // One format across the reply (MICA-430 review): ISO, never MariaDB's text.
+        written_at: '2026-01-01T00:00:00.000Z',
+        by_owner: true,
+        values: [{ column: 'body', value: 'first draft' }]
+      },
+      {
+        id: 2,
+        reason: 'edit',
+        replaced_at: '2026-02-01T00:00:00.000Z',
+        written_at: '2026-01-01T00:00:00.000Z',
+        by_owner: null,
+        values: [{ column: 'body', value: 'second draft' }]
+      }
+    ]);
+    // The row named by the filed report, never by the payload.
+    expect(versionReads().map(([, params]) => params)).toEqual([['mica_blabber', 70]]);
+    expect(String(versionReads()[0][0])).toContain('UNIX_TIMESTAMP(`created_at`) AS `created_at`');
+    expect(JSON.stringify(reply)).not.toMatch(/AUTHOR1|citizenid|context|edited_by/);
+    const audit = dbMock.insert.mock.calls.find(([sql]) => String(sql).includes('mica_audit_logs'));
+    expect(audit?.[1]).toEqual(
+      expect.arrayContaining([ADMIN, 'viewed', 'reports', 'versions', 70])
+    );
+  });
+
+  it('answers nothing for a report whose table is no longer reportable', async () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+    dbMock.single.mockResolvedValue({ ...report, target_table: 'mica_notes' });
+    expect(await call('versions', { id: 9 }, ADMIN)).toEqual([]);
+    expect(versionReads()).toEqual([]);
+  });
+});

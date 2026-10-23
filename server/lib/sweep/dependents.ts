@@ -6,6 +6,7 @@ import { Database } from '../Database';
 import { ERASED } from '../statuses';
 import { traceOf } from '../sqlErrors';
 import { identifier } from './sql';
+import { statusWritesMayRun } from '../statusWrites';
 
 /**
  * Rows that hang off another micaOS table by its id rather than off an owner (MICA-429): a
@@ -73,6 +74,10 @@ const affectedRows = (result: unknown): number => {
 
 const yieldToServer = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** Each table, to the one status this module writes. */
+const writesOf = (tables: readonly string[]): Record<string, string[]> =>
+  Object.fromEntries(tables.map((table) => [table, [ERASED]]));
+
 const positiveIds = (ids: readonly unknown[]): number[] =>
   [...new Set(ids.map(Number))].filter((id) => Number.isSafeInteger(id) && id > 0);
 
@@ -127,6 +132,14 @@ export const eraseDependentsOf = async (
   const result: DependentResult = { byTable: {}, failures: [] };
   const live = positiveIds(ids);
   if (live.length === 0) return result;
+  const tables = dependentsOf(parent).map((rows) => rows.table);
+  // Never while the database is behind the code (`lib/statusWrites.ts`).
+  if (!(await statusWritesMayRun(`erasing what hangs off ${parent}`, writesOf(tables)))) {
+    for (const table of tables) {
+      result.failures.push({ table, error: new Error('held until micaschema apply has run') });
+    }
+    return result;
+  }
   for (const rows of dependentsOf(parent)) {
     try {
       let moved = 0;
@@ -150,6 +163,10 @@ export const eraseDependentsOf = async (
  */
 export const eraseStrandedDependents = async (label = 'micaOS'): Promise<DependentResult> => {
   const total: DependentResult = { byTable: {}, failures: [] };
+  const tables = parents().flatMap((parent) => dependentsOf(parent).map((rows) => rows.table));
+  if (!(await statusWritesMayRun(`[${label}] the stranded-rows sweep`, writesOf(tables)))) {
+    return total;
+  }
   for (const parent of parents()) {
     for (const rows of dependentsOf(parent)) {
       try {

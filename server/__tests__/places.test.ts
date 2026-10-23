@@ -27,6 +27,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import { places } from '../services/Places';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { TEST_PHONE_ID } from './phoneStub';
+import { versionedWrites } from './versionedWrites';
 
 const call = async (action: string, data: unknown) => {
   const handler = handlers.get(`mica:server:places:${action}`);
@@ -55,6 +56,8 @@ const clearPlayerPed = () => {
 };
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in.
+  versionedWrites(dbMock);
   vi.clearAllMocks();
   __resetRateLimits();
   dbMock.query.mockResolvedValue([]);

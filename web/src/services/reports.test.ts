@@ -11,7 +11,8 @@ import {
   loadPendingReports,
   loadReportHistory,
   resolveReport,
-  reopenReport
+  reopenReport,
+  loadReportVersions
 } from './reports';
 import * as fetchNuiModule from '../nui/fetchNui';
 
@@ -134,5 +135,39 @@ describe('a failed reports read is not an answer', () => {
 
     expect(get(pendingReportCount)).toBe(2);
     expect(get(resolvedReports)).toEqual([report(3)]);
+  });
+});
+
+describe('a reported row’s edit history (MICA-430)', () => {
+  const version = (id: number) => ({
+    id,
+    reason: 'edit' as const,
+    replaced_at: `2026-07-30T10:0${id}:00Z`,
+    written_at: null,
+    by_owner: true,
+    values: [{ column: 'body', value: `v${id}` }]
+  });
+
+  it('asks for the report’s versions and answers them newest first', async () => {
+    const spy = vi
+      .spyOn(fetchNuiModule, 'fetchNui')
+      .mockResolvedValue([version(1), version(2), version(3)] as never);
+
+    const versions = await loadReportVersions(7);
+
+    expect(named(spy)).toEqual(['reports:versions']);
+    const [, payload] = spy.mock.calls[0] ?? [];
+    expect((payload as { data?: unknown } | undefined)?.data).toEqual({ id: 7 });
+    expect(versions.map((v) => v.id)).toEqual([3, 2, 1]);
+  });
+
+  it('rejects a refused read rather than answering “never edited”', async () => {
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+    await expect(loadReportVersions(7)).rejects.toThrow('Player not authenticated');
+  });
+
+  it('rejects a reply that is not a list', async () => {
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ error: 'nope' });
+    await expect(loadReportVersions(7)).rejects.toThrow('not a list');
   });
 });

@@ -13,6 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     registerMessages,
     useReports,
+    useAppLevels,
     onAppForeground,
     type AppProps
   } from '@mica/sdk';
@@ -22,6 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import PendingReportCard from './components/PendingReportCard.svelte';
   import HistoryRow from './components/HistoryRow.svelte';
   import ResolveDialog from './components/ResolveDialog.svelte';
+  import EditHistoryDialog from './components/EditHistoryDialog.svelte';
   import type { ResolveAction } from './components/labels';
 
   // MICA-215: the moderation queue reads its strings out of a catalog like every other
@@ -38,12 +40,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     loadPendingReports,
     loadReportHistory,
     resolveReport,
-    reopenReport
+    reopenReport,
+    loadReportVersions
   } = useReports();
 
   type Tab = 'pending' | 'history';
   let tab = $state<Tab>('pending');
   let confirming = $state<{ report: Report; action: ResolveAction } | null>(null);
+  /** The report whose edit history is open (MICA-430), or none. */
+  let historyFor = $state<Report | null>(null);
+
+  // Back closes the open dialog before it leaves the app; Backspace is the shell's, so the
+  // levels have to claim it (`useAppLevels`) rather than ride `<Screen onback>`.
+  const app = useAppLevels({
+    appId: 'admin',
+    title: () => $t('admin.title'),
+    onback: () => onback?.(),
+    levels: [
+      { open: () => historyFor !== null, close: () => (historyFor = null) },
+      { open: () => confirming !== null, close: () => (confirming = null) }
+    ]
+  });
 
   // Refreshed on every visit: reports are filed by other players and nothing pushes
   // them here, so a queue fetched once at open would be stale the moment it mattered.
@@ -59,7 +76,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   };
 </script>
 
-<Screen title={$t('admin.title')} {onback}>
+<Screen title={app.title} onback={app.back}>
   <div class="p-4">
     <!-- Two tabs, matching Mail and Messages, so a decision can be reviewed and undone
          rather than being final the moment it is made. -->
@@ -89,6 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               busy={$busy}
               onallow={() => (confirming = { report, action: 'dismiss' })}
               onremove={() => (confirming = { report, action: 'moderate' })}
+              onhistory={() => (historyFor = report)}
             />
           {/each}
         </div>
@@ -102,6 +120,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {report}
             busy={$busy}
             onundo={() => run(() => reopenReport(report.id), { success: $t('admin.reopened') })}
+            onhistory={() => (historyFor = report)}
           />
         {/each}
       </div>
@@ -111,4 +130,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if confirming}
   <ResolveDialog pending={confirming} onconfirm={decide} oncancel={() => (confirming = null)} />
+{/if}
+
+{#if historyFor}
+  <EditHistoryDialog
+    report={historyFor}
+    load={loadReportVersions}
+    onclose={() => (historyFor = null)}
+  />
 {/if}

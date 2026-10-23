@@ -22,3 +22,9 @@ Found on MICA-307 (2026-10-05): the brief asked to audit-log a group-call
 answer. It was stopped and reported rather than migrated, and the lead dropped
 it: routine call traffic does not belong in the moderation ledger, and the
 answerer's own call-log row already records who took the call.
+
+MICA-430 (2026-10-23) did widen it: `changed`, for a credential replaced (a
+passcode, a Dark Chat join code), recorded instead of versioning the old value.
+The lead approved it after the stop-and-ask. Migration 0017 shows the shape: one
+read of the column type, an append-only `MODIFY`, refused on a non-prefix list.
+A `test:migrations` case runs it twice and counts the DDL the second run issues.

@@ -38,6 +38,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import { onDeviceHandover, deviceForRequest, __resetDeviceState } from '../services/Devices';
 import { defineService } from '../lib/defineService';
 import { __resetLastUsedPhone } from '../lib/deviceItem';
+import { versionedWrites } from './versionedWrites';
 
 /**
  * A handover that fails part-way is retried, not cached as done (MICA-319).
@@ -114,6 +115,17 @@ const hold = (table: string) => {
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
+  // MICA-430: a versioned write, through this suite's own stand-in, reading the rows a
+  // transfer would move: on the phone, not yet naming the new holder.
+  versionedWrites(dbMock, {
+    rows: (query, params) => {
+      const table = /FROM `(mica_\w+)`/.exec(query)?.[1] ?? '';
+      const [phone, to] = params as [string, string];
+      return (tables[table] ?? [])
+        .filter((row) => row.device_id === phone && row.citizenid !== to)
+        .map((row) => ({ ...row }));
+    }
+  });
   vi.clearAllMocks();
   __resetDeviceState();
   __resetLastUsedPhone();
@@ -232,14 +244,15 @@ describe('a handover that fails part-way (MICA-319)', () => {
 
   it('walks a phone whose rows are all its holder’s once per process, quietly', async () => {
     await expect(deviceForRequest(VICTIM_SRC, VICTIM)).resolves.toBe(PHONE);
-    // One statement per table, matching nothing, and no line claiming that rows moved.
-    expect(attempts).toEqual({ mica_handover_probe: 1, mica_devices: 1 });
+    // One statement per table, matching nothing, and no line claiming that rows moved. The
+    // phone's own row is a versioned write, which reads first and finds nothing to write.
+    expect(attempts).toEqual({ mica_handover_probe: 1 });
     expect(console.log).not.toHaveBeenCalled();
 
     dbMock.query.mockClear();
     for (let i = 0; i < 3; i++) await deviceForRequest(VICTIM_SRC, VICTIM);
     expect(dbMock.query).not.toHaveBeenCalled();
-    expect(attempts).toEqual({ mica_handover_probe: 1, mica_devices: 1 });
+    expect(attempts).toEqual({ mica_handover_probe: 1 });
   });
 
   it('keeps the phone usable while a table keeps failing, and backs the retries off', async () => {
