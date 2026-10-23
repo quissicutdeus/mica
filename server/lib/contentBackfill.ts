@@ -672,7 +672,9 @@ export const formatBackfill = (report: ContentReport): string[] => {
           `re-indexed ${i.reindexed} of ${staleText(i.stale)}`,
           `already on the active key ${i.active}`,
           `unreadable ${i.unreadable}`,
-          `refused as a duplicate ${i.conflicts}`,
+          // A count, not a refusal: "refused" is what a run that did not happen says, and
+          // the in-server suite reads it so.
+          `left as a duplicate ${i.conflicts}`,
           `changed mid-run ${i.raced}`
         ]
       : [`would re-index ${staleText(i.stale)}`, `already on the active key ${i.active}`];

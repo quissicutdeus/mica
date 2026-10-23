@@ -698,7 +698,7 @@ describe('the walk is bounded', () => {
       expect(rows[3].phone_index).toBe(await want(rows[3], '555-0104'));
       // Left as it was: the unique key refused it, and the owner decides.
       expect(rows[5].phone_index).toBe('plain:something-else');
-      expect(formatBackfill(report).join('\n')).toContain('refused as a duplicate 1');
+      expect(formatBackfill(report).join('\n')).toContain('left as a duplicate 1');
 
       store.updates = [];
       const again = await walkContent({ apply: true, pause: noPause });

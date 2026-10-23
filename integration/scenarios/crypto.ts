@@ -267,6 +267,18 @@ export const cryptoScenarios: Scenario[] = [
         `first run: ${firstLine}`
       );
       assert(numberIn(firstLine, /unreadable (\d+)/, 'unreadable count') === 0, firstLine);
+      // Every blind index (MICA-432) is brought to the key with the values, and none is
+      // unreadable or left as a duplicate on a database this suite wrote.
+      const indexLines = (lines: string[]) =>
+        lines.filter((l) => /^\[micacrypt\] \S+_index: /.test(l));
+      assert(
+        indexLines(first).length >= 1,
+        `first run printed no index line: ${first.join(' | ')}`
+      );
+      for (const line of indexLines(first)) {
+        assert(numberIn(line, /unreadable (\d+)/, 'unreadable count') === 0, line);
+        assert(numberIn(line, /left as a duplicate (\d+)/, 'duplicate count') === 0, line);
+      }
       const opened = await openMail(id);
       assert(opened.text === content, 'the backfilled body opened to something else');
       assert((await updatedAt()) === pinned, 'the backfill moved updated_at');
@@ -282,6 +294,13 @@ export const cryptoScenarios: Scenario[] = [
         `second run: ${secondLine}`
       );
       assert((await openMail(id)).stored === opened.stored, 'the second backfill rewrote the row');
+      // And indexes once: a second run re-indexes nothing.
+      for (const line of indexLines(second)) {
+        assert(
+          numberIn(line, /re-indexed (\d+) /, 're-indexed count') === 0,
+          `second run: ${line}`
+        );
+      }
       assert((await updatedAt()) === pinned, 'the second backfill moved updated_at');
     }
   },

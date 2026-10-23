@@ -144,17 +144,17 @@ one `status` or `backfill` runs at a time.
   5000), one compare-and-set `UPDATE` per row, so no statement locks or rewrites
   a table, and a body a player edits mid-run is left for the next run rather
   than overwritten. After sealing it re-indexes each blind index to the active
-  key, and reports an index it refused as a duplicate (two contacts with the
-  same number, written in the window between enabling or rotating a key and this
-  run) and one it could not make because the value would not open. `updated_at`
-  is pinned, so nothing reads as edited. A second run changes nothing. It
-  refuses to start without a usable key. After the bodies it walks the import
-  ledger the same way and keys each qb-phone message entry still holding its
-  body verbatim with an HMAC under the active key (MICA-340). An entry stored as
-  a SHA-1, or keyed under an older key, cannot be re-keyed from the ledger alone
-  and is counted instead; a `micaimport qb-phone --apply` re-run keys those it
-  still has the source row for. `status` and `backfill` warn that entries under
-  an older key match a re-import only while that key stays in the key file.
+  key, and reports an index it left as a duplicate (two contacts with the same
+  number, written in the window between enabling or rotating a key and this run)
+  and one it could not make because the value would not open. `updated_at` is
+  pinned, so nothing reads as edited. A second run changes nothing. It refuses
+  to start without a usable key. After the bodies it walks the import ledger the
+  same way and keys each qb-phone message entry still holding its body verbatim
+  with an HMAC under the active key (MICA-340). An entry stored as a SHA-1, or
+  keyed under an older key, cannot be re-keyed from the ledger alone and is
+  counted instead; a `micaimport qb-phone --apply` re-run keys those it still
+  has the source row for. `status` and `backfill` warn that entries under an
+  older key match a re-import only while that key stays in the key file.
 
 **Rotating the key** starts from the same steps. Write the new key's line with
 step 2 into a scratch file, put it **first** in the live key file with the old
