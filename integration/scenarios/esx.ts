@@ -301,8 +301,8 @@ export const esxScenarios: Scenario[] = [
           ]
         );
       /** The phone an offline notification of this `kind` landed on, once it is written. */
-      const notifiedPhone = async (kind: string): Promise<string> => {
-        const pushed = await expectOk<{ delivered: boolean }>('SendNotification', identifier, {
+      const notifiedPhone = async (kind: string, citizenid = identifier): Promise<string> => {
+        const pushed = await expectOk<{ delivered: boolean }>('SendNotification', citizenid, {
           app,
           kind,
           sourceLabel: 'Integration',
@@ -314,7 +314,7 @@ export const esxScenarios: Scenario[] = [
           async () => {
             const row = await db.row(
               'SELECT `device_id` FROM `mica_notifications` WHERE `citizenid` = ? AND `kind` = ?',
-              [identifier, kind]
+              [citizenid, kind]
             );
             return row?.device_id ? String(row.device_id) : null;
           },
@@ -328,13 +328,25 @@ export const esxScenarios: Scenario[] = [
           await db.rows(`SELECT \`status\` FROM \`${table}\` WHERE \`device_id\` = ?`, [deviceId])
         ).map((row) => String(row.status));
 
+      const passcode = (citizenid: string, deviceId: string) =>
+        db.insert(
+          'INSERT INTO `mica_lockscreen` (`citizenid`, `device_id`, `passcode_hash`, `passcode_salt`) ' +
+            'VALUES (?, ?, ?, ?)',
+          [citizenid, deviceId, 'f'.repeat(64), 'e'.repeat(32)]
+        );
+
+      /**
+       * A character who lives on, with the same micaOS rows as the one deleted below: whether a
+       * phone may be created asks the orphan sweep's verdict, whose identity check samples
+       * micaOS's own owners and needs one of them in `users`. On a fresh database the deleted
+       * character's would be the only ones, a server the sweep refuses (`identity-mismatch`),
+       * and the create would go ahead and say so rather than be refused.
+       */
+      await passcode(ESX_SEED.identifier, await notifiedPhone('mica440_seed', ESX_SEED.identifier));
+
       await character('Old');
       const oldPhone = await notifiedPhone('mica440_before');
-      await db.insert(
-        'INSERT INTO `mica_lockscreen` (`citizenid`, `device_id`, `passcode_hash`, `passcode_salt`) ' +
-          'VALUES (?, ?, ?, ?)',
-        [identifier, oldPhone, 'f'.repeat(64), 'e'.repeat(32)]
-      );
+      await passcode(identifier, oldPhone);
 
       // The character is deleted: es_extended's row goes, and the owner's hook fires.
       await db.exec('DELETE FROM `users` WHERE `identifier` = ?', [identifier]);

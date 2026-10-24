@@ -240,28 +240,6 @@ export async function purgeOwnedRows(
 }
 
 /**
- * The owner verdict a create is judged under (`characterExists`): the sweep's own, from
- * `resolveOwner` over every owned table, override and identity check included. Read again at
- * most once a minute rather than per create, as `lib/statusWrites.ts` re-reads its answer: a
- * cold create is rare, but an import makes thousands, and an operator's fix to the override
- * is picked up within the minute.
- */
-const VERDICT_TTL_MS = 60_000;
-let verdictRead: { at: number; verdict: ReturnType<typeof resolveOwner> } | null = null;
-const createVerdict = (): ReturnType<typeof resolveOwner> => {
-  const now = Date.now();
-  if (!verdictRead || now - verdictRead.at > VERDICT_TTL_MS) {
-    verdictRead = { at: now, verdict: resolveOwner(ownedTables()) };
-  }
-  return verdictRead.verdict;
-};
-
-/** Test seam: the next create reads the owner verdict again. */
-export const __resetCreateVerdictForTests = (): void => {
-  verdictRead = null;
-};
-
-/**
  * The sweep's refusals that only say there is nothing to judge yet: no framework, no micaOS rows
  * at all, no characters at all. A fresh server is all three, and none of it is a fault.
  */
@@ -270,6 +248,47 @@ const NOTHING_TO_JUDGE: readonly SkipReason[] = [
   'nothing-owned',
   'owner-empty'
 ];
+
+/** The reason a verdict refuses, as `characterExists` reads it: no owner is no framework. */
+const refusalOf = (verdict: Awaited<ReturnType<typeof resolveOwner>>): SkipReason | null =>
+  verdict.skipped ?? (verdict.owner ? null : 'unknown-framework');
+
+/**
+ * The owner verdict a create is judged under (`characterExists`): the sweep's own, from
+ * `resolveOwner` over every owned table, override and identity check included. Read again at
+ * most once a minute rather than per create, as `lib/statusWrites.ts` re-reads its answer: a
+ * cold create is rare, but an import makes thousands, and an operator's fix to the override
+ * is picked up within the minute.
+ *
+ * **Except a verdict with nothing to judge, which is never kept.** A fresh server owns no micaOS
+ * row until its first create, so that create's verdict is `nothing-owned`, and kept for a minute
+ * it waved every create through, a deleted character's included, until it ran out (the in-server
+ * ESX run, 2660b412). The next create asks again, by which time the first has left a row to judge
+ * by. A verdict that acts, or one the sweep refuses for a fault, is kept the minute.
+ */
+const VERDICT_TTL_MS = 60_000;
+let verdictRead: { at: number; verdict: ReturnType<typeof resolveOwner> } | null = null;
+const createVerdict = (): ReturnType<typeof resolveOwner> => {
+  const now = Date.now();
+  if (verdictRead && now - verdictRead.at <= VERDICT_TTL_MS) return verdictRead.verdict;
+  const read = { at: now, verdict: resolveOwner(ownedTables()) };
+  verdictRead = read;
+  void read.verdict.then(
+    (verdict) => {
+      const reason = refusalOf(verdict);
+      if (reason !== null && NOTHING_TO_JUDGE.includes(reason) && verdictRead === read) {
+        verdictRead = null;
+      }
+    },
+    () => undefined
+  );
+  return read.verdict;
+};
+
+/** Test seam: the next create reads the owner verdict again. */
+export const __resetCreateVerdictForTests = (): void => {
+  verdictRead = null;
+};
 
 /**
  * Whether a character exists, asked **only under an owner verdict the sweep itself would act on**
@@ -289,12 +308,13 @@ export const characterExists = async (citizenid: string): Promise<boolean | null
   const id = typeof citizenid === 'string' ? citizenid.trim() : '';
   if (id.length === 0) return false;
   const verdict = await createVerdict();
-  if (verdict.skipped !== null || !verdict.owner) {
-    const reason = verdict.skipped ?? 'unknown-framework';
+  const reason = refusalOf(verdict);
+  if (reason !== null) {
     if (NOTHING_TO_JUDGE.includes(reason)) return null;
     const detail = 'detail' in verdict && verdict.detail ? `: ${verdict.detail}` : '';
     throw new Error(`the orphan sweep would not act on its owner table (${reason}${detail}).`);
   }
+  if (!verdict.owner) return null;
   const table = identifier(verdict.owner.table, 'the owner table');
   const column = identifier(verdict.owner.column, 'the owner column');
   // Bound, never compared column to column: es_extended's collation may differ from ours.

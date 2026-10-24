@@ -1117,6 +1117,34 @@ describe('no phone for a character who does not exist (MICA-440)', () => {
   });
 
   /**
+   * The in-server ESX run (2660b412): a fresh server owns no micaOS row before its first create,
+   * whose verdict is `nothing-owned`. Kept the minute, it let a deleted character's create through
+   * silently; never kept, the next create asks again and finds that first row to judge by.
+   */
+  it("asks again after a fresh server's first create, rather than letting creates through", async () => {
+    let owned = false;
+    ownerTable(nobody);
+    const asked = dbMock.query.getMockImplementation()!;
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
+      String(sql).startsWith('SELECT DISTINCT')
+        ? owned
+          ? [{ owner: CID }]
+          : []
+        : asked(sql, params)
+    );
+
+    // Nothing to judge: created, and nothing said.
+    await expect(phoneForCitizen(OTHER)).resolves.toMatch(ID_SHAPE);
+    owned = true;
+    await expect(phoneForCitizen(GONE)).rejects.toThrow(/no character/);
+
+    expect(ownerReads()).toEqual([
+      ['SELECT 1 AS `found` FROM `players` WHERE `citizenid` = ? LIMIT 1', [GONE]]
+    ]);
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  /**
    * Kix's second round: an override that names a real column, but one holding none of micaOS's
    * owners, is a verdict the sweep refuses (`identity-mismatch`). Trusted here, it refused every
    * offline create for a phoneless character while the sweep refused itself at every start.
