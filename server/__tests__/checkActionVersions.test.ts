@@ -29,10 +29,20 @@ const workflowDir = (uses: string): string => {
 const run = (dir: string) =>
   spawnSync('node', ['scripts/check-action-versions.js', `--dir=${dir}`], {
     cwd: path.resolve('.'),
-    encoding: 'utf8'
+    encoding: 'utf8',
+    timeout: 30_000
   });
 
-describe('check-action-versions', () => {
+/**
+ * Each case cold-starts a `node` process, which the 5 s default does not always cover on a
+ * shared CI runner with both Vitest projects running at once: "fails on a tag pin" took
+ * 5257 ms there on e4b4cb30 and failed for it, with nothing wrong. The script never reaches
+ * the network on these paths, so a case that does take 30 s has hung, and `spawnSync`'s own
+ * `timeout` above ends the child first so the assertion names it.
+ */
+const SPAWN_CASE_TIMEOUT_MS = 45_000;
+
+describe('check-action-versions', { timeout: SPAWN_CASE_TIMEOUT_MS }, () => {
   it('fails on a tag pin, naming it NOT SHA', () => {
     const result = run(workflowDir('actions/checkout@v7'));
     expect(result.status).toBe(1);
