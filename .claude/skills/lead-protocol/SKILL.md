@@ -95,6 +95,9 @@ report opens with `uncommitted:` and its paths rather than a sha. Then:
   module it changes**, `pnpm lint:ts`, plus `pnpm lint:web` or `pnpm lint:sdk`
   for those directories. Never `pnpm verify` in a lane;
 - the lane's callsign, which `lane-protocol` uses to name its scratchpad logs;
+- the lead's address: "report by `SendMessage` to `team-lead`". `Rex` is the
+  persona, not an address, and does not resolve; on 2026-10-24 every lane
+  briefed to report to `Rex` had its first send bounce and had to retry;
 - any e2e spec a lane names in its report goes to the `verify` lane;
 - for a lane writing a FiveM export: read `GetInvokingResource()` into a const
   on the first synchronous line, since after an `await` it is null and no stub
