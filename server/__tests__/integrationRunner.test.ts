@@ -41,19 +41,26 @@ const scenario = (
   ...(timeoutMs === undefined ? {} : { timeoutMs })
 });
 
+/**
+ * How long a scenario that ran took, as its line ends with it. `lines` compares without it, since
+ * a real clock makes it differ run to run; `raw` keeps it, for the cases below that pin it on an
+ * injected clock.
+ */
+const ELAPSED = / \(\d+ ms\)$/;
+
 const run = async (
   scenarios: Scenario[],
   over: { budgetMs?: number; defaultTimeoutMs?: number; mode?: Mode; now?: () => number } = {}
 ) => {
-  const lines: string[] = [];
+  const raw: string[] = [];
   const result = await runScenarios(scenarios, {
-    print: (line) => lines.push(line),
+    print: (line) => raw.push(line),
     mode: over.mode ?? 'standalone',
     defaultTimeoutMs: over.defaultTimeoutMs ?? 1_000,
     budgetMs: over.budgetMs ?? 10_000,
     ...(over.now === undefined ? {} : { now: over.now })
   });
-  return { lines, result };
+  return { lines: raw.map((line) => line.replace(ELAPSED, '')), raw, result };
 };
 
 const never = (): Promise<void> => new Promise<void>(() => {});
@@ -79,6 +86,122 @@ describe('the protocol lines', () => {
     const long = oneLine('y'.repeat(5_000));
     expect(long.length).toBe(400);
     expect(long.endsWith('…')).toBe(true);
+  });
+});
+
+describe('how long each scenario took', () => {
+  it('is a suffix on a run line only, rounded, and never negative', () => {
+    expect(passLine('schema-ok', 1234.4)).toBe('integration: PASS schema-ok (1234 ms)');
+    expect(failLine('schema-ok', 'missing tables: a, b', 7)).toBe(
+      'integration: FAIL schema-ok: missing tables: a, b (7 ms)'
+    );
+    expect(passLine('clock-stepped-back', -3)).toBe('integration: PASS clock-stepped-back (0 ms)');
+    // The startup failure and every refusal before a run take no time, and say none.
+    expect(passLine('schema-ok')).toBe('integration: PASS schema-ok');
+    expect(failLine('startup', 'mica is stopped')).toBe(
+      'integration: FAIL startup: mica is stopped'
+    );
+  });
+
+  it("ends each run scenario's PASS or FAIL line with its milliseconds on the clock", async () => {
+    let t = 1_000;
+    const { raw } = await run(
+      [
+        scenario('quick', async () => {
+          t += 250;
+        }),
+        scenario('slow-then-fails', async () => {
+          t += 4_321;
+          throw new Error('the row is not there');
+        })
+      ],
+      { now: () => t }
+    );
+    expect(raw).toEqual([
+      'integration: PASS quick (250 ms)',
+      'integration: FAIL slow-then-fails: the row is not there (4321 ms)',
+      'integration: done 1 passed 1 failed'
+    ]);
+  });
+
+  it('puts none on a SKIP, a refusal, a scenario the budget never reached, or the done line', async () => {
+    let t = 0;
+    const { raw } = await run(
+      [
+        scenario('own', async () => {
+          t += 5;
+        }),
+        scenario('theirs', async () => {}, undefined, 'qbx'),
+        scenario('own', async () => {}),
+        scenario('eats', async () => {
+          t += 200;
+        }),
+        scenario('never', async () => {})
+      ],
+      { now: () => t, budgetMs: 100 }
+    );
+    expect(raw).toEqual([
+      'integration: PASS own (5 ms)',
+      'integration: SKIP theirs: needs a qbx run, and this is the standalone run',
+      'integration: FAIL own: a second scenario has this id; not run',
+      'integration: PASS eats (200 ms)',
+      "integration: FAIL never: not run: the suite's 100 ms budget is spent",
+      'integration: done 2 passed 2 failed'
+    ]);
+  });
+
+  /**
+   * The box's wrapper reads these lines, and it is pinned by sha on hoth, so it is read here
+   * rather than changed: the PASS id is the first word after `PASS`, PASS and FAIL lines are
+   * counted by how they start, and the done line by a regex with nothing after `failed`.
+   */
+  it("leaves the wrapper's ids and counts as they were", () => {
+    const wrapper = readFileSync(
+      join(__dirname, '..', '..', 'scripts', 'deploy', 'mica-smoke-release.sh'),
+      'utf8'
+    );
+    expect(wrapper).toContain("sed -E 's/^integration: PASS ([^ ]+).*/\\1/'");
+    expect(wrapper).toContain("grep -c '^integration: PASS '");
+    expect(wrapper).toContain("grep -c '^integration: FAIL '");
+    expect(wrapper).toContain("local done_re='integration: done ([0-9]+) passed ([0-9]+) failed'");
+
+    const id = 'casino-crash-busts-on-the-server-timer-and-pushes';
+    expect(passLine(id, 9_984).replace(/^integration: PASS ([^ ]+).*/, '$1')).toBe(id);
+    expect(passLine(id, 9_984).startsWith('integration: PASS ')).toBe(true);
+    expect(failLine(id, 'timed out after 1664 ms', 1_664).startsWith('integration: FAIL ')).toBe(
+      true
+    );
+  });
+});
+
+/**
+ * The run's three numbers against the wrapper's window. The wrapper's `INTEGRATION_TIMEOUT`
+ * starts once it has read `mica started!`, and the suite must print its done line inside it:
+ * ready, the settle and the budget, with 15 s left for the wrapper's poll and the line itself.
+ * Read from both files, so neither can move without this noticing.
+ */
+describe("the suite's time against the wrapper's", () => {
+  const root = join(__dirname, '..', '..');
+  const server = readFileSync(join(root, 'integration', 'server.ts'), 'utf8');
+  const wrapper = readFileSync(join(root, 'scripts', 'deploy', 'mica-smoke-release.sh'), 'utf8');
+  const constant = (name: string): number => {
+    const match = new RegExp(`^const ${name} = ([0-9_]+);$`, 'm').exec(server);
+    expect(match, `integration/server.ts declares ${name}`).not.toBeNull();
+    return Number(match![1].replace(/_/g, ''));
+  };
+
+  it('ready, settle and budget leave 15 s of the default INTEGRATION_TIMEOUT', () => {
+    const window = /^INTEGRATION_TIMEOUT=(\d+)$/m.exec(wrapper);
+    expect(window, 'the wrapper declares INTEGRATION_TIMEOUT').not.toBeNull();
+    const total =
+      constant('READY_TIMEOUT_MS') + constant('STARTUP_SETTLE_MS') + constant('BUDGET_MS');
+    expect(total + 15_000).toBeLessThanOrEqual(Number(window![1]) * 1_000);
+  });
+
+  it('are the numbers the run uses', () => {
+    expect(server).toContain('Date.now() + READY_TIMEOUT_MS');
+    expect(server).toContain('await sleep(STARTUP_SETTLE_MS);');
+    expect(server).toContain('budgetMs: BUDGET_MS');
   });
 });
 

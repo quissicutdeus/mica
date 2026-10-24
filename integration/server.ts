@@ -15,22 +15,47 @@ import { scenarios } from './scenarios';
  * commands, server events — with oxmysql to arrange fixtures and read back what landed.
  *
  * The release harness starts it after `mica` with `set mica_integration "1"` and reads the
- * protocol off the console: one `integration: PASS <id>` or `integration: FAIL <id>: <reason>`
- * per scenario, then `integration: done <P> passed <F> failed`, always.
+ * protocol off the console: one `integration: PASS <id> (<n> ms)` or
+ * `integration: FAIL <id>: <reason> (<n> ms)` per scenario that ran, then
+ * `integration: done <P> passed <F> failed`, always.
  *
  * It writes fixture rows, creates and drops qb-phone's table names, runs `micaschema apply` and
  * `micacrypt backfill --apply`: never on a server anybody plays on. Without the convar it does
  * nothing at all, and says so once.
  */
 
-/** How long micaOS gets to come up after this resource starts. */
-const READY_TIMEOUT_MS = 60_000;
+/**
+ * The three numbers below add up to the run, and the run must print its done line inside the
+ * box's wrapper's `INTEGRATION_TIMEOUT` (300 s, `scripts/deploy/mica-smoke-release.sh`), which
+ * starts counting once the wrapper has read `mica started!`. Ready, settle and budget sum to
+ * 285 s, leaving 15 s for the wrapper's two-second poll of `docker logs` and the done line itself.
+ * `integrationRunner.test.ts` reads this file and the wrapper and holds the sum to that.
+ */
 
 /**
- * Inside the harness's 300 s from `mica started!`, with room for the wait above: a hung scenario
- * costs the ones after it their turn, never the done line.
+ * How long micaOS gets to answer after this resource starts: its `GetApiVersion` export, and
+ * oxmysql a `SELECT 1` (`waitForMica`). The wrapper starts its clock only after `mica started!`,
+ * so this waits for the connection, not the start. On the box it took a few seconds at most: the
+ * esx run (2026-10-24, 25d51798) went from the wrapper's clock to its console dump in 6.1 s with
+ * this wait, the settle below and five scenarios inside it, and the standalone runs put it at
+ * 1–3 s. Twenty seconds is several times that, and a slower start still fails loudly here.
  */
-const BUDGET_MS = 220_000;
+const READY_TIMEOUT_MS = 20_000;
+
+/**
+ * micaOS's own start-up work — the schema report, the retention and orphan passes — runs
+ * asynchronously after it answers; this lets it finish before the first scenario reads or writes
+ * beside it.
+ */
+const STARTUP_SETTLE_MS = 3_000;
+
+/**
+ * Every scenario of a run, together. The standalone run needed about 218 s on 2026-10-24 and ran
+ * out at 220 s twice on the same code, on two scenarios whose length is drawn at random (Casino's
+ * crash point and instant bust). This is what the 40 s taken off the ready wait above buys it. A
+ * hung scenario costs the ones after it their turn, never the done line.
+ */
+const BUDGET_MS = 262_000;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 const print = (line: string): void => console.log(line);
@@ -90,9 +115,7 @@ const main = async (): Promise<void> => {
     print(doneLine(0, 1));
     return;
   }
-  // micaOS's own start-up work (the schema report, the retention and orphan passes) is
-  // asynchronous; let it finish before the first scenario reads or writes beside it.
-  await sleep(3_000);
+  await sleep(STARTUP_SETTLE_MS);
 
   await runScenarios(scenarios, {
     print,

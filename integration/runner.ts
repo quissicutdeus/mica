@@ -76,7 +76,18 @@ export const oneLine = (text: string): string => {
   return flat.length > REASON_MAX ? `${flat.slice(0, REASON_MAX - 1)}…` : flat;
 };
 
-export const passLine = (id: string): string => `integration: PASS ${id}`;
+/**
+ * How long a scenario that ran took, as the PASS or FAIL line ends with it: ` (<n> ms)`. The
+ * wrapper reads a PASS line's id as its first word and counts PASS and FAIL lines by their start
+ * (`mica-smoke-release.sh`), so a suffix leaves both as they were; the mode, SKIP and done lines
+ * carry none. It is what makes an overrun of the suite's budget readable: which scenario took the
+ * time is on the console, not inferred from the wall clock.
+ */
+const took = (elapsedMs: number | undefined): string =>
+  elapsedMs === undefined ? '' : ` (${Math.max(0, Math.round(elapsedMs))} ms)`;
+
+export const passLine = (id: string, elapsedMs?: number): string =>
+  `integration: PASS ${id}${took(elapsedMs)}`;
 
 /**
  * A scenario that is not this run's. Printed for every one, so the console says what was not
@@ -87,8 +98,9 @@ export const passLine = (id: string): string => `integration: PASS ${id}`;
 export const skipLine = (id: string, mode: Mode, own: Mode): string =>
   `integration: SKIP ${id}: needs a ${own} run, and this is the ${mode} run`;
 
-export const failLine = (id: string, reason: string): string =>
-  `integration: FAIL ${id}: ${oneLine(reason)}`;
+/** `elapsedMs` only for a scenario that ran: one refused before it started took no time. */
+export const failLine = (id: string, reason: string, elapsedMs?: number): string =>
+  `integration: FAIL ${id}: ${oneLine(reason)}${took(elapsedMs)}`;
 
 export const doneLine = (passed: number, failed: number): string =>
   `integration: done ${passed} passed ${failed} failed`;
@@ -198,13 +210,15 @@ export const runScenarios = async (
     }
 
     const limit = Math.min(scenario.timeoutMs ?? options.defaultTimeoutMs, left);
+    const started = now();
     const { reason, timedOut } = await runOne(scenario, limit);
+    const elapsed = now() - started;
     if (timedOut && limit === left) budgetSpent = true;
     if (reason === null) {
-      options.print(passLine(id));
+      options.print(passLine(id, elapsed));
       passed += 1;
     } else {
-      options.print(failLine(id, reason));
+      options.print(failLine(id, reason, elapsed));
       failed += 1;
     }
   }
