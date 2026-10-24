@@ -354,7 +354,8 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
  *   one, so `clearPasscode` removes the player's and `setPasscode` replaces it with one they
  *   do not know. `setAutoLockPolicy` goes too: `'never'` skips the lock screen entirely,
  *   which is the passcode removed by another name.
- * - `admin` and `reports` are empty (MICA-433): see `CORE_ONLY_PERMISSIONS`.
+ * - `admin` and `reports` are empty (MICA-433), and `bank` (MICA-441): see
+ *   `CORE_ONLY_PERMISSIONS`.
  */
 export const FACET_MEMBERS = {
   // Player data.
@@ -386,14 +387,7 @@ export const FACET_MEMBERS = {
     'unreactToTarget'
   ],
   admin: [],
-  bank: [
-    'sendMoney',
-    'invoices',
-    'invoicesLoaded',
-    'fetchInvoices',
-    'payInvoice',
-    'declineInvoice'
-  ],
+  bank: [],
   call: [
     'callStore',
     'startCall',
@@ -662,14 +656,20 @@ const IN_FRAME_INDEX = new Map<string, readonly string[]>(Object.entries(ANSWERE
 /**
  * Permissions no `core: false` manifest may declare, whatever the rows above say.
  *
- * `admin` reads the moderation queue: who reported whom, and `target_author`, which unmasks a
- * Dark Chat alias (MICA-433). Its rows are empty, which already lands it in
- * `ADD_ON_REFUSED_PERMISSIONS` by derivation. It is named here too, so that giving one of
- * those rows a member later does not quietly hand the queue to the Store.
+ * - `admin` reads the moderation queue: who reported whom, and `target_author`, which
+ *   unmasks a Dark Chat alias (MICA-433).
+ * - `bank` moves the player's money (MICA-441): `sendMoney` pays any number, and
+ *   `payInvoice` settles a bill. A Store add-on is code nobody on this server reviewed, and
+ *   one tap on a consent sheet is not the player agreeing to each payment it then makes.
+ *   Reading a balance stays on `account`, which an add-on may still hold.
+ *
+ * The rows of every facet behind these are empty, which already lands each in
+ * `ADD_ON_REFUSED_PERMISSIONS` by derivation. They are named here too, so that giving one
+ * of those rows a member later does not quietly hand the queue, or the wallet, to the Store.
  * `permissions.test.ts` holds every facet behind one of these to an empty row, and
  * `IframeHostServer` shuts a frame whose manifest declares one before answering anything.
  */
-export const CORE_ONLY_PERMISSIONS: readonly AppPermission[] = ['admin'];
+export const CORE_ONLY_PERMISSIONS: readonly AppPermission[] = ['admin', 'bank'];
 
 /**
  * The permissions a `core: false` manifest may not declare: every facet behind each one has
@@ -956,10 +956,6 @@ export const MEMBER_APP_ARGS = {
   'appEvents.on': null,
   'appEvents.onAny': null,
   'appRegistry.getFirstBootTime': null,
-  'bank.declineInvoice': null,
-  'bank.fetchInvoices': null,
-  'bank.payInvoice': null,
-  'bank.sendMoney': null,
   'call.answerCall': null,
   'call.endCall': null,
   'call.loadCallLog': null,

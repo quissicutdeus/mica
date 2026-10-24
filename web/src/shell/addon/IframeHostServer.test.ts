@@ -31,6 +31,7 @@ import { pushStorageToAddOns, __resetSettingsSync } from '../../host/settingsSyn
 import { lifecycle } from '../../host/facets/lifecycle';
 import { keybinds } from '../../host/facets/keybinds';
 import { phoneNotification } from '../../host/facets/phoneNotification';
+import { bank as inProcessBank } from '../../host/facets/bank';
 import { activeHandlerFor } from '../state/keybinds';
 import { toast as shellToast } from '../state/toast';
 import { currentApp as shellCurrentApp } from '../state/navigation';
@@ -2688,9 +2689,9 @@ describe('IframeHostServer withholds citizenid and device_id from the frame', ()
 /**
  * MICA-433: a manifest declaring `admin` is shut down at its first message, before any
  * facet is built. `defineApp` refuses one already; this is the fence for a manifest that
- * reached the shell some other way.
+ * reached the shell some other way. MICA-441 put `bank` on the same list.
  */
-describe('IframeHostServer refuses a frame whose manifest declares admin', () => {
+describe('IframeHostServer refuses a frame whose manifest declares admin or bank', () => {
   const frameWith = (permissions: AppPermission[]) => {
     recordConsent('probe', permissions);
     const onEscape = vi.fn();
@@ -2739,6 +2740,39 @@ describe('IframeHostServer refuses a frame whose manifest declares admin', () =>
     expect(isAdmin).not.toHaveBeenCalled();
     expect(onEscape).toHaveBeenCalledTimes(1);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("declares 'admin'"));
+    error.mockRestore();
+  });
+
+  /**
+   * MICA-441: `bank` is core only too. A frame that declares it moves no money and reads no
+   * invoice, even with the player's grant on record: it is shut before its first call.
+   */
+  it('answers neither hello nor a payment from a frame declaring bank', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sendMoney = vi.fn(() => Promise.resolve({ ok: true }));
+    const payInvoice = vi.fn(() => Promise.resolve({ ok: true }));
+    registerFacet('bank' as any, (() => ({ sendMoney, payInvoice })) as any);
+    onTestFinished(() => registerFacet('bank', inProcessBank));
+    const { posted, from, onEscape } = frameWith(['account', 'bank'] as AppPermission[]);
+
+    from({
+      kind: 'call',
+      id: 1,
+      facet: 'bank',
+      factoryArgs: [],
+      member: 'sendMoney',
+      args: [{ to: '555-0100', amount: 500 }]
+    });
+    from({ kind: 'call', id: 2, facet: 'bank', factoryArgs: [], member: 'payInvoice', args: [1] });
+    from({ kind: 'hello', appId: 'probe' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(posted).toEqual([]);
+    expect(sendMoney).not.toHaveBeenCalled();
+    expect(payInvoice).not.toHaveBeenCalled();
+    expect(onEscape).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("declares 'bank'"));
     error.mockRestore();
   });
 

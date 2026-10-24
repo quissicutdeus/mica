@@ -392,10 +392,11 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   };
   /**
    * What this manifest declares that no add-on may hold whatever the rows say:
-   * `CORE_ONLY_PERMISSIONS`, which is `admin` (MICA-433). `defineApp` refuses such a manifest
-   * already, but a manifest reaches this server from the registry, a catalog or a dev
-   * registration, and not every one of those went through `defineApp` in this window. The
-   * frame is shut down at its first message, before any facet is built or answers.
+   * `CORE_ONLY_PERMISSIONS`, which is `admin` (MICA-433) and `bank` (MICA-441). `defineApp`
+   * refuses such a manifest already, but a manifest reaches this server from the registry, a
+   * catalog or a dev registration, and not every one of those went through `defineApp` in
+   * this window. The frame is shut down at its first message, before any facet is built or
+   * answers.
    *
    * Not every `ADD_ON_REFUSED_PERMISSIONS` entry. The rest are refused because their rows are
    * empty, and `requireMember` already answers each of their members "core only".

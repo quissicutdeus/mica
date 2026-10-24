@@ -8,8 +8,8 @@ export * from './icons';
 export * from './utils';
 export * from './host/index';
 /**
- * Since 2026-10-19: hooks from the line above, re-typed for an add-on (ten then, and
- * `useAdmin` and `useReports` since MICA-433). The same functions,
+ * Since 2026-10-19: hooks from the line above, re-typed for an add-on (ten then,
+ * `useAdmin` and `useReports` since MICA-433, `useBank` since MICA-441). The same functions,
  * returning their facet minus the members the shell refuses a sandboxed frame as "core
  * only" — `setBinding`, `clearPasscode`, `setLocale` and the rest. A named export wins over
  * the star export above, so a core app, which builds against `index.ts`, keeps the full
@@ -18,6 +18,7 @@ export * from './host/index';
 export {
   useAdmin,
   useAppRegistryWrite,
+  useBank,
   useDisplayWrite,
   useKeybindsWrite,
   useLocale,

@@ -1228,18 +1228,24 @@ by this list until someone re-weighs it.
   permission; `permissions.test.ts` fails the build where a manifest understates
   its imports. `account` gives no citizenid, `admin` can never be declared by an
   add-on, and a search provider declares `search`
-  ([Identity hygiene](#identity-hygiene-who-can-see-a-citizenid), MICA-433).
-  **Consent is the shell's own record, not the manifest** (MICA-201). It used to
-  be neither: MICA-196 compared an update's permissions against the _installed
-  manifest_, so the manifest was its own authorization and anything able to
-  write one — a modified Store, or any core path that installs a catalog entry —
-  widened what an add-on could reach with nobody asked. The set the player
-  accepted now lives in `web/src/shell/state/addOnGrants.ts`, keyed by add-on id
-  and persisted per character alongside the install list itself; it is written
-  **only** through `appRegistryWrite`'s `recordConsent`, a member no add-on can
-  name (`FACET_MEMBERS.appRegistryWrite` is empty, so a raw `postMessage` gets
-  "core only"), and it is read by `IframeHostServer` before every call. A
-  manifest permission with no matching grant is refused with the same
+  ([Identity hygiene](#identity-hygiene-who-can-see-a-citizenid), MICA-433). Nor
+  can `bank` (MICA-441): `sendMoney` pays any number and `payInvoice` settles a
+  bill, and one tap on a Store add-on's permission sheet was never the player
+  agreeing to each payment that code, which nobody on the server reviewed, then
+  makes. Only a core app moves money through the bank. An add-on with its own
+  server service, as Casino and Hodlr have, still spends the player's own money
+  inside that service's caps, and never to another player. **Consent is the
+  shell's own record, not the manifest** (MICA-201). It used to be neither:
+  MICA-196 compared an update's permissions against the _installed manifest_, so
+  the manifest was its own authorization and anything able to write one — a
+  modified Store, or any core path that installs a catalog entry — widened what
+  an add-on could reach with nobody asked. The set the player accepted now lives
+  in `web/src/shell/state/addOnGrants.ts`, keyed by add-on id and persisted per
+  character alongside the install list itself; it is written **only** through
+  `appRegistryWrite`'s `recordConsent`, a member no add-on can name
+  (`FACET_MEMBERS.appRegistryWrite` is empty, so a raw `postMessage` gets "core
+  only"), and it is read by `IframeHostServer` before every call. A manifest
+  permission with no matching grant is refused with the same
   `AppPermissionError` an undeclared one gets, so an update that adds a
   permission does nothing at all until the player answers the Store's prompt —
   and the Store now compares against that grant rather than against a manifest
@@ -1331,18 +1337,16 @@ by this list until someone re-weighs it.
   `requiresNetwork: true` is refused by `defineApp`, so an app cannot get real
   network egress by accident or through a field nobody meant to combine. Since
   MICA-196 the policy starts from `default-src 'none'` and names each escape
-  hatch: `connect-src` is `networkHosts` or `'none'`; `img-src`, `media-src` and
-  `font-src` are `https: data: blob:`; `frame-src`, `child-src`, `form-action`
-  and `base-uri` are `'none'`; `script-src` and `style-src` keep exactly the
-  reach they had, because Svelte's runtime-injected `<style>` and the inlined
-  module script need it. **One channel is left open on purpose and is an
-  accepted risk: `img-src https:` still lets `new Image().src` beacon a payload
-  to any https host.** Scoping it to `networkHosts` would break every add-on
-  that renders a photo or avatar from an https URL the phone handed it at
-  runtime (`sdk/ui/MediaThumb.svelte` accepts one), and that is a
-  published-contract change to make deliberately rather than inside a hardening
-  pass — MICA-202 holds it. `child-src 'none'` also stops Web Workers, and no
-  subresource directive admits a plaintext scheme.
+  hatch: `connect-src` is `networkHosts` or `'none'`; since MICA-202 `img-src`,
+  `media-src` and `font-src` are `data: blob:` plus `networkHosts`, and
+  `img-src` alone also carries the server's image host when one is configured
+  (MICA-243); `frame-src`, `child-src`, `form-action` and `base-uri` are
+  `'none'`, and `child-src 'none'` also stops Web Workers. **`script-src` and
+  `style-src` are still open to any `https:` or `http:` host**, kept at the
+  reach they had before MICA-196. The add-on's bundle is inlined into the frame
+  and needs neither, so all they do is let a pinned bundle `import()` code its
+  SHA never covered, and carry a payload out in a script or stylesheet URL,
+  plaintext included. MICA-442 scopes both to `networkHosts`.
 - **Message and DM bodies are readable by whoever operates the server, and that
   is inherent to what a FiveM resource is, not a defect in micaOS (MICA-70).** A
   message lands in the operator's own MySQL database as plaintext

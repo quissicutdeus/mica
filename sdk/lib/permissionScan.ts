@@ -98,6 +98,8 @@ export const ADD_ON_REFUSED_PERMISSIONS: readonly string[] = [
   // MICA-433: the moderation queue. In `CORE_ONLY_PERMISSIONS` there, whatever its rows say.
   'admin',
   'app-registry-write',
+  // MICA-441: moving the player's money. In `CORE_ONLY_PERMISSIONS` too.
+  'bank',
   'keybinds-write',
   'lock-screen-write',
   'notification-settings-write'

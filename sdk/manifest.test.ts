@@ -665,6 +665,19 @@ describe('defineApp: permissions an add-on cannot use', () => {
     ).toEqual(['admin']);
   });
 
+  it('refuses bank on an add-on and keeps it for a core app (MICA-441)', () => {
+    expect(() => defineApp({ id: 'teller', ...addOn, permissions: ['bank'] })).toThrow(
+      /add-on 'teller' declares 'bank', which only a core app can use/
+    );
+    // Reading a balance is `account`, and an add-on keeps it.
+    expect(defineApp({ id: 'teller', ...addOn, permissions: ['account'] }).permissions).toEqual([
+      'account'
+    ]);
+    expect(
+      defineApp({ id: 'teller', ...addOn, core: true, permissions: ['bank'] }).permissions
+    ).toEqual(['bank']);
+  });
+
   it('names every one it refuses, alongside the ones it would allow', () => {
     expect(() =>
       defineApp({

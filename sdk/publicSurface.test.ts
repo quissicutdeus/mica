@@ -2130,7 +2130,7 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
  * by hook. They were taken off the add-on types on 2026-10-19 in the add-on boundary wave,
  * and the contract stayed at 1 because SDK 1 is unreleased.
  *
- * `addon.ts` re-types twelve hooks (`host/iframe/addOnHooks.ts`) so that a member the shell
+ * `addon.ts` re-types thirteen hooks (`host/iframe/addOnHooks.ts`) so that a member the shell
  * refuses a sandboxed frame as "core only" no longer type-checks in an add-on: before that,
  * `useKeybindsWrite().setBinding` compiled in a `core: false` bundle and failed at run time.
  * Each list here is exactly that hook's `CoreOnlyMember` set from `sdk/permissions.ts`.
@@ -2142,7 +2142,7 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
  * member here takes it away from every published add-on, which is a `SDK_CONTRACT_VERSION`
  * bump, and taking one out is an addition and breaks nobody.
  *
- * `useAdmin`, `useAppRegistryWrite`, `useKeybindsWrite`, `useLockScreenWrite`,
+ * `useAdmin`, `useAppRegistryWrite`, `useBank`, `useKeybindsWrite`, `useLockScreenWrite`,
  * `useNotificationSettingsWrite` and `useReports` lose every member, and a `core: false` manifest may not
  * declare their permissions at all (`ADD_ON_REFUSED_PERMISSIONS`). They stay exported, so
  * an add-on that imported one still compiles until it reaches for a member.
@@ -2165,6 +2165,20 @@ const ADD_ON_HOOK_OMISSIONS: Record<string, string[]> = {
     'registerApp',
     'unregisterApp',
     'updateApp'
+  ],
+  /**
+   * MICA-441, on the terms MICA-433 set for `useAdmin`: SDK 1 is unreleased, so the contract
+   * stays at 1 (523c1bbc). `bank` joined `CORE_ONLY_PERMISSIONS`, because a Store add-on
+   * could pay any number and settle any bill once the player tapped through its consent
+   * sheet. A balance is still `useAccount`'s, which keeps every member.
+   */
+  useBank: [
+    'declineInvoice',
+    'fetchInvoices',
+    'invoices',
+    'invoicesLoaded',
+    'payInvoice',
+    'sendMoney'
   ],
   useDisplayWrite: ['setFrame', 'setFrameColor'],
   useKeybindsWrite: ['resetBindings', 'setBinding'],
@@ -3456,7 +3470,7 @@ describe('the SDK public surface (MICA-125)', () => {
 
   /**
    * The arm above reads hooks off `index.ts`, which a core app builds against; `addon.ts`
-   * now types twelve of them narrower, so what an add-on compiled against is read off the add-on
+   * now types thirteen of them narrower, so what an add-on compiled against is read off the add-on
    * barrel here. Its baseline is `BASELINE_HOOK_RETURNS` minus
    * `ADD_ON_HOOK_OMISSIONS`, and the second half holds the omissions to the live checker, so
    * the add-on surface is exactly the frozen one minus the list and cannot drift in silence.

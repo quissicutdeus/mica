@@ -1631,6 +1631,16 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A Store add-on can no longer send a player's money anywhere (MICA-441).** A
+`core: false` add-on that declared `bank` could call `sendMoney` and
+`payInvoice` from its frame once the player had accepted "Send Money" on its
+permission sheet, so an add-on's bytes, chosen by whoever controls its catalog
+host or its author's account, decided where a player's balance went. Only a core
+app may declare `bank` now: `defineApp` refuses it on an add-on's manifest, at
+its build and at install, and the shell shuts a frame whose manifest declares it
+before anything answers. Reading a balance stays on `account`. Nothing to do on
+the server.
+
 **A citizenid, a phone's device id or another player's number no longer leaks to
 other players, add-ons, the console or Discord (MICA-433).** On ESX a citizenid
 is the player's Rockstar licence, so this mattered most there.
@@ -2012,6 +2022,15 @@ included. The server no longer sends them on a player's own rows either, and
 sees the field gone, and there is nothing to replace it with on purpose: on ESX
 a citizenid is the player's licence. The contract version stays `1`, since
 nothing outside this repo builds against it yet.
+
+**An add-on can no longer move a player's money (MICA-441).** `bank` joins
+`admin` as core only: `defineApp` refuses it on a `core: false` manifest, the
+add-on build's permission scan refuses `useBank`, and the shell shuts a frame
+whose manifest declares it before any facet answers. `useBank` gives an add-on
+nothing, so `sendMoney` and `payInvoice` stop compiling. Show a balance through
+`account`, which is unchanged. An add-on with its own server service still
+spends inside that service's own rules, as Casino and Hodlr do. The contract
+version stays `1`.
 
 **A manifest's `color` is gone: write `tile`, and read `tile` (MICA-419).**
 `defineApp` used to accept the old `color` string beside `tile`, and every

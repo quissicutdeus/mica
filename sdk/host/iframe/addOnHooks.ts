@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * The add-on barrel's own types for the twelve hooks whose facet carries a member only a
+ * The add-on barrel's own types for the thirteen hooks whose facet carries a member only a
  * core app can call.
  *
  * `Facets` is one type for both sides, and every hook in `host/` returns its facet's whole
@@ -26,6 +26,7 @@
 import type { CoreOnlyMember, FacetWithCoreOnly } from '../../permissions';
 import { useAdmin as coreAdmin } from '../useAdmin';
 import { useAppRegistryWrite as coreAppRegistryWrite } from '../useAppRegistryWrite';
+import { useBank as coreBank } from '../useBank';
 import { useDisplayWrite as coreDisplayWrite } from '../useDisplayWrite';
 import { useKeybindsWrite as coreKeybindsWrite } from '../useKeybindsWrite';
 import { useLocale as coreLocale } from '../useLocale';
@@ -49,6 +50,8 @@ type ForAddOn<H extends (...args: never[]) => object, F extends FacetWithCoreOnl
 export const useAdmin: ForAddOn<typeof coreAdmin, 'admin'> = coreAdmin;
 export const useAppRegistryWrite: ForAddOn<typeof coreAppRegistryWrite, 'appRegistryWrite'> =
   coreAppRegistryWrite;
+/** MICA-441: nothing at all, for the reason `useAdmin` has none: `bank` is core only. */
+export const useBank: ForAddOn<typeof coreBank, 'bank'> = coreBank;
 export const useDisplayWrite: ForAddOn<typeof coreDisplayWrite, 'displayWrite'> = coreDisplayWrite;
 export const useKeybindsWrite: ForAddOn<typeof coreKeybindsWrite, 'keybindsWrite'> =
   coreKeybindsWrite;

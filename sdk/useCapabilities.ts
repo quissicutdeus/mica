@@ -42,9 +42,9 @@ interface CapabilityAnswer {
  * yet known*; `$caps.known` tells the two apart when that matters.
  *
  * **`core: true` only — `@mica/sdk/core`, not `@mica/sdk`.** The answer is not secret in
- * the sense a player's data is: it is two booleans about the server, and an add-on on a
- * server without money learns as much from its own `useBank()` calls failing. It is kept
- * off the public surface anyway, for two reasons:
+ * the sense a player's data is: it is two booleans about the server, and an add-on that
+ * declares `requires: ['money']` learns the first from being shown at all. It is kept off
+ * the public surface anyway, for two reasons:
  *
  * - **It is a one-way door with no asker.** Every export on `@mica/sdk` is a promise to
  *   add-ons nobody in this repo can see. The only reader is the phone's own catalog, and an

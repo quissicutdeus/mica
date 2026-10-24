@@ -95,19 +95,20 @@ in `sdk/manifest.ts`.
 
 A `core: false` add-on may only declare a permission that gives it something.
 `app-registry-write`, `keybinds-write`, `lock-screen-write`,
-`notification-settings-write` and `admin` give an add-on nothing: the shell
-answers a sandboxed frame "core only" for every member behind them, so listing
-one would put a line on the Store's permission sheet that grants nothing.
-`defineApp` throws on a `core: false` manifest that declares one, naming it, in
-the add-on's own build and again when the Store installs it. `admin` is refused
-outright rather than merely empty: the moderation queue shows who reported whom
-and who sits behind a Dark Chat alias, so it is core only whatever a facet row
+`notification-settings-write`, `admin` and `bank` give an add-on nothing: the
+shell answers a sandboxed frame "core only" for every member behind them, so
+listing one would put a line on the Store's permission sheet that grants
+nothing. `defineApp` throws on a `core: false` manifest that declares one,
+naming it, in the add-on's own build and again when the Store installs it.
+`admin` and `bank` are refused outright rather than merely empty: the moderation
+queue shows who reported whom and who sits behind a Dark Chat alias, and `bank`
+moves the player's money (MICA-441), so both are core only whatever a facet row
 says (`CORE_ONLY_PERMISSIONS` in `sdk/permissions.ts`), and the shell shuts a
-frame whose manifest declares it. Thirteen hooks on the add-on barrel —
+frame whose manifest declares either. Thirteen hooks on the add-on barrel —
 `useKeybindsWrite`, `useLockScreenWrite`, `useAppRegistryWrite`, `useMail`,
-`useMessages`, `useLocale`, `useAccount`, `useAdmin` and `useReports` among them
-— are typed without the members the shell would refuse, so a call that could
-never work does not compile. Import one of those hooks anyway and the build's
+`useMessages`, `useLocale`, `useAdmin`, `useBank` and `useReports` among them —
+are typed without the members the shell would refuse, so a call that could never
+work does not compile. Import one of those hooks anyway and the build's
 permission scan says it "is core only" and to stop importing it, rather than
 asking you to declare the permission.
 

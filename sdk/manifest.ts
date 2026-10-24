@@ -24,7 +24,7 @@ export const ALL_PERMISSIONS = [
   // Separate from `account` on purpose: reading a balance and moving money are not the
   // same ask, and `account` is common enough (any app showing a balance) that bundling a
   // spend capability into it would grant it far wider than anyone declaring it intended.
-  'bank', // send money to another player
+  'bank', // send money, pay invoices; core apps only (MICA-441)
   'call',
   'camera',
   'contacts',
@@ -129,8 +129,8 @@ export type AppPermission = (typeof ALL_PERMISSIONS)[number];
  * without touching the shape of the manifest again.
  *
  * Distinct from `AppPermission`, which is a *disclosure* about what an app reaches for and
- * is shown to a player in the Store. The two answers are independent: an app can honestly
- * declare the `bank` permission on a server that has no money at all.
+ * is shown to a player in the Store. The two answers are independent: a core app can
+ * honestly declare the `bank` permission on a server that has no money at all.
  */
 export const ALL_CAPABILITIES = [
   // Balances, transfers, prices — anything that moves currency. Comes from the framework

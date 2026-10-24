@@ -708,7 +708,7 @@ describe('an add-on can name only what the shell will answer', () => {
 
   /**
    * Every `facet.member` hidden from an add-on, frozen: the finding's 29 plus the 5 above,
-   * and MICA-433's nine — all of `admin` and `reports`.
+   * MICA-433's nine — all of `admin` and `reports` — and MICA-441's six, all of `bank`.
    */
   const CORE_ONLY = [
     'admin.isAdmin',
@@ -722,6 +722,12 @@ describe('an add-on can name only what the shell will answer', () => {
     'appRegistryWrite.registerApp',
     'appRegistryWrite.unregisterApp',
     'appRegistryWrite.updateApp',
+    'bank.declineInvoice',
+    'bank.fetchInvoices',
+    'bank.invoices',
+    'bank.invoicesLoaded',
+    'bank.payInvoice',
+    'bank.sendMoney',
     'displayWrite.setFrame',
     'displayWrite.setFrameColor',
     'keybindsWrite.resetBindings',
@@ -761,7 +767,7 @@ describe('an add-on can name only what the shell will answer', () => {
     type Derived = { [F in FacetWithCoreOnly]: `${F}.${CoreOnlyMember<F>}` }[FacetWithCoreOnly];
     const exact: Equal<Derived, (typeof CORE_ONLY)[number]> = true;
     expect(exact).toBe(true);
-    expect(CORE_ONLY).toHaveLength(44);
+    expect(CORE_ONLY).toHaveLength(50);
 
     // The runtime half of the same claim: on neither list a frame is answered from.
     const answered = CORE_ONLY.filter((key) => {
@@ -811,6 +817,7 @@ describe('an add-on can name only what the shell will answer', () => {
     expect(ADD_ON_REFUSED_PERMISSIONS).toEqual([
       'admin',
       'app-registry-write',
+      'bank',
       'keybinds-write',
       'lock-screen-write',
       'notification-settings-write'
@@ -826,7 +833,8 @@ describe('an add-on can name only what the shell will answer', () => {
   });
 
   it('keeps every facet behind a CORE_ONLY_PERMISSIONS entry empty for a frame (MICA-433)', () => {
-    expect(CORE_ONLY_PERMISSIONS).toEqual(['admin']);
+    // MICA-441 added `bank`: no add-on moves the player's money.
+    expect(CORE_ONLY_PERMISSIONS).toEqual(['admin', 'bank']);
     const behind = Object.entries(HOOK_OF_FACET)
       .filter(([, hook]) => {
         const needed = PERMISSION_OF[hook];
@@ -835,7 +843,7 @@ describe('an add-on can name only what the shell will answer', () => {
       })
       .map(([facet]) => facet)
       .sort();
-    expect(behind).toEqual(['admin', 'reports']);
+    expect(behind).toEqual(['admin', 'bank', 'reports']);
     const reachable = behind.flatMap((facet) => [
       ...(membersOfFacet(facet) ?? []).map((m) => `${facet}.${m}`),
       ...((ANSWERED_IN_FRAME as Record<string, readonly string[]>)[facet] ?? []).map(
@@ -851,7 +859,7 @@ describe('an add-on can name only what the shell will answer', () => {
   it('re-types the hook of every facet with a core-only member, and only those', () => {
     const exact: Equal<keyof typeof addOnHooks, HookOf<FacetWithCoreOnly>> = true;
     expect(exact).toBe(true);
-    expect(Object.keys(addOnHooks)).toHaveLength(12);
+    expect(Object.keys(addOnHooks)).toHaveLength(13);
     for (const [name, hook] of Object.entries(addOnHooks)) {
       expect(hook, `${name} must be the core hook itself, only re-typed`).toBe(
         hostHooks[name as keyof typeof hostHooks]
@@ -876,7 +884,11 @@ describe('an add-on can name only what the shell will answer', () => {
     type SetLocale = ReturnType<typeof addOnBarrel.useLocale>['setLocale'];
     type Translate = ReturnType<typeof addOnBarrel.useLocale>['t'];
     type CoreSetBinding = ReturnType<typeof hostHooks.useKeybindsWrite>['setBinding'];
-    const seen: [SetBinding?, SetLocale?, Translate?, CoreSetBinding?] = [];
+    // @ts-expect-error — MICA-441: `sendMoney` moves the player's money, so it is core only.
+    type SendMoney = ReturnType<typeof addOnBarrel.useBank>['sendMoney'];
+    type CoreSendMoney = ReturnType<typeof hostHooks.useBank>['sendMoney'];
+    const seen: [SetBinding?, SetLocale?, Translate?, CoreSetBinding?, SendMoney?, CoreSendMoney?] =
+      [];
     expect(seen).toEqual([]);
   });
 });
