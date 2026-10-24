@@ -20,7 +20,6 @@ import {
   type JobSupport,
   type OwnerTable
 } from './framework/runtime';
-import { readItemSlots, writeItemMetadata, type ItemSlot } from './framework/itemMetadata';
 import { citizenIdForNumber } from './phoneNumbers';
 import { setOwnerTableResolver } from './ownerWidth';
 import { traceOf } from './sqlErrors';
@@ -790,12 +789,12 @@ export class FrameworkBridge {
    * The connected player on this number, or null.
    *
    * **micaOS's own record first** (MICA-284). A number belongs to a phone, and the cache in
-   * `lib/phoneNumbers.ts` knows who last used the phone it is on. The walk over every
-   * connected player's `charinfo.phone` below is the fallback for a number micaOS has not
-   * resolved this process — ESX, or a character who has not synced since the restart — and it
-   * cannot be the first answer on qb: `charinfo.phone` is a mirror micaOS writes back on a
-   * switch and deliberately leaves alone for a player whose phone was taken, so the walk would
-   * find the victim beside the thief and answer with whichever came first.
+   * `lib/phoneNumbers.ts` knows whose phone it is on. The walk over every connected player's
+   * `charinfo.phone` below is the fallback for a number micaOS has not resolved this process —
+   * ESX, or a character who has not synced since the restart — and it cannot be the first
+   * answer on qb: `charinfo.phone` is a mirror micaOS writes back only while a phone is held,
+   * and before MICA-438 a robbery could leave the victim's mirror and the thief's naming one
+   * number, so the walk answered with whichever came first.
    *
    * When the record names a holder who is not connected, the answer is null rather than the
    * walk: the number is theirs, and finding somebody else still carrying it in `charinfo`
@@ -854,33 +853,6 @@ export class FrameworkBridge {
   }
 
   /**
-   * Every slot holding an item, with what that copy carries, or `null` when this inventory
-   * cannot carry metadata at all (MICA-279).
-   *
-   * `null` is not "none held" — `framework/itemMetadata.ts` has which inventories can answer
-   * and why the distinction is the whole point.
-   */
-  public static itemSlots(player: FrameworkPlayer, item: string): ItemSlot[] | null {
-    return readItemSlots(player.source, player.rawPlayer, item);
-  }
-
-  /**
-   * Merge a patch into one slot's metadata, answering whether it was really stored.
-   *
-   * Merged rather than replaced, because ox_inventory's `SetMetadata` assigns the whole
-   * table. A `false` here means the value is not on the item, so a caller must not act as
-   * though it is.
-   */
-  public static setItemMetadata(
-    player: FrameworkPlayer,
-    item: string,
-    slot: number,
-    patch: Record<string, unknown>
-  ): boolean {
-    return writeItemMetadata(player.source, player.rawPlayer, item, slot, patch);
-  }
-
-  /**
    * Register a usable item with whatever framework is here — which may be nothing.
    *
    * Each adapter answers whether it actually registered. The frameworkless case is
@@ -890,9 +862,10 @@ export class FrameworkBridge {
    */
   public static registerUsableItem(
     item: string,
-    // qbx_core annotates its own callback as `fun(source, item)` and ox_inventory fills
-    // that second argument with the slot data, which is how MICA-280 knows *which* phone
-    // was used. Typed loosely because the shape belongs to another resource.
+    // qbx_core annotates its own callback as `fun(source, item)` and ox_inventory fills that
+    // second argument with the slot data. Nothing here reads it since MICA-438 — any copy of a
+    // device item opens the holder's own device — but the adapters still pass it on. Typed
+    // loosely because the shape belongs to another resource.
     cb: (source: number, used?: { slot?: unknown }) => void
   ): void {
     try {

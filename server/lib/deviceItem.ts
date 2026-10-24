@@ -4,10 +4,9 @@
 
 import { ALL_DEVICES, type DeviceId } from '@mica/shared/devices';
 import { detectFramework, FrameworkBridge } from './FrameworkBridge';
-import type { ItemSlot } from './framework/itemMetadata';
 import type { FrameworkPlayer } from './framework/runtime';
 import { guardNetEvent, noInput } from './netGuard';
-import { forgetOnPlayerLoaded, onPlayerLoaded, pushRehydrate } from './shell';
+import { onPlayerLoaded } from './shell';
 import { traceOf } from './sqlErrors';
 
 /**
@@ -46,17 +45,11 @@ import { traceOf } from './sqlErrors';
  * reads would otherwise lock every device, and the log line is the only symptom either way,
  * so the device stays open and the line says why.
  *
- * **What MICA-219 built on the item is per device since MICA-264.** Each device records its
- * own last-used slot (`lastUsedDeviceSlot`) and rehydrates the shell when a use switches to a
- * different one, because a tablet has an identity to follow now as a phone does. The
- * phone-state subscribers stay the phone's alone: their one subscriber is the number sync, and
- * a tablet has no number.
- *
- * **Holding one means holding one of your own** (MICA-436). A phone belongs to the citizen who
- * first used it, for good, so where the inventory lists slots a slot counts only when it is the
- * player's own device, theirs to claim, or blank — the rule `services/Devices.ts` resolves by
- * (`SlotJudge`). A player holding nothing but other people's phones is told they hold none, and
- * the shell stays shut for them instead of opening onto a phone that refuses every tap.
+ * **The item is a key, not a device** (MICA-438). Any copy of it opens the holder's own phone
+ * — the one phone a character has (`services/Devices.ts`) — so the gate is a count and nothing
+ * else: which copy, what it carries, and who bought it are never asked. Nothing here reads or
+ * writes item metadata, and no slot is recorded. The phone-state subscribers stay the phone's
+ * alone: they are the number sync and the battery, and a tablet has neither.
  */
 
 export const PHONE_ITEM_CONVAR = 'mica_phone_item';
@@ -206,31 +199,11 @@ export const deviceItemName = (device: DeviceId): string | null => {
 export const phoneItemName = (): string | null => deviceItemName('phone');
 
 /**
- * Whether a citizen may use the device in a slot (MICA-436): the rule `services/Devices.ts`
- * resolves a slot by, installed from there because that file imports this one. Sharing it is
- * what keeps the gate and the resolve from disagreeing — a gate that counted any slot would
- * open the shell for a player every device-owned request then refuses.
+ * Held by count — any copy at all, since any copy opens the holder's own device (MICA-438).
+ * `null` from the inventory is "cannot say", never "holds none": the gate fails open there, said
+ * once, for the reason in this file's preamble.
  */
-export interface SlotJudge {
-  /** From what this process already knows; `null` for a slot whose row it has not read. */
-  known: (citizenid: string, device: DeviceId, slot: ItemSlot) => boolean | null;
-  /** The same answer, reading the slot's row when it must. Never writes. */
-  read: (citizenid: string, device: DeviceId, slot: ItemSlot) => Promise<boolean>;
-}
-
-let slotJudge: SlotJudge | null = null;
-
-/** Called once, by `services/Devices.ts`, at import. A test may pass `null` to clear it. */
-export const installSlotJudge = (judge: SlotJudge | null): void => {
-  slotJudge = judge;
-};
-
-/**
- * Held by count — any copy at all. What an inventory that cannot list slots (es_extended's own)
- * is asked, so the gate fails open exactly where it always has; and what a process with no
- * judge installed asks, which is only a suite that never loads `services/Devices.ts`.
- */
-const counted = (player: FrameworkPlayer, item: string, device: DeviceId): boolean => {
+const heldBy = (player: FrameworkPlayer, item: string, device: DeviceId): boolean => {
   const count = FrameworkBridge.countItem(player, item);
   if (count === null) {
     reportOnce(
@@ -246,87 +219,28 @@ const counted = (player: FrameworkPlayer, item: string, device: DeviceId): boole
 };
 
 /**
- * Whether this player holds a device of their own, from what this process knows (MICA-436).
- * A slot whose row has not been read yet counts as held: synchronous callers cannot wait for
- * it, and "cannot say" is never "holds none" here. `heldByRead` is what the gate pushes.
- */
-const heldBy = (player: FrameworkPlayer, item: string, device: DeviceId): boolean => {
-  const judge = slotJudge;
-  const slots = judge ? FrameworkBridge.itemSlots(player, item) : null;
-  if (!judge || !slots) return counted(player, item, device);
-  return slots.some((slot) => judge.known(player.citizenid, device, slot) !== false);
-};
-
-/**
- * `heldBy`, reading every row it has to first, so the push says what is true for a slot this
- * process has not seen — a phone just taken, after a restart. A read that fails counts the slot
- * as held, said each time: the gate fails open where nothing can say, as a count does.
- */
-const heldByRead = async (
-  player: FrameworkPlayer,
-  item: string,
-  device: DeviceId
-): Promise<boolean> => {
-  const judge = slotJudge;
-  const slots = judge ? FrameworkBridge.itemSlots(player, item) : null;
-  if (!judge || !slots) return counted(player, item, device);
-  const known = slots.map((slot) => judge.known(player.citizenid, device, slot));
-  if (known.includes(true)) return true;
-  for (const [index, slot] of slots.entries()) {
-    if (known[index] !== null) continue;
-    try {
-      if (await judge.read(player.citizenid, device, slot)) return true;
-    } catch (error) {
-      console.error(
-        `[mica] could not read whose ${device} source ${player.source} is holding; it is left ` +
-          'open, and every request it makes is still held to the resolve.',
-        traceOf(error)
-      );
-      return true;
-    }
-  }
-  return false;
-};
-
-/**
- * Whether this player holds an item of this device of their own, answered now, with nothing
- * pushed and nobody notified — the read-only half of `evaluateDeviceItems`, for the
- * `HasPhoneItem` export and `ServiceEndpoint`'s check on a request that names a device
- * (MICA-264). `true` whenever there is no gate (convar empty or invalid, or standalone), and
- * `true` when no inventory can count, for the fail-open reason in this file's preamble.
- * Synchronous, so it rules on what this process knows (`heldBy`, MICA-436). Says nothing about
- * whether the device is enabled; ask `isDeviceEnabled` for that.
+ * Whether this player holds an item of this device, counted now, with nothing pushed and
+ * nobody notified — the read-only half of `evaluateDeviceItems`, for the `HasPhoneItem` export
+ * and `ServiceEndpoint`'s check on a request that names a device (MICA-264). `true` whenever
+ * there is no gate (convar empty or invalid, or standalone), and `true` when no inventory can
+ * count, for the fail-open reason in this file's preamble. Says nothing about whether the
+ * device is enabled; ask `isDeviceEnabled` for that.
  */
 export const holdsDevice = (player: FrameworkPlayer, device: DeviceId): boolean => {
   const item = deviceItemName(device);
   return item ? heldBy(player, item, device) : true;
 };
 
-/**
- * `holdsDevice`, reading every slot's row this process has not seen first (MICA-436 review):
- * what a request that moves money or publishes is held to (`ServiceEndpoint`'s
- * `requirePhoneFor`), so a player holding nothing but somebody else's phone is refused on the
- * first request rather than once something else happens to read the row. One read per unseen
- * id, then cached.
- */
-export const holdsDeviceRead = async (
-  player: FrameworkPlayer,
-  device: DeviceId
-): Promise<boolean> => {
-  const item = deviceItemName(device);
-  return item ? await heldByRead(player, item, device) : true;
-};
-
 /** `holdsDevice` for the phone. */
 export const holdsPhoneItem = (player: FrameworkPlayer): boolean => holdsDevice(player, 'phone');
 
-/** One device's answer for one player, every row it rules on read. Nothing pushed. */
-const deviceState = async (player: FrameworkPlayer, device: DeviceId): Promise<DeviceItemState> => {
+/** One device's answer for one player, counted now. Nothing pushed. */
+const deviceState = (player: FrameworkPlayer, device: DeviceId): DeviceItemState => {
   // An off device is not counted: nothing can open it, so there is nothing to relay either.
   if (!isDeviceEnabled(device)) return { device, enabled: false, gated: false, held: false };
   const item = deviceItemName(device);
   return item
-    ? { device, enabled: true, gated: true, held: await heldByRead(player, item, device) }
+    ? { device, enabled: true, gated: true, held: heldBy(player, item, device) }
     : { device, enabled: true, gated: false, held: true };
 };
 
@@ -340,17 +254,17 @@ const pushDeviceState = (src: number, state: DeviceItemState): void => {
 /**
  * Whoever needs to know that a player's phone situation may have changed (MICA-284).
  *
- * Three things can change which phone a player is on, and this file is where all three are
- * observed: the load, the usable-item callback (which is how a player *switches* phones), and
- * the client's relay of an inventory change (which is how a player loses one). A subscriber
- * here is told about all three, once each, and is handed a source that has already been
- * established — the load through `onPlayerLoaded`, the other two from a framework callback
- * or a guarded net event on the connection itself — so it has no identity to resolve and
- * therefore none to get wrong (MICA-136).
+ * Three things can change whether a player has their phone in hand, and this file is where all
+ * three are observed: the load, the usable-item callback, and the client's relay of an
+ * inventory change (which is how a player picks one up or loses one). A subscriber here is told
+ * about all three, once each, and is handed a source that has already been established — the
+ * load through `onPlayerLoaded`, the other two from a framework callback or a guarded net event
+ * on the connection itself — so it has no identity to resolve and therefore none to get wrong
+ * (MICA-136).
  *
  * Its first subscriber is the number sync in `services/PhoneNumbers.ts`, which cannot import
  * this module's callers without a cycle and cannot subscribe to `onPlayerLoaded` alone without
- * going stale the moment a player picks up a second phone.
+ * going stale the moment a player who held no phone picks one up.
  *
  * The same contract as `dispatchPlayerLoaded`: one subscriber failing must not take the others
  * with it, and must not fail the event that fired it.
@@ -403,7 +317,7 @@ const notifyPhoneState = (src: number): void => {
  * Separate from `onPhoneStateChanged` because that hook's subscribers are the number sync and
  * the battery, both the phone's alone, and a tablet use must not wake them. Its subscriber is
  * `services/Devices.ts`, which re-resolves the tablet so the synchronous answer `LockState` keys
- * on follows a switch, a robbery or a character switch rather than waiting for the next
+ * on follows a tablet put down, a robbery or a character switch rather than waiting for the next
  * device-owned request. The phone needs no entry here: its own subscribers resolve it already.
  */
 type DeviceStateRun = (src: number, device: DeviceId) => unknown;
@@ -424,25 +338,6 @@ const notifyDeviceState = (src: number, devices: readonly DeviceId[]): void => {
 };
 
 /**
- * The newest pass each source has started (MICA-436 review). A pass that waits on a row read can
- * land after a pass started later — a phone dropped and the relay's pass answered from the cache
- * — and its older `held: true` would undo the newer `held: false`. So every pass takes a number,
- * and one that is no longer the newest for its source when its reads land pushes nothing and
- * tells nobody. Numbered from one counter for every source, and forgotten on `playerDropped`, so
- * a pass left over from the player who had this id before never matches the next one's.
- */
-let passes = 0;
-const latestPass = new Map<number, number>();
-
-const startPass = (src: number): number => {
-  passes += 1;
-  latestPass.set(src, passes);
-  return passes;
-};
-
-const isLatestPass = (src: number, pass: number): boolean => latestPass.get(src) === pass;
-
-/**
  * Count every device now and tell the client, one push per device. `null`, and nothing
  * pushed, for a source with no loaded character; `onPlayerLoaded` brings them here once there
  * is one.
@@ -452,18 +347,13 @@ const isLatestPass = (src: number, pass: number): boolean => latestPass.get(src)
  * subscribers are told, gate or no gate, once — they are the phone's (MICA-284), and a pass
  * that also counted a tablet changes nothing about which phone a player is on.
  *
- * **Asynchronous since MICA-436**: whose phone a slot carries is a row, and a phone just taken
- * from somebody is one this process may not have read. A pass whose source has another
- * character by the time the reads land pushes nothing and answers `null` — a character switch
- * keeps the source (MICA-336), and that character's own load runs a pass of its own.
+ * **Synchronous again since MICA-438**: a count is all there is to ask, so nothing yields
+ * between reading the inventory and pushing what it said.
  */
-export const evaluateDeviceItems = async (src: number): Promise<DeviceItemState[] | null> => {
+export const evaluateDeviceItems = (src: number): DeviceItemState[] | null => {
   const player = FrameworkBridge.getPlayer(src);
   if (!player) return null;
-  const pass = startPass(src);
-  const states = await Promise.all(ALL_DEVICES.map((device) => deviceState(player, device)));
-  if (!isLatestPass(src, pass)) return null;
-  if (FrameworkBridge.getPlayer(src)?.citizenid !== player.citizenid) return null;
+  const states = ALL_DEVICES.map((device) => deviceState(player, device));
   for (const state of states) pushDeviceState(src, state);
   notifyPhoneState(src);
   // Every other device, on or off: an off one is re-resolved to nothing, which clears it.
@@ -472,190 +362,29 @@ export const evaluateDeviceItems = async (src: number): Promise<DeviceItemState[
 };
 
 /**
- * Which slot each source last used each device from (MICA-280; per device since MICA-264).
+ * Using the item opens the phone (MICA-229). The framework calls this only for an item in that
+ * player's own inventory, so holding it is established and the count is not asked again. Which
+ * copy was used says nothing (MICA-438): every copy opens the holder's own phone, so the slot a
+ * framework hands over beside the source is not read.
  *
- * The active phone is "the one you last used", and this is where that is recorded — here
- * rather than beside the resolver in `services/Devices.ts`, because that file imports this one
- * and the reverse would close a runtime cycle. The rule that *reads* this still lives in one
- * place; only the fact being recorded lives here, next to the callback that observes it.
- *
- * **Cleared on `playerDropped`, and that is not optional.** FiveM hands server ids straight
- * back out, so an entry left behind points whoever lands on that id next at a slot in an
- * inventory that is not theirs — `Battery.ts`'s `forgetSource` is the same hazard, written up
- * at length. Keyed by source rather than citizenid because "which phone am I holding" is a
- * property of the session — and a character switch starts a new one, so a switch
- * clears it as well (MICA-336).
+ * The phone-state subscribers are told, as on a load: a player who held no phone a moment ago
+ * may be holding one now, and the number sync is what gives them their number back.
  */
-const lastUsed = Object.fromEntries(
-  ALL_DEVICES.map((device) => [device, new Map<number, number>()])
-) as Record<DeviceId, Map<number, number>>;
-
-/** The slot this source last used this device from, if they have used one this session. */
-export const lastUsedDeviceSlot = (src: number, device: DeviceId): number | undefined =>
-  lastUsed[device].get(src);
-
-/** Test seam, like `__resetPhoneItemWarnings`. Every device's slots. */
-export const __resetLastUsedPhone = (): void => {
-  for (const device of ALL_DEVICES) lastUsed[device].clear();
-};
-
-const forgetLastUsed = (src: number): void => {
-  for (const device of ALL_DEVICES) lastUsed[device].delete(src);
-};
-
-on('playerDropped', () => {
-  forgetLastUsed(source);
-  latestPass.delete(source);
-});
-
-/**
- * And on a character switch (MICA-336), which keeps the source and fires no drop. The
- * slot was the previous character's: in the next character's inventory it names whatever
- * they keep there, so the resolver would prefer it over the lowest slot for no reason they
- * gave. Forgotten before any subscriber resolves a device, so the load's own resolve already
- * reads it empty and falls back to the lowest slot, as a first use this session does.
- */
-forgetOnPlayerLoaded('device-last-used', forgetLastUsed);
-
-/**
- * What the framework hands the callback beside the source.
- *
- * qbx_core annotates `CreateUseableItem`'s callback as `fun(source, item)` and ox_inventory
- * fills that second argument with the slot data. It is typed loosely because it is another
- * resource's shape: a framework that passes nothing simply means no slot was observed, and
- * the resolver falls back to the lowest slot rather than failing.
- */
-export interface UsedItem {
-  slot?: unknown;
-}
-
-/**
- * Record the slot a device was used from, and answer whether that switched the player to a
- * different one of it. A first use this session is not a switch: there is nothing loaded for
- * another one yet.
- */
-const recordUse = (source: number, device: DeviceId, used?: UsedItem): boolean => {
-  const slots = lastUsed[device];
-  const slot = used?.slot;
-  const previous = slots.get(source);
-  if (typeof slot === 'number' && Number.isInteger(slot) && slot > 0) slots.set(source, slot);
-  return previous !== undefined && slots.get(source) !== previous;
-};
-
-/** A pass nobody waits on: a rejection is logged, never left unhandled. */
-const evaluateInBackground = (src: number): void => {
-  void evaluateDeviceItems(src).catch((error: unknown) => {
-    console.error(`[mica] could not count the devices source ${src} holds.`, traceOf(error));
-  });
-};
-
-/**
- * Whether the slot a use came from holds a device this player may use (MICA-436), by the judge
- * the gate counts by. A boolean when that is known now, and a promise only when the slot's row
- * has to be read first, so an ordinary use opens in the same tick it always did. `true` when it
- * cannot tell which slot, or whose — no judge, no slot in the framework's answer, a read that
- * failed — and the resolve decides then, as it always did.
- */
-const usedOwnDevice = (
-  source: number,
-  device: DeviceId,
-  used?: UsedItem
-): boolean | Promise<boolean> => {
-  const judge = slotJudge;
-  const item = deviceItemName(device);
-  const player = judge && item ? FrameworkBridge.getPlayer(source) : null;
-  if (!judge || !item || !player) return true;
-  const slot = FrameworkBridge.itemSlots(player, item)?.find((entry) => entry.slot === used?.slot);
-  if (!slot) return true;
-  const known = judge.known(player.citizenid, device, slot);
-  if (known !== null) return known;
-  const read = judge.read(player.citizenid, device, slot).catch((error: unknown) => {
-    console.error(
-      `[mica] could not read whose ${device} source ${source} used; it opens, and every ` +
-        'request it makes is still held to the resolve.',
-      traceOf(error)
-    );
-    return true;
-  });
-  // The read yielded (MICA-436 review): open only if the source is still this character and
-  // the slot still carries the id that was read. A switch or a swap meanwhile opens nothing.
-  return read.then((own) => own && stillHolds(source, player.citizenid, item, slot));
-};
-
-/** Whether this source is still this character, with this slot still carrying this id. */
-const stillHolds = (source: number, citizenid: string, item: string, slot: ItemSlot): boolean => {
-  const now = FrameworkBridge.getPlayer(source);
-  if (now?.citizenid !== citizenid) return false;
-  const again = FrameworkBridge.itemSlots(now, item)?.find((entry) => entry.slot === slot.slot);
-  return again?.metadata.deviceId === slot.metadata.deviceId;
-};
-
-/**
- * Open what was used when it is the player's own, else open nothing (MICA-436): somebody
- * else's phone used from the inventory records no slot, and a pass tells the client what the
- * player does hold — their own phone beside it still opens by its keybind.
- */
-const useIfOwn = (
-  source: number,
-  device: DeviceId,
-  used: UsedItem | undefined,
-  open: () => void
-): void => {
-  const own = usedOwnDevice(source, device, used);
-  if (own === true) return open();
-  if (own === false) return evaluateInBackground(source);
-  void own
-    .then((yes) => (yes ? open() : evaluateInBackground(source)))
-    .catch((error: unknown) => {
-      console.error(`[mica] could not open the ${device} source ${source} used.`, traceOf(error));
-    });
-};
-
-/**
- * Using the item opens the phone. The framework calls this only for an item in that player's
- * own inventory, so holding it is established and the count is not asked again — but whose
- * phone it is is asked (`useIfOwn`, MICA-436).
- *
- * The slot is recorded because using a phone is what makes it the active one. A player with a
- * burner and their own phone switches between them by using the one they want, which is a
- * visible act — where switching by dragging items between slots would not be.
- */
-const phoneItemUsed = (source: number, used?: UsedItem): void =>
-  useIfOwn(source, 'phone', used, () => openPhone(source, used));
-
-const openPhone = (source: number, used?: UsedItem): void => {
-  const switched = recordUse(source, 'phone', used);
-
+const phoneItemUsed = (source: number): void => {
   pushDeviceState(source, { device: 'phone', enabled: true, gated: true, held: true });
   emitNet(OPEN_EVENT, source);
   notifyPhoneState(source);
-
-  /**
-   * Switching phones switches the whole phone (MICA-283). The shell's stores were loaded
-   * for the phone that was active before, so a different slot means everything the phone
-   * shows — contacts, threads, settings, the lock screen's own passcode status — is somebody
-   * else's until re-read. The same push a character load sends, for the same reason.
-   */
-  if (switched) pushRehydrate(source);
 };
 
 /**
- * Using a tablet opens it, and records its slot as the phone's use does (MICA-264): the tablet
- * has an identity now, so a player with two of them switches by using the other, and the
- * shell's stores — its notes, settings, lock screen — have to be re-read when they do. No
+ * Using a tablet opens it (MICA-264), the holder's own whichever copy it is (MICA-438). No
  * phone-state subscriber is told: they follow the phone's number and battery, which a tablet
- * does not have. The device-state subscribers are, so the tablet's id follows the use. Somebody
- * else's tablet opens nothing, as a phone does not (`useIfOwn`, MICA-436).
+ * does not have. The device-state subscribers are, so the tablet a source is on follows the use.
  */
-const tabletItemUsed = (source: number, used?: UsedItem): void =>
-  useIfOwn(source, 'tablet', used, () => openTablet(source, used));
-
-const openTablet = (source: number, used?: UsedItem): void => {
-  const switched = recordUse(source, 'tablet', used);
+const tabletItemUsed = (source: number): void => {
   pushDeviceState(source, { device: 'tablet', enabled: true, gated: true, held: true });
   emitNet(OPEN_EVENT, source, { device: 'tablet' });
   notifyDeviceState(source, ['tablet']);
-  if (switched) pushRehydrate(source);
 };
 
 const configuredPhone = phoneItemName();
@@ -704,9 +433,9 @@ if (configuredTablet && tabletConflict) {
 onNet('mica:server:shell:checkDeviceItem', (...args: unknown[]) => {
   const src = source;
   if (!guardNetEvent('shell', 'checkDeviceItem', noInput, args)) return;
-  evaluateInBackground(src);
+  evaluateDeviceItems(src);
 });
 
-onPlayerLoaded('phone-item', async (src) => {
-  await evaluateDeviceItems(src);
+onPlayerLoaded('phone-item', (src) => {
+  evaluateDeviceItems(src);
 });

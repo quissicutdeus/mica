@@ -9,7 +9,6 @@ import {
   ACTIVE_STATUS,
   generatePhoneNumber,
   MAX_ASSIGN_ATTEMPTS,
-  numberFor,
   PHONE_NUMBERS_TABLE,
   readLegacyRow,
   readRowByPhoneId,
@@ -19,7 +18,7 @@ import {
 } from '../lib/phoneNumbers';
 import { PhoneNumberRepository } from '../repositories/PhoneNumberRepository';
 import { isDuplicateKey, traceOf } from '../lib/sqlErrors';
-import { resolvePhone, type ActiveDevice } from './Devices';
+import { identityPhone, resolvePhone, type ActiveDevice } from './Devices';
 import { who } from '../lib/who';
 
 /**
@@ -43,21 +42,19 @@ import { who } from '../lib/who';
  * operator's resource provides, issues nothing, and says so once at start. A number there is
  * the character's, not the phone's, which is honest about what the framework allows.
  *
- * **A number attaches to a phone lazily**, because it has to. A phone id lives in inventory
- * item metadata (MICA-280) and can only be minted at runtime, when a player actually holds the
- * item; SQL cannot invent one. So the migration that ships with this gives every existing qb
- * character a **legacy row** — their current number, `device_id` NULL — and the first time they
- * use a phone `syncNumber` attaches that row to it. Nobody's number changes on upgrade; it
- * moves onto their phone the first time they pick it up. A server whose inventory cannot carry
- * a phone id at all stays on legacy rows forever, which is exactly one number per citizen, as
- * before.
+ * **A number attaches to a phone lazily.** The migration that shipped with MICA-284 gave every
+ * existing qb character a **legacy row** — their current number, `device_id` NULL — and the
+ * first sync of their phone attaches that row to it, on a server that gates on a phone item or
+ * not (MICA-439). Nobody's number changes on upgrade. A character has exactly one phone
+ * (MICA-438), so that is one number per character, kept with the phone: through a gate turned
+ * on or off, and for a stolen phone's owner who picks up a new item.
  *
  * **Nothing here is reachable from a client.** `write: 'server'` turns off the generic create
  * and update, and `disableGet`/`disableDelete` turn off the other two, so this declaration
  * registers no net event at all — a number is assigned by the server and is never something a
  * payload gets to set, choose or delete (§2.9, and `reachability.test.ts` keeps the registered
- * set deliberate). The two privileged writes it does need are named methods on
- * `PhoneNumberRepository`, which is where §2.9 says they go.
+ * set deliberate). The privileged write it does need is a named method on
+ * `PhoneNumberRepository`, which is where §2.9 says it goes.
  */
 export const phoneNumbers = defineService<PhoneNumberRow>({
   id: 'phonenumbers',
@@ -105,8 +102,7 @@ export const phoneNumbers = defineService<PhoneNumberRow>({
   uniqueAfterDelete: {
     optOut:
       '`assign` reads the duplicate-key refusal as its signal — another number, or the row a ' +
-      "concurrent sync won — and `claimRow` reactivates a 'deleted' row by hand, with the " +
-      'transfer to the holder a revive scoped to the citizen could not do.'
+      "concurrent sync won — and `claimRow` reactivates a 'deleted' row by hand."
   },
   options: { disableGet: true, disableDelete: true },
   repositoryFactory: (resolved) => new PhoneNumberRepository(resolved)
@@ -117,8 +113,8 @@ const repo = phoneNumbers.repo as PhoneNumberRepository;
 /**
  * Numbers this process has already resolved for a phone, so a re-sync with nothing changed
  * costs no query. Keyed by phone id, with the citizen it was resolved for beside it, so a sync
- * for anybody else re-reads. Only the phone's owner reaches a sync since MICA-436, so that is a
- * safety now rather than the handover it was written for.
+ * for anybody else re-reads. Only the phone's owner ever resolves to it since MICA-438, so
+ * that is a safety rather than something a sync relies on.
  */
 const onPhone = new Map<string, { number: string; citizenid: string }>();
 
@@ -133,13 +129,12 @@ const onPhone = new Map<string, { number: string; citizenid: string }>();
  * them after.
  *
  * **A trigger never joins a run already going; it queues one run behind it** (MICA-346). A run
- * picks the phone in hand the moment it starts, so a trigger that arrives once it has started
- * may be about another phone: a burner used while the main phone's load sync is still running.
- * Joining that run left the burner with no number until the next trigger. `again` is a fresh
- * run that starts when this one ends, and every trigger before it starts joins it, so a burst
- * still costs one run behind the one going. That run picks the phone in hand when it starts,
- * so it is the right phone whichever trigger asked. When nothing changed it is all cache:
- * `onPhone` answers and the write-back finds nothing to write.
+ * counts the phone in hand the moment it starts, so a trigger that arrives once it has started
+ * may be about a change it did not see: a phone picked up after a run that found none, which
+ * would otherwise be left with no number until the next trigger. `again` is a fresh run that
+ * starts when this one ends, and every trigger before it starts joins it, so a burst still
+ * costs one run behind the one going. When nothing changed it is all cache: `onPhone` answers
+ * and the write-back finds nothing to write.
  */
 interface SyncRun {
   citizenid: string | null;
@@ -180,19 +175,13 @@ const frameworkNumber = (player: FrameworkPlayer): string | null => {
 };
 
 /**
- * Make a row this citizen's, whatever state it is in, and hand back its number.
+ * Make a row of this citizen's live, whatever state it is in, and hand back its number.
  *
- * Two things can be wrong with a row that is nevertheless the right one. It can be
- * soft-deleted — `lib/retention.ts` never hard-deletes, so a `'deleted'` row still holds the
- * number and is reactivated rather than treated as an obstacle. And it can be recorded against
- * somebody other than the phone's owner — a phone that changed hands before MICA-436, when the
- * number followed whoever held it; `transferToHolder` is the write that puts it back with the
- * owner. Only an active phone reaches here, and a resolve answers a phone to its owner alone,
- * so nobody else is ever handed a number this way.
- *
- * The reactivation is the ordinary ownership-scoped `update`, scoped by the citizenid the row
- * carries *now*, which is known. The transfer cannot be — its whole point is that the row's
- * citizenid is about to be somebody else's — so it is the named privileged method.
+ * A row can be soft-deleted and still be the right one — `lib/retention.ts` never hard-deletes,
+ * so a `'deleted'` row still holds the number and is reactivated rather than treated as an
+ * obstacle. The reactivation is the ordinary ownership-scoped `update`, scoped by `citizenid`:
+ * every caller hands over a row that names them — a legacy row read by their id, or the row on
+ * their own phone once `numberForPhone` has detached one that named anybody else.
  *
  * A failed write is logged and the number is still returned. The phone is in this player's
  * hand either way, and refusing to tell them their number because a status column would not
@@ -203,24 +192,13 @@ const claimRow = async (row: AssignedNumberRow, citizenid: string): Promise<stri
     const reactivated = await repo.update(
       row.id,
       { status: ACTIVE_STATUS } as Partial<PhoneNumberRow>,
-      row.citizenid
+      citizenid
     );
     if (!reactivated) {
       console.error(
         `[mica] could not reactivate the soft-deleted phone number row for ${who(row.number)}. ` +
           `It is still ${who(citizenid)}'s — every read of ${PHONE_NUMBERS_TABLE} is status-blind ` +
           `on purpose — but the row is still marked '${row.status}'.`
-      );
-    }
-  }
-
-  if (row.citizenid !== citizenid) {
-    const moved = await repo.transferToHolder(row.id, citizenid);
-    if (!moved) {
-      console.error(
-        `[mica] could not record that ${who(number(row))} is now held by ${who(citizenid)}. They are ` +
-          `using the phone it is on, so the phone answers to that number for them this ` +
-          `session, but ${PHONE_NUMBERS_TABLE} still names ${who(row.citizenid)}.`
       );
     }
   }
@@ -249,7 +227,6 @@ const number = (row: AssignedNumberRow): string => `number ${row.number}`;
  * A duplicate can come from either key. A duplicate `number` is an ordinary collision:
  * generate another. A duplicate `device_id` means a concurrent sync already gave this phone a
  * number, and no new candidate will get past that — so the winner's row is claimed instead.
- * With no phone id, the same question is asked of the citizen's legacy row.
  *
  * Returns null on failure rather than throwing. The callers are subscribers to the phone-item
  * registry, which must not be able to fail a load; a player with no number has a phone that
@@ -257,7 +234,7 @@ const number = (row: AssignedNumberRow): string => `number ${row.number}`;
  */
 const assign = async (
   citizenid: string,
-  deviceId: string | null,
+  deviceId: string,
   preferred: string | null
 ): Promise<string | null> => {
   const candidates = function* (): Generator<string> {
@@ -270,7 +247,7 @@ const assign = async (
       await repo.create({
         citizenid,
         number: candidate,
-        ...(deviceId ? { device_id: deviceId } : {})
+        device_id: deviceId
       } as Partial<PhoneNumberRow>);
       return candidate;
     } catch (error) {
@@ -284,8 +261,10 @@ const assign = async (
         return null;
       }
 
-      const winner = deviceId ? await readRowByPhoneId(deviceId) : await readLegacyRow(citizenid);
-      if (winner) return await claimRow(winner, citizenid);
+      const winner = await readRowByPhoneId(deviceId);
+      // A row on this phone naming somebody else is not theirs to take: nothing this sync,
+      // and the next one's `numberForPhone` detaches it first.
+      if (winner) return winner.citizenid === citizenid ? await claimRow(winner, citizenid) : null;
 
       if (candidate === preferred) {
         console.warn(
@@ -306,75 +285,97 @@ const assign = async (
   return null;
 };
 
-/**
- * The number for a citizen with no phone identity: the legacy path, and the whole path on a
- * server that cannot carry a phone id.
- *
- * Stable across reconnects because the cache and the legacy row are consulted before anything
- * is generated. `preferred` is the framework's own number, adopted on the first sync so that a
- * qb server with no phone item — where this is every player, forever — keeps every number it
- * already had.
- */
-export const ensureNumber = async (
-  citizenid: string,
-  preferred: string | null = null
-): Promise<string | null> => {
-  if (!citizenid) return null;
-
-  const cached = numberFor(citizenid);
-  if (cached) return cached;
-
-  const legacy = await readLegacyRow(citizenid);
-  if (legacy) {
-    const claimed = await claimRow(legacy, citizenid);
-    rememberNumber(citizenid, claimed);
-    return claimed;
-  }
-
-  const issued = await assign(citizenid, null, preferred);
-  if (issued) rememberNumber(citizenid, issued);
-  return issued;
-};
+/** What putting a legacy number on its phone came to: the number, and whether it is on the phone. */
+interface Attached {
+  number: string | null;
+  /** False while the number is answered from the legacy row unattached: the next sync tries again. */
+  settled: boolean;
+}
 
 /**
- * Put the citizen's legacy number onto the phone in their hand.
+ * Put the citizen's legacy number onto their phone.
  *
  * The upgrade path, and the reason nobody's number changes: the migration left their number
- * as a legacy row, and the first phone they use takes it. A duplicate here is a concurrent
- * sync that gave this phone a number first, and its row is claimed rather than fought over.
+ * as a legacy row, and their phone takes it on its first sync, gated or not (MICA-439). **No
+ * version is written** (`attachToPhone`, MICA-438 review), so this works on a database
+ * `micaschema apply` has not brought up to MICA-430 too.
+ *
+ * A duplicate here is a concurrent sync that gave this phone a number first, and its row is
+ * claimed rather than fought over — if it is this citizen's. Any other failure, or an attach
+ * that moved nothing because the row moved meanwhile, leaves the number theirs, unattached:
+ * the legacy row is answered as it stands, nothing is issued in its place, and the phone is
+ * left uncached so the next sync tries again. Said each time.
  */
 const attachLegacy = async (
   legacy: AssignedNumberRow,
   deviceId: string,
   citizenid: string
-): Promise<string | null> => {
+): Promise<Attached> => {
   try {
-    const attached = await repo.attachToPhone(legacy.id, deviceId);
+    const attached = await repo.attachToPhone(legacy.id, deviceId, citizenid);
     if (!attached) {
       console.error(
-        `[mica] could not attach ${who(number(legacy))} to the phone ${who(citizenid)} is using. It ` +
-          `stays their number for this session; the next sync tries again.`
+        `[mica] ${who(number(legacy))} was already on a phone, or no longer ${who(citizenid)}'s ` +
+          `legacy row, when their sync went to attach it — a concurrent sync, most likely. It ` +
+          `is answered as read this sync, not cached, and the next sync reads the row again.`
       );
+      return { number: await claimRow(legacy, citizenid), settled: false };
     }
   } catch (error) {
-    if (!isDuplicateKey(error)) {
-      console.error(`[mica] could not attach ${who(number(legacy))} to a phone.`, traceOf(error));
-      return null;
+    if (isDuplicateKey(error)) {
+      const winner = await readRowByPhoneId(deviceId);
+      const theirs = winner !== null && winner.citizenid === citizenid;
+      return { number: theirs ? await claimRow(winner, citizenid) : null, settled: theirs };
     }
-    const winner = await readRowByPhoneId(deviceId);
-    return winner ? await claimRow(winner, citizenid) : null;
+    console.error(
+      `[mica] could not attach ${who(number(legacy))} to a phone. It stays their number, ` +
+        'unattached; the next sync tries again.',
+      traceOf(error)
+    );
+    return { number: await claimRow(legacy, citizenid), settled: false };
   }
-  return await claimRow(legacy, citizenid);
+  return { number: await claimRow(legacy, citizenid), settled: true };
+};
+
+/**
+ * Take a number row that names somebody else off this citizen's phone (MICA-438 review). Only a
+ * handover before MICA-436 could leave one, and only where that handover actually ran, which no
+ * live server did (the owner confirmed it for production).
+ *
+ * **The row cannot tell which character should have had the number.** Numbers followed the
+ * phone then, so in the common case it was the phone owner's and the handover left it naming the
+ * last holder; in the rare reverse case it was the named character's all along. So nothing is
+ * adopted across characters by code: the number stays with the character the row names, as
+ * their legacy number, which their own phone takes on their next sync; and this phone's owner
+ * goes on to their own legacy row, or a fresh number. In the common case that hands the owner's
+ * old number to the last holder — the price of never guessing. Said once per row, by token.
+ */
+const detachForeign = async (
+  row: AssignedNumberRow,
+  deviceId: string,
+  owner: string
+): Promise<boolean> => {
+  const detached = await repo.detachForeign(row.id, deviceId, owner);
+  reportOnce(
+    `detached:${row.id}`,
+    `[mica] ${who(number(row))} was on ${who(owner)}'s phone ${who(deviceId)} but named ` +
+      `${who(row.citizenid)}, a row a handover left before MICA-436. ` +
+      (detached
+        ? `Detached: it is ${who(row.citizenid)}'s number again, on their own phone's next sync.`
+        : 'It moved before it could be detached; the next sync reads it again.')
+  );
+  return detached;
 };
 
 /**
  * The number on a phone, for the citizen holding it.
  *
- * In order: the number already on this phone, whoever it was recorded against (`claimRow`);
- * the holder's legacy number, attached to the phone; and finally a fresh assignment, preferring
- * the framework's own value. That order is what makes both stories true at once: a phone keeps
- * its number through a robbery — it stays with the phone, which stays its owner's (MICA-436) —
- * and a character keeps their number through the upgrade that introduced phones.
+ * In order: the number already on this phone (`claimRow`) — detached first if it names
+ * somebody else (`detachForeign`); the citizen's legacy number, attached to the phone; and
+ * finally a fresh assignment, preferring the framework's own value.
+ * That order is what keeps a character's number through the upgrade that introduced phones,
+ * and through a robbery: the phone is the citizen's own whichever item they hold (MICA-438), so
+ * a new item finds the number already on it.
  */
 const numberForPhone = async (
   phone: ActiveDevice,
@@ -385,17 +386,30 @@ const numberForPhone = async (
   if (known && known.citizenid === citizenid) return known.number;
 
   let resolved: string | null;
-  const existing = await readRowByPhoneId(phone.deviceId);
+  // Cached only once the number is on the phone, so a legacy row an attach could not move yet
+  // is tried again on the next sync rather than answered from here until a restart.
+  let settled = true;
+  let existing = await readRowByPhoneId(phone.deviceId);
+  if (existing && existing.citizenid !== citizenid) {
+    // A row naming somebody else: it stays theirs, off this phone, and the owner goes on to
+    // their own (`detachForeign` has why nothing is adopted). If it moved meanwhile, nothing.
+    if (!(await detachForeign(existing, phone.deviceId, citizenid))) return null;
+    existing = null;
+  }
   if (existing) {
     resolved = await claimRow(existing, citizenid);
   } else {
     const legacy = await readLegacyRow(citizenid);
-    resolved = legacy
-      ? await attachLegacy(legacy, phone.deviceId, citizenid)
-      : await assign(citizenid, phone.deviceId, preferred);
+    if (legacy) {
+      const attached = await attachLegacy(legacy, phone.deviceId, citizenid);
+      resolved = attached.number;
+      settled = attached.settled;
+    } else {
+      resolved = await assign(citizenid, phone.deviceId, preferred);
+    }
   }
 
-  if (resolved) onPhone.set(phone.deviceId, { number: resolved, citizenid });
+  if (resolved && settled) onPhone.set(phone.deviceId, { number: resolved, citizenid });
   return resolved;
 };
 
@@ -492,10 +506,21 @@ const syncOnce = async (src: number): Promise<string | null> => {
   // micaOS's own cache, and ESX never reaches here.
   const preferred = kind === 'qb' ? frameworkNumber(player) : null;
 
-  const resolved =
+  /**
+   * The phone either way (MICA-439): the one in hand on a gated server, the citizen's one phone
+   * where nothing is counted. Both read the phone's own number row, so a phone item turned off
+   * after it was on, or on after off, keeps the number with the phone. Before MICA-439 the
+   * ungated path read only a legacy row, missed the one already attached to the phone, was
+   * refused the framework's number by `number_unique`, and issued and wrote back a second one
+   * while calls and texts (`numberOfPhone`) went on carrying the first.
+   */
+  const phone =
     resolution.status === 'active'
-      ? await numberForPhone(resolution.device, player.citizenid, preferred)
-      : await ensureNumber(player.citizenid, preferred);
+      ? resolution.device
+      : { deviceId: await identityPhone(player.citizenid) };
+  if (!stillOn(src, player.citizenid)) return null;
+
+  const resolved = await numberForPhone(phone, player.citizenid, preferred);
   if (!resolved || !stillOn(src, player.citizenid)) return null;
 
   rememberNumber(player.citizenid, resolved);
@@ -556,9 +581,10 @@ export const syncNumber = (src: number): Promise<string | null> => {
 
 /**
  * Subscribed to the phone-item registry rather than to `onPlayerLoaded` directly, because the
- * registry is fired from every place the active phone can change — the load, the usable-item
- * callback, the inventory relay — and a subscriber of `onPlayerLoaded` alone would be right at
- * connect and stale the moment a player picked up a second phone. `lib/deviceItem.ts` has why
- * the source it hands over is one already established (MICA-136).
+ * registry is fired from every place a player's phone in hand can change — the load, the
+ * usable-item callback, the inventory relay — and a subscriber of `onPlayerLoaded` alone would be
+ * right at connect and stale the moment a player who held no phone picked one up. A character
+ * has one phone (MICA-438), so what changes is only whether they hold it. `lib/deviceItem.ts`
+ * has why the source it hands over is one already established (MICA-136).
  */
 onPhoneStateChanged('phonenumbers', (src) => syncNumber(src));

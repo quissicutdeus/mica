@@ -13,8 +13,6 @@ const { dbMock, bridgeMock, convar } = vi.hoisted(() => {
     dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() },
     bridgeMock: {
       getPlayer: vi.fn(),
-      itemSlots: vi.fn(),
-      setItemMetadata: vi.fn(() => true),
       registerUsableItem: vi.fn(),
       countItem: vi.fn(() => 1),
       forgetSource: vi.fn(),
@@ -54,7 +52,7 @@ import { MAX_DEFAULT_CONTACTS, __resetOwnerConfig } from '../lib/ownerConfig';
 
 const SRC = 7;
 const CID = 'ABC12345';
-const CARRIED = 'a'.repeat(32);
+const EXISTING = 'a'.repeat(32);
 const ID_SHAPE = /^[0-9a-f]{32}$/;
 const INLINE = JSON.stringify([
   { name: 'Dispatch', number: '911' },
@@ -92,8 +90,11 @@ beforeEach(() => {
   dbMock.update.mockResolvedValue(true);
   dbMock.single.mockResolvedValue(null);
   bridgeMock.getPlayer.mockReturnValue({ citizenid: CID, source: SRC, setMeta: vi.fn() });
-  bridgeMock.setItemMetadata.mockReturnValue(true);
+  bridgeMock.countItem.mockReturnValue(1);
 });
+
+/** The one phone row this case's resolve inserted (MICA-438: the citizen's one phone). */
+const insertedPhone = (): unknown => insertsInto('mica_devices')[0]?.device_id;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -129,38 +130,38 @@ describe('seeding a new phone', () => {
     ]);
   });
 
-  it("seeds a phone first recorded from the id on an item, onto that item's phone", async () => {
+  it('seeds the phone a gated resolve creates for the holder of a phone item', async () => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
 
     const resolution = await resolvePhone(SRC);
     await settle();
 
-    expect(resolution.status).toBe('active');
-    expect(insertsInto('mica_contacts').map((row) => row.device_id)).toEqual([CARRIED, CARRIED]);
+    expect(resolution).toEqual({ status: 'active', device: { deviceId: insertedPhone() } });
+    expect(insertsInto('mica_contacts').map((row) => row.device_id)).toEqual([
+      insertedPhone(),
+      insertedPhone()
+    ]);
   });
 
-  it('seeds nothing onto a tablet, minted from its item or as its identity (MICA-264)', async () => {
+  it('seeds nothing onto a tablet, gated on its item or not (MICA-264)', async () => {
     convar.mica_tablet_item = 'tablet';
-    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
-      item === 'tablet' ? [{ slot: 5, metadata: {} }] : null
-    );
 
-    const fromItem = await deviceForRequest(SRC, CID, 'tablet');
+    const held = await deviceForRequest(SRC, CID, 'tablet');
     await settle();
+    // `claimed` is never written since MICA-438: the column keeps its default.
     expect(insertsInto('mica_devices')).toEqual([
-      { citizenid: CID, device_id: fromItem, kind: 'tablet', claimed: 1, setup_pending: 1 }
+      { citizenid: CID, device_id: held, kind: 'tablet', setup_pending: 1 }
     ]);
     expect(insertsInto('mica_contacts')).toEqual([]);
 
-    // And where no item can carry an id: the tablet's identity row, unseeded too.
+    // And with no tablet item at all: the same kind of row, unseeded too.
     __resetDeviceState();
     dbMock.insert.mockClear();
-    bridgeMock.itemSlots.mockReturnValue(null);
-    const identity = await deviceForRequest(SRC, CID, 'tablet');
+    delete convar.mica_tablet_item;
+    const ungated = await deviceForRequest(SRC, CID, 'tablet');
     await settle();
     expect(insertsInto('mica_devices')).toEqual([
-      { citizenid: CID, device_id: identity, kind: 'tablet', claimed: 0, setup_pending: 1 }
+      { citizenid: CID, device_id: ungated, kind: 'tablet', setup_pending: 1 }
     ]);
     expect(insertsInto('mica_contacts')).toEqual([]);
 
@@ -213,18 +214,19 @@ describe('seeding a new phone', () => {
 });
 
 describe('never seeding twice', () => {
-  it.each([
-    ['a claim of their own', CID, { status: 'active' }],
-    // Somebody else's phone is refused outright (MICA-436), so nothing could seed it either.
-    ["somebody else's", 'SOMEONE_ELSE', { status: 'none' }]
-  ])('does not seed a phone that already has a row: %s', async (_label, owner, outcome) => {
+  it('does not seed a phone that already has a row', async () => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
-    dbMock.query.mockResolvedValue([{ id: 1, citizenid: owner, device_id: CARRIED, claimed: 0 }]);
+    dbMock.query.mockResolvedValue([
+      { id: 1, citizenid: CID, device_id: EXISTING, kind: 'phone', setup_pending: 0 }
+    ]);
 
-    await expect(resolvePhone(SRC)).resolves.toMatchObject(outcome);
+    await expect(resolvePhone(SRC)).resolves.toEqual({
+      status: 'active',
+      device: { deviceId: EXISTING }
+    });
     await settle();
 
+    expect(insertsInto('mica_devices')).toEqual([]);
     expect(insertsInto('mica_contacts')).toEqual([]);
   });
 
@@ -235,7 +237,9 @@ describe('never seeding twice', () => {
 
     // The contacts table is whatever the player made of it; the phone row is what persists.
     __resetDeviceState();
-    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, device_id: deviceId, claimed: 0 }]);
+    dbMock.query.mockResolvedValue([
+      { id: 1, citizenid: CID, device_id: deviceId, kind: 'phone', setup_pending: 0 }
+    ]);
 
     expect(await identityPhone(CID)).toBe(deviceId);
     await settle();
@@ -244,7 +248,6 @@ describe('never seeding twice', () => {
 
   it('does not seed again on a second resolve of the same new phone', async () => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
 
     await resolvePhone(SRC);
     await resolvePhone(SRC);
@@ -267,14 +270,13 @@ describe('seeding never holds up the phone', () => {
 
   it('resolves the phone in hand while its contacts are still being written', async () => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     hangContactInserts();
 
     const resolution = await resolvePhone(SRC);
 
-    expect(resolution).toMatchObject({ status: 'active', device: { deviceId: CARRIED } });
-    // The seed is queued behind the resolve on the phone's queue (MICA-327), so it starts a
-    // tick later — and its first insert then hangs for good, after the phone was answered.
+    expect(resolution).toEqual({ status: 'active', device: { deviceId: insertedPhone() } });
+    // The seed is queued on the phone's queue (MICA-327), so it starts a tick later — and its
+    // first insert then hangs for good, after the phone was answered.
     await settle();
     expect(insertsInto('mica_contacts')).toHaveLength(1);
   });
@@ -283,20 +285,19 @@ describe('seeding never holds up the phone', () => {
 describe('a seed still running never holds up a settled phone (MICA-327)', () => {
   it('answers a second resolve of a new phone while its contacts hang', async () => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     hangContactInserts();
 
     await resolvePhone(SRC);
     await settle();
     expect(insertsInto('mica_contacts'), 'the seed is running, and hangs').toHaveLength(1);
 
-    // The holder is settled, so the second resolve must not wait in the phone's queue behind
-    // a seed that never finishes.
+    // The phone is known, so the second resolve must not wait in the phone's queue behind a
+    // seed that never finishes.
     const second = await Promise.race([
       resolvePhone(SRC),
       new Promise((resolve) => setTimeout(() => resolve('still waiting'), 50))
     ]);
-    expect(second).toMatchObject({ status: 'active', device: { deviceId: CARRIED } });
+    expect(second).toEqual({ status: 'active', device: { deviceId: insertedPhone() } });
   });
 });
 
@@ -319,7 +320,6 @@ describe('seeding never fails the phone', () => {
   it('resolves the phone in hand when seeding fails', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     dbMock.insert.mockImplementation(async (query: string) => {
       if (query.includes('`mica_contacts`')) throw new Error('database went away');
       return 1;
@@ -328,7 +328,7 @@ describe('seeding never fails the phone', () => {
     const resolution = await resolvePhone(SRC);
     await settle();
 
-    expect(resolution).toMatchObject({ status: 'active', device: { deviceId: CARRIED } });
+    expect(resolution).toEqual({ status: 'active', device: { deviceId: insertedPhone() } });
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining("new-phone hook 'defaultContacts' failed"),
       expect.any(String)

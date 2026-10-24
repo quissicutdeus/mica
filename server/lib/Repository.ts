@@ -340,9 +340,10 @@ export abstract class Repository<T> {
    *
    * §2.9 says a row id is never authorization. A phone id is not either, and it is the more
    * tempting mistake of the two because it *looks* like an identity: it is opaque, unique, and
-   * names exactly one phone. It comes out of inventory item metadata, which is another
-   * resource's storage that a modified inventory can write — so a phone id off the wire is
-   * a claim, not a fact.
+   * names exactly one phone. Since MICA-438 the server reads it only from the citizen's own
+   * `mica_devices` row, never from an item or a payload — but an id from anywhere else is a
+   * claim, not a fact, and MICA-219 to MICA-436 did read it out of item metadata, which any
+   * resource sharing the inventory can write.
    *
    * The rule this enforces is therefore **both, or neither**: a caller narrowing to one phone
    * still passes the citizenid the server resolved from the framework connection, and this

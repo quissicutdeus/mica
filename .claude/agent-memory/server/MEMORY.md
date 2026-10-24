@@ -51,8 +51,8 @@ line here.
 - [A defaulted column tripped the widen-resume check](additive-column-trips-widen-resume.md)
   — resume skipped the additive pass until MICA-264 fixed it; run
   test:migrations
-- [A citizen-keyed phone cache outlives a robbery, on purpose](citizen-phone-cache-outlives-the-holder.md)
-  — MICA-436: the thief is refused, rows wait for the owner; no `holderNow`
+- [A stolen phone's rows wait for its owner, on purpose](citizen-phone-cache-outlives-the-holder.md)
+  — MICA-438: one phone per character; a thief's item opens the thief's own
 - [A loop over a registry function asserts nothing](registry-loop-over-a-function-is-empty.md)
   — `Object.entries(REPORTABLE)` is `[]`; assert the count, import every
   declarer
@@ -160,9 +160,9 @@ line here.
 - [A join onto information_schema.COLUMNS reads every database](information-schema-join-scans-every-database.md)
   — `ON` does not narrow the fill; `UNION ALL` single-table reads instead
 - [A read on somebody else's behalf can skip the owner's read](a-foreign-read-skips-the-owners-read.md)
-  — MICA-436 `judgeRow` cached the owner; `resumeSetup` never ran for them
+  — MICA-436's `judgeRow` trap, gone in MICA-438; record on every read
 - [clearAllMocks keeps a mockReturnValue](clear-all-mocks-keeps-return-values.md)
   — a stale `countItem` 0 passed a "not held" push under break-to-prove
 - [A test-schema variant is one long scope](test-schema-variants-are-one-scope.md)
-  — a new `const before` collides; `node --check` first; resolveDevice runs
-  there
+  — a new `const before` collides; `node --check` first; a create check needs a
+  fresh citizen

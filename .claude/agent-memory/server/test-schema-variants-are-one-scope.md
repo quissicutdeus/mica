@@ -14,5 +14,11 @@ the harness. `pnpm lint:ts` reports it as well
 (`Identifier 'before' has already been declared`).
 
 The harness's bundle already exports most of the server. A real `resolveDevice`
-runs there with `FrameworkBridge.itemSlots` reassigned, and `GetConvar` wrapped
-for `mica_phone_item`. Restore both in a `finally`.
+runs there (MICA-438) with a qb-shaped `rawPlayer` whose `GetItemByName` is the
+real count path, and `GetConvar` wrapped for `mica_phone_item`. Restore the
+convar in a `finally`.
+
+**A check that a resolve creates a row needs a citizen nothing above touched.**
+By that point the import and the seeds have given A and B phone rows through
+`phoneForCitizen`, so a resolve for either creates nothing. The MICA-438 case
+resolves a fresh `CIT_THIEF` (ESX: a `char2:` id) for "creates its own row".

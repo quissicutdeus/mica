@@ -1094,8 +1094,8 @@ export const getBatteryLevel = async (
 /**
  * The device an export's charge belongs to, or `null` for none.
  *
- * The phone: the one this citizen is on — in hand, else last used, else their identity phone —
- * so the export answers for the phone a reconnect would restore (MICA-283). Never `null`.
+ * The phone: this citizen's one phone (MICA-438), held or not, so the export answers for the
+ * phone a reconnect would restore (MICA-283). Never `null`.
  *
  * Any other device (MICA-337): the one this source's live charge belongs to, else the one in
  * their hand, through the same `deviceForRequest` a tablet request is scoped by. `null` for a

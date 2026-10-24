@@ -50,7 +50,7 @@ const PAIR_KEY_MAX_LENGTH = PARTICIPANT_KEY_MAX_LENGTH * 2 + 1;
  * action below checks. Rename is one of those since MICA-339: it rode the ownership-scoped
  * generic update, which asked the row's `citizenid` and so stayed with the creator after the
  * phone the thread is on changed hands, as phones did before MICA-436. It is the custom `update`
- * below now, authorized by the admin membership on the phone in hand, and the generic one is
+ * below now, authorized by the admin membership on the caller's phone, and the generic one is
  * off.
  *
  * That split is exactly why `access` has two axes rather than one `scope`: this table
@@ -235,12 +235,12 @@ export const conversations = defineService<ConversationRow, typeof conversations
           citizenId: true,
           notNull: true
           // Not versioned (MICA-430 review): it always names the phone's owner, and nothing
-          // moves it (MICA-436).
+          // moves it (MICA-436, MICA-438).
         },
         /**
          * The phone this membership is on (MICA-282). A thread lives on the device: the
          * participant row names the phone, and `citizenid` names that phone's owner, which
-         * nothing moves (MICA-436): a thread on a phone somebody else holds waits there. Nullable
+         * nothing moves (MICA-438): only the owner's requests ever resolve to the phone. Nullable
          * for the same reason `deviceOwned` columns are — the migration backfills it — and
          * because a child table has no repository to refuse a NULL through.
          */
@@ -290,8 +290,9 @@ export const conversations = defineService<ConversationRow, typeof conversations
          * goes through `ensureLineParticipant` (MICA-275), which reopens the `left` row in
          * place before it would insert. Every other `addParticipant` is reached only from
          * `create`, for a thread that has just been made. Per phone rather than per person
-         * because one person's two phones are two members: a thread between my burner and
-         * Bob and a thread between my main phone and Bob are two threads.
+         * because a membership belongs to the device its rows do. A character has one phone
+         * since MICA-438, so the two are one answer now; rows an earlier build left on a
+         * second phone stay members of their own threads, as they were.
          *
          * Over `live_device` since MICA-428, as `conversation_live_device`: an erased
          * membership, kept naming its real member, holds no slot, so the phone can open the
@@ -773,9 +774,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
  * Rename a thread (MICA-339). **Only the thread's admin, on the phone in their hand.**
  *
  * The admin is the membership `create` writes for the creator, on the phone the thread was
- * started on, and only that phone's owner can use it (MICA-436): somebody else holding it is
- * refused the phone before this runs. Other members are refused as before, with `false` and no
- * toast; the rename UI is optimistic and does not say so either.
+ * started on, and only that phone's owner is ever answered it (MICA-438): any phone item opens
+ * its holder's own phone. Other members are refused as before, with `false` and no toast; the
+ * rename UI is optimistic and does not say so either.
  */
 app.registerEvent('update', async (source, cbId, data, citizenid) => {
   const deviceId = await deviceForRequest(source, citizenid);

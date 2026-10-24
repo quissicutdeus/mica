@@ -7,13 +7,12 @@ Failed `onDeviceCreated` hooks are now kept per phone in `Devices.ts`
 (`owedSetup`) and retried on that phone's next resolve, backed off like a
 handover retry.
 
-**Every write that names a holder goes on the phone's queue** (`queueOnDevice`,
-the MICA-319 `settling` chain): `ensureHeld`, the first seed, and every retry.
-The retry is queued, not awaited, so the next resolve waits behind it. A seed
-running outside that queue can race a handover: the new holder's walk moves the
-rows, then the seed writes rows naming the old holder, and the new holder is
-cached with nothing left to walk (Bly, review). The seed also asks who holds the
-phone when it runs (`holderNow`), not who triggered it.
+**Every set-up run goes on the device's queue** (`queueOnDevice`, the MICA-319
+`settling` chain): the first seed and every retry, so two runs never overlap and
+double an idempotent hook's rows. Queued, not awaited. Until MICA-436 the queue
+also held `ensureHeld`, because a seed outside it could race a handover's walk
+(Bly, review). Since MICA-438 no resolve joins the queue: a resolve reads only
+its own citizen's row, which no hook changes, and the hook is handed the owner.
 
 A retried hook must be idempotent, and for contacts the "already there" check
 has to read rows **in any status**. `Repository.delete` is soft, so a default

@@ -188,12 +188,13 @@ not work around it.
      the repository's `columns` allowlist first (derived from `defineService`,
      §10, or hand-written).
    - **Never mutate a row without an ownership predicate.** `update`/`delete`
-     require a `citizenid` in the `WHERE`; a row id, or a **phone id** out of
-     inventory metadata, is never authorization alone — a phone id may only
-     _narrow_ a predicate that already names the citizen. Rows shared between
-     players go through `Repository.isMember` (§10); privileged writes go
-     through a **named** method built on `protected updateUnscoped`, never a
-     service-level bypass.
+     require a `citizenid` in the `WHERE`; a row id, or a **device id**, is
+     never authorization alone — a device id is the server's own answer for the
+     citizen, never a payload's or an item's, and may only _narrow_ a predicate
+     that already names the citizen (MICA-438). Rows shared between players go
+     through `Repository.isMember` (§10); privileged writes go through a
+     **named** method built on `protected updateUnscoped`, never a service-level
+     bypass.
    - **`clientWritable` declares what a payload may set**, and `ServiceEndpoint`
      reduces to that set before it reaches SQL. `id`, `citizenid`, `created_at`,
      `updated_at` and `status` are never client-writable.

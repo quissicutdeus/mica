@@ -38,8 +38,8 @@ export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
    * against `device_id_unique`, the same upsert shape `Settings.ts`'s `put` uses for the
    * same reason: two rapid writes race in a find-then-insert, and the constraint decides
    * here instead of whichever query happens to interleave first. `citizenid` is written on
-   * the update too: it is always the phone's owner, the only citizen a resolve answers the
-   * phone (MICA-436), so it changes nothing but a row a handover before MICA-436 left.
+   * the update too: it is always the phone's owner, the only citizen whose requests resolve to
+   * the phone (MICA-438), so it changes nothing but a row a handover before MICA-436 left.
    */
   async upsert(citizenid: string, deviceId: string, hash: string, salt: string): Promise<void> {
     await Database.query(
@@ -89,9 +89,8 @@ export const lockscreen = defineService<LockscreenRow, typeof lockscreenContract
     passcode_salt: { type: 'string', length: 32, clientWritable: false }
   },
   // One passcode per **phone** (MICA-282; `0002_phone_data_follows_the_phone` swaps the old
-  // `citizenid_unique` for it). The lock belongs to the device: a second phone has its own,
-  // and a stolen one keeps the code its owner set — nobody else is answered the phone to clear
-  // it (MICA-436).
+  // `citizenid_unique` for it). The lock belongs to the device — the phone's and the tablet's
+  // are two rows — and nobody but the owner is ever answered the device to clear it (MICA-438).
   indexes: [{ name: 'device_id_unique', columns: ['device_id'], unique: true }],
   uniqueAfterDelete: {
     optOut:

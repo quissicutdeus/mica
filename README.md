@@ -522,9 +522,9 @@ itself.
 A player who logs out to character select stays connected, so FiveM fires no
 `playerDropped`. micaOS therefore listens for the framework's own logout event
 and, when it hears one, ends that character's call for both parties (filing the
-call-log row under them), turns off their speakerphone and music broadcast,
-clears the phone they last used, and stops addressing pushes such as a 911 call,
-a contact share or a notification to the player until a character loads again.
+call-log row under them), turns off their speakerphone and music broadcast, and
+stops addressing pushes such as a 911 call, a contact share or a notification to
+the player until a character loads again.
 
 | Framework         | Event micaOS listens for       | Fired by                         |
 | ----------------- | ------------------------------ | -------------------------------- |
@@ -1657,71 +1657,63 @@ The item has to be **usable** in the inventory's own terms (`useable = true` on
 qb-core; ox_inventory and ESX make every registered item usable), or using it
 does nothing and only the keybind opens the phone.
 
-**A phone has an identity of its own.** The first time a player uses their phone
-item, micaOS mints an id into that item's inventory metadata and remembers it.
-Two phones are therefore two phones: the id travels with the item, so it
-survives a relog, a stash, a trade or a robbery, and it is what later releases
-key a phone's contacts, messages and media on. **The phone you last used is the
-active one**, falling back to the lowest inventory slot holding one if you have
-not used either this session — so switching between your own phone and a burner
-is a matter of using the one you want. What "using" means is the inventory's use
-action on that item (right-click, or however your inventory uses things);
-dragging a phone between slots changes nothing, and neither does picking one up.
-Using the other phone switches everything: its contacts, threads, photos,
-settings, passcode, battery charge and number replace the previous phone's on
-screen, and its number is what the framework now reports for you. A player
-holding no phone at all sees a closed phone and, if a script asks anyway, is
-told they are not holding one.
+**A phone item is a key, not a phone** (MICA-438). A character has exactly one
+phone, and holding any phone item opens _their_ phone, with their contacts,
+messages, photos and number on it. Nothing is written into the item and nothing
+is read from it, so it does not matter which copy it is, which slot it sits in
+or who bought it. There is no burner to buy and no phone to remember to pick:
+one keybind opens the one phone. A player holding no phone item sees a closed
+phone and, if a script asks anyway, is told they are not holding one.
 
-**A phone belongs to the first citizen who uses it, for good** (MICA-436). The
-id travels with the item, but the ownership does not: a player holding somebody
-else's used phone, whether stolen, bought second-hand, duplicated or taken in a
-search, has a closed phone, and a request that reaches the server anyway is
-refused with "You are not holding a phone." Nothing moves, so there is nothing
-to hand back: the owner has their phone again the moment they have the item
-again. A phone nobody has used has no owner yet, so a shop's stock is
-unaffected. The price is that a used phone cannot be sold on to a second player
-until its owner can reset it (MICA-437). On qb-inventory, which lists one slot,
-a player holding their own phone and somebody else's can be refused, depending
-on which slot the inventory reports. `docs/phone-as-an-item.md` has what a
-robbery, a confiscation and a burner look like on top of this.
+**A stolen phone costs its owner a new item and nothing else.** A thief using
+your item opens _their own_ phone, with their own data. You buy another phone
+item and have everything back, as though it had been restored from a backup, and
+getting the stolen one back changes nothing. A phone item sold or handed to
+someone else is a key to that person's phone, so a phone cannot be passed on
+with its contents. `docs/phone-as-an-item.md` has what a shop, a robbery and a
+confiscation look like on top of this.
 
-**This needs `ox_inventory`.** It is the only inventory with real per-item
-metadata to mint an id into, and it is what qbx_core uses. On qb-inventory it
-depends on whether your build exposes `SetItemData`. es_extended's own inventory
-stores quantities and nothing else and cannot carry an id at all — those servers
-keep exactly the behaviour they have today, and say so once at start rather than
-failing quietly. Nothing about a phone's identity is a secret or a credential:
-the server always checks the character presenting the phone as well, so a copied
-id on its own grants nothing.
+**Every inventory behaves the same.** micaOS only counts the item
+(ox_inventory's `GetItemCount`, a qb player's `GetItemByName`, an ESX xPlayer's
+`getInventoryItem`), so ox_inventory, qb-inventory and es_extended's own
+inventory work alike and none of them needs per-item metadata. Who can add and
+remove the item is a control on whether a player can open their own phone and on
+nothing else: a duplicated item is another key to the same phone, and no item
+opens anyone else's.
+
+**An older development build may have left a character several phones.** The
+newest row (newest `updated_at`, then the highest `id`) is their phone now, and
+the others stay where they are (`docs/phone-as-an-item.md` has how to find
+them). A server that never ran one has nothing to do.
 
 **A number belongs to the phone.** On standalone and on both qb cores micaOS is
 the source of truth for phone numbers, recorded in `mica_phone_numbers` against
-the phone they are on. Using a phone makes its number your number; a phone keeps
-its number, and the phone stays with the citizen who first used it (above), so a
-phone that is taken does not ring for whoever took it. Nothing changes for an
-existing server on upgrade — the migration copies every character's
-`charinfo.phone` in, and a new character keeps the number qb issued — and
-whenever your active phone changes, its number is written back into
-`charinfo.phone` through the framework's own export (`SetCharInfo` on qbx_core,
-`SetPlayerData` on qb-core), so `GetPlayerByPhone`, dispatch and job scripts
-keep working unmodified. A player holding no phone keeps the last value the
-framework had rather than a blank. **ESX is the exception**: there is no
-standard setter for an ESX phone number, so micaOS keeps reading whatever your
-phone-number resource provides, issues none of its own, and says so once at
-start. Without the gate, every server behaves as one number per character, as it
-always has.
+the phone they are on. A character has one phone and so one number, whichever
+item they hold, and a thief using your item rings on their own number, not
+yours. Nothing changes for an existing server on upgrade — the migration copies
+every character's `charinfo.phone` in, and a new character keeps the number qb
+issued — and whenever the number micaOS has differs from the framework's, it is
+written back into `charinfo.phone` through the framework's own export
+(`SetCharInfo` on qbx_core, `SetPlayerData` on qb-core), so `GetPlayerByPhone`,
+dispatch and job scripts keep working unmodified. A player holding no phone
+keeps the last value the framework had rather than a blank. **ESX is the
+exception**: there is no standard setter for an ESX phone number, so micaOS
+keeps reading whatever your phone-number resource provides, issues none of its
+own, and says so once at start. Without the gate, every server behaves as one
+number per character, as it always has. Turning the gate on or off changes
+nobody's number (MICA-439); `docs/phone-as-an-item.md`, "Turning the gate on and
+off", has the detail.
 
-**The phone's data follows it too.** Contacts, notes, photos, saved places, the
-passcode, settings, notifications, the call log, the block list, message threads
-and the battery charge belong to the phone: carry two and each has its own, and
-a message sent to a number reaches whichever phone that number is on, taken or
-not. A battery bank charges the phone in your hand, and a phone another script
-locked (`LockPhone`) stays locked. Bank, Hodlr, Marketplace listings, Blabber,
-mail and high scores stay with the character. The migration that ships this puts
-every existing row on its owner's phone, and the first phone item a character
-uses picks that phone up; `docs/schema-and-services.md` has the table-by-table
-split.
+**The phone's data belongs to the phone.** Contacts, notes, photos, saved
+places, the passcode, settings, notifications, the call log, the block list,
+message threads and the battery charge are keyed on the character's phone, and
+the tablet keeps its own set. A message sent to a number reaches the phone that
+number is on whether or not its owner is holding an item, and waits there. A
+battery bank charges your phone, and a phone another script locked (`LockPhone`)
+stays locked. Bank, Hodlr, Marketplace listings, Blabber, mail and high scores
+stay with the character. The migration that moved this onto phones put every
+existing row on its owner's phone; `docs/schema-and-services.md` has the
+table-by-table split.
 
 **Standalone ignores the gate.** With no framework there is no inventory to hold
 the item in, so `mica_standalone` with `mica_phone_item` set is reported once at
@@ -1744,11 +1736,10 @@ its Store and its passcode are separate from the phone's. Admin reads the same
 on either device. An add-on installed from a remote catalog is the exception:
 that list is kept by the player's game client, so it shows on both devices.
 
-Without `mica_tablet_item` (the default) a character has exactly one tablet,
-which nobody can hand to anyone else. With it, the tablet is the item: its id is
-written into the item's metadata the first time it is used, and a tablet passed
-to another character is closed to them and keeps its first user's data, as a
-phone does.
+A character has exactly one tablet, with or without `mica_tablet_item`. With it
+set, the tablet is gated on holding the item, and the item is a key as the
+phone's is: any copy opens the holder's own tablet, and a tablet item passed to
+another character opens theirs.
 
 `mica_tablet_item` gates it on an inventory item exactly as `mica_phone_item`
 gates the phone (above), and the two are independent: holding a phone does not
@@ -2361,8 +2352,8 @@ mica/
 - [docs.mica.gg](https://docs.mica.gg/) — the generated `@mica/sdk` API
   reference.
 - [docs/phone-as-an-item.md](docs/phone-as-an-item.md) — what a phone shop, a
-  robbery, a confiscation and a burner look like on top of the item model, and
-  what happens to a phone's data when the item is destroyed.
+  robbery, a confiscation and a trade look like on top of the item model, and
+  what becomes of a phone when its item is destroyed.
 - [docs/demo-container.md](docs/demo-container.md) — the demo image: running it,
   and what it ships.
 - [docs/addon-catalog.md](docs/addon-catalog.md) — the `CatalogEntry` shape a

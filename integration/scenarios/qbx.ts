@@ -6,12 +6,7 @@ import type { Scenario } from '../runner';
 import { requireTap } from '../lib/console';
 import { db } from '../lib/db';
 import { assert, expectOk, expectRefusal, unique } from '../lib/mica';
-import {
-  callOn,
-  itemMetadataRoundTripsThroughAStash,
-  phoneItem,
-  phoneItemExistsInOxInventory
-} from '../lib/oxInventory';
+import { callOn, phoneItem, phoneItemExistsInOxInventory } from '../lib/oxInventory';
 import { QBX_SEED } from '../lib/qbxSeed';
 import { eventually } from '../lib/wait';
 import { BOOTSTRAP_REFUSED } from './schema';
@@ -26,10 +21,10 @@ import { BOOTSTRAP_REFUSED } from './schema';
  * stack lets a server prove without a client.
  *
  * What none of them can reach: a connected player. `FrameworkBridge.getPlayer`, a usable item
- * actually used, an online job or charinfo write-back, and micaOS's own item-metadata seam
- * (`framework/itemMetadata.ts`), which is keyed by a player's source and is not an export, all
- * need one. The metadata scenario below therefore holds ox_inventory's half of that seam, the
- * exact export shapes it reads, and says so.
+ * actually used, an online job or charinfo write-back, and the item count the phone's gate asks,
+ * which is keyed by a player's source, all need one. micaOS reads and writes no item metadata
+ * since MICA-438 (a device item is a key to the holder's own device), so there is no metadata
+ * seam left to hold ox_inventory's half of.
  *
  * What the console proves instead is in the wrapper, which holds the whole console to two
  * lines this resource starts too late to hear: micaOS's bridge line for qbx_core and its
@@ -120,18 +115,6 @@ export const qbxScenarios: Scenario[] = [
     tickets: ['MICA-304', 'MICA-279', 'MICA-280'],
     timeoutMs: 40_000,
     run: phoneItemExistsInOxInventory
-  },
-  {
-    // MICA-279, MICA-280, MICA-219: per-item metadata through a stash, in the shapes
-    // `readItemSlots` and `writeItemMetadata` read and write. This is ox_inventory's half of
-    // that seam, not micaOS's (see the file header): `GetSlotsWithItem` answers `{ slot,
-    // metadata }` for each copy, and `SetMetadata` replaces the whole table, which is why
-    // micaOS merges before it writes.
-    id: 'qbx-item-metadata-round-trips-through-a-stash',
-    mode: 'qbx',
-    tickets: ['MICA-304', 'MICA-279', 'MICA-280', 'MICA-219'],
-    timeoutMs: 40_000,
-    run: itemMetadataRoundTripsThroughAStash
   },
   {
     // MICA-223, MICA-232, MICA-284: a character micaOS has never heard of, known only to qbx's

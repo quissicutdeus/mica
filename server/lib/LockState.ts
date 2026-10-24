@@ -30,9 +30,9 @@ import { forgetOnPlayerLoaded } from './shell';
 const locked = new Map<string, boolean>();
 
 /**
- * What the lock is keyed on (MICA-283): the device in the source's hand, so that switching
- * devices switches the lock with everything else. A burner picked up locked stays locked, in
- * whoever's hand it lands, and unlocking one device unlocks nothing else. A source that has
+ * What the lock is keyed on (MICA-283): the device the source is on — the character's one phone,
+ * or one tablet (MICA-438) — so a lock set on it stays with it, through putting the item down
+ * and picking any copy up again, and unlocking one device unlocks nothing else. A source that has
  * not resolved a device of that kind yet — a resource locking a player before their first
  * device-owned request — is keyed on the source itself, the pre-283 behaviour, and
  * `playerDropped` clears exactly those entries: a device's own lock is meant to outlive a

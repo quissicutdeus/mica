@@ -14,7 +14,7 @@ import { type ActionInput, type ContractAction, type ServiceContract } from '@mi
 import { checkReply, withoutOwnerKeys } from './replyShape';
 import { checkPayload, SchemaError, type Schema } from '@mica/shared/schema';
 import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
-import { deviceForRequest, requireDeviceInHandRead } from './deviceIdentity';
+import { deviceForRequest, requireDeviceInHand } from './deviceIdentity';
 import { appDisabledError, disabledAppFor } from './ownerConfig';
 import { traceOf } from './sqlErrors';
 
@@ -164,13 +164,13 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
    * alone on purpose: the shell's boot calls and every app's badge preload are requests too,
    * and refusing them would change what a player without a phone sees.
    *
-   * Checked through the same `requireDeviceInHandRead` a tablet request is held to, so it is
-   * open exactly where that is (no item gate, standalone, an inventory that cannot count) and a
-   * refusal is the `server.phone.notHeld` toast. Somebody else's phone is not a phone held
-   * (MICA-436): its row is read before the action runs. A request naming another device is already
-   * held to that device. A `deviceOwned` action needs no flag: its resolver refuses the same
-   * player. Named per action rather than per service, and on the endpoint rather than the
-   * declaration, so the service that owns the action says so beside it.
+   * Counted through the same `requireDeviceInHand` a tablet request is held to, so it is open
+   * exactly where that is (no item gate, standalone, an inventory that cannot count) and a
+   * refusal is the `server.phone.notHeld` toast. Any phone item is a phone held (MICA-438): it
+   * opens the holder's own phone. A request naming another device is already held to that
+   * device. A `deviceOwned` action needs no flag: its resolver refuses the same player. Named
+   * per action rather than per service, and on the endpoint rather than the declaration, so the
+   * service that owns the action says so beside it.
    */
   public requirePhoneFor(
     ...actions: readonly (ContractAction<C> | 'get' | 'create' | 'update' | 'delete')[]
@@ -185,7 +185,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
    *
    * For a service whose rows are shared rather than the device's — Messages, whose membership is
    * per phone — but whose handlers need to know which phone is asking. Resolved here rather than
-   * in the handler so that an action also flagged `requirePhoneFor` pays one slot read for both
+   * in the handler so that an action also flagged `requirePhoneFor` pays one count for both
    * questions: the resolve is the in-hand check (`RequestDeviceOptions.requireHeld`). Resolved
    * per request and never remembered, the same as a `deviceOwned` service's.
    */
@@ -732,29 +732,11 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       const mustHold = device !== DEFAULT_DEVICE || this.phoneRequired.has(action);
       /**
        * A request that is about to resolve its device answers the in-hand check from that
-       * resolve's slot read (MICA-362), after validation below; counting the item here as well
-       * would read the inventory twice for one question. Every other request is checked now,
-       * reading the row of any slot this process has not seen (MICA-436 review), so a holder of
-       * nothing but somebody else's phone is refused on the first request. The slots are read
-       * before that read yields, so the answer is about the character the request came from.
-       *
-       * That read can yield to the host, and a character switch keeps the source
-       * (`forgetOnPlayerLoaded`), so the source is asked again after it, as it is below after a
-       * schema that awaited: a request whose source is no longer the character it was sent as
-       * is refused whole — generic answer, no log line — rather than run for either character.
+       * resolve's count (MICA-362), after validation below; counting the item here as well
+       * would read the inventory twice for one question. Every other request is counted now.
        */
       const resolves = Boolean(this.options.deviceOwned) || this.deviceResolved.has(action);
-      if (mustHold && !resolves) {
-        await requireDeviceInHandRead(player, device);
-        const now = lookup(src);
-        if (!now || now.citizenid !== player.citizenid) {
-          reply({
-            error: GENERIC_ERROR_MESSAGE,
-            key: GENERIC_ERROR_KEY
-          });
-          return;
-        }
-      }
+      if (mustHold && !resolves) requireDeviceInHand(player, device);
 
       /**
        * Validation slots in **after** authentication and before the handler
@@ -801,13 +783,13 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
        * after validation, because a payload that is not even the right shape should not
        * cost an inventory read. The resolver throws a `PlayerFacingError` for a player
        * holding no phone on a server that gates on one — it lands in the catch below and
-       * reaches them as a toast — and degrades to the citizen's identity phone where no
-       * phone identity can be had. `services/Devices.ts` has the three cases.
+       * reaches them as a toast — and answers the citizen's own phone otherwise, the one
+       * phone a character has (MICA-438). `services/Devices.ts` has the cases.
        *
        * It is handed `holder`, the player this source is known to be right now (above), so it
        * does not walk the framework's players again (MICA-362). `requireHeld` makes the resolve
-       * the in-hand check skipped above, from the same slot read; never cached, so every
-       * request reads the slots again.
+       * the in-hand check skipped above, from the same count; never cached, so every request
+       * counts again.
        */
       const deviceId = resolves
         ? await deviceForRequest(src, player.citizenid, device, {

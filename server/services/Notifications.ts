@@ -45,8 +45,8 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
   /**
    * Unscoped batch create for background persistent pushes to online and offline recipients.
    *
-   * Each row lands on the phone its recipient is on (MICA-282) — `phoneForCitizen`: the one
-   * in their hand, or the one they used last, or their identity phone. A recipient whose
+   * Each row lands on its recipient's phone (MICA-282) — `phoneForCitizen`: their one phone
+   * (MICA-438), held or not. A recipient whose
    * phone cannot be resolved is skipped and logged rather than written with none, because a
    * notification on no phone is one no phone ever shows.
    *

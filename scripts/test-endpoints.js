@@ -86,7 +86,7 @@ const FLOW_CHECKS = {
   lineText: { standalone: 13, qb: 13 },
   sendMessage: { standalone: 12, qb: 12 },
   qbMail: { standalone: 10, qb: 10 },
-  devices: { standalone: 27, qb: 31 },
+  devices: { standalone: 27, qb: 33 },
   reports: { standalone: 14, qb: 14 },
   privacy: { standalone: 30, qb: 30 },
   leftThread: { standalone: 15, qb: 15 },
@@ -113,7 +113,8 @@ const BUNDLE = path.join(root, 'node_modules', '.cache', 'mica-endpoints-server.
  * `server/server.ts`, bundled with `build/build-bundle.js`'s options for the server target, as
  * an ES module rather than a script: Node gives a CommonJS module its own `exports`, which
  * would shadow the global FXServer provides. `shared/rpc.ts` rides along so the harness names
- * request and reply events with the same functions the client does.
+ * request and reply events with the same functions the client does, and the two number caches'
+ * test seams so a flow can forget them the way a restart does (MICA-439).
  */
 const buildBundle = async () => {
   step('bundling server/server.ts');
@@ -121,7 +122,9 @@ const buildBundle = async () => {
     stdin: {
       contents: [
         `import '${root}/server/server.ts';`,
-        `export { requestEventFor, responseEventFor } from '${root}/shared/rpc.ts';`
+        `export { requestEventFor, responseEventFor } from '${root}/shared/rpc.ts';`,
+        `export { __resetPhoneNumberState } from '${root}/server/services/PhoneNumbers.ts';`,
+        `export { __resetAssignedNumbers } from '${root}/server/lib/phoneNumbers.ts';`
       ].join('\n'),
       resolveDir: root,
       loader: 'ts'
@@ -186,6 +189,8 @@ const NOBODY = 3;
 const createQbCore = () => {
   const loaded = new Map();
   const items = new Map();
+  /** What each held item carries in its `info`, which micaOS never reads (MICA-438). */
+  const infos = new Map();
   const core = {
     Functions: {
       GetPlayer: (src) => loaded.get(Number(src)) ?? null,
@@ -206,13 +211,13 @@ const createQbCore = () => {
       PlayerData,
       Functions: {
         // What a qb player answers for an item (MICA-264's tablet gate): qb-core's item table,
-        // which carries the slot it sits in and its `info`, since `itemSlots` reads both
-        // (MICA-436: a found item with no slot number is "cannot say", not "holds none"). Nobody
-        // holds anything unless a flow puts it in `items`, so an unset item convar is the only
-        // gate in use.
+        // with the slot it sits in and its `info`, as qb-core answers it. micaOS counts the
+        // `amount` and reads nothing else (MICA-438). Nobody holds anything unless a flow puts
+        // it in `items`, so an unset item convar is the only gate in use.
         GetItemByName: (name) => {
-          const amount = items.get(`${person.citizenid}:${name}`) ?? 0;
-          return amount > 0 ? { name, amount, slot: 1, info: {} } : null;
+          const key = `${person.citizenid}:${name}`;
+          const amount = items.get(key) ?? 0;
+          return amount > 0 ? { name, amount, slot: 1, info: infos.get(key) ?? {} } : null;
         },
         GetMoney: (type) => PlayerData.money[type],
         RemoveMoney: (type, amount) => {
@@ -244,7 +249,10 @@ const createQbCore = () => {
       return player;
     },
     unload: (src) => loaded.delete(src),
-    give: (person, name, amount) => items.set(`${person.citizenid}:${name}`, amount),
+    give: (person, name, amount, info) => {
+      items.set(`${person.citizenid}:${name}`, amount);
+      if (info) infos.set(`${person.citizenid}:${name}`, info);
+    },
     bank: (src) => loaded.get(src)?.PlayerData.money.bank
   };
 };
@@ -444,6 +452,15 @@ const startShape = async ({ db, kind }) => {
     unblockRow,
     rows,
     settle,
+    /**
+     * Forget what this process knows of every number — the sync's per-phone cache and the
+     * citizen-to-number maps — as a restart would, with nothing else touched (MICA-439). The
+     * next sync has to read the table.
+     */
+    forgetNumbers: () => {
+      bundle.__resetPhoneNumberState();
+      bundle.__resetAssignedNumbers();
+    },
     /**
      * A resource restart with the players still connected: every handler the old bundle
      * registered goes, a fresh copy of the bundle is imported (its module state empty, as a
@@ -1964,7 +1981,54 @@ const runDevices = async (shape, live) => {
       Array.isArray(await shape.call(A, 'mail', 'getMail', undefined, 'tablet')),
       true
     );
+    // MICA-438: a tablet item is a key. One whose `info` names B's tablet opens A's own.
+    const [bTablet] = await shape.rows(
+      "SELECT `device_id` FROM `mica_devices` WHERE `citizenid` = ? AND `kind` = 'tablet'",
+      [shape.citizenOf(people.B)]
+    );
+    shape.qb.give(people.A, 'probe_tablet', 1, { deviceId: bTablet.device_id });
+    check(
+      `${kind}: holding an item that names B's tablet, A's tablet request answers A's own`,
+      await titles(A, 'tablet'),
+      ['A tablet']
+    );
     shape.runtime.setConvar('mica_tablet_item', undefined);
+
+    /*
+     * MICA-439: a phone item turned on and then off keeps A's number on A's phone. Each sync
+     * runs from a cold cache, as after a restart, so it reads the table: the ungated one used to
+     * read only a legacy row, miss the row already on the phone, and issue a second number.
+     */
+    const aCitizen = shape.citizenOf(people.A);
+    const numbersOfA = async () =>
+      (
+        await shape.rows(
+          'SELECT `number`, `device_id` FROM `mica_phone_numbers` WHERE `citizenid` = ? ORDER BY `id`',
+          [aCitizen]
+        )
+      ).map((row) => `${row.number}@${row.device_id ? 'phone' : 'none'}`);
+    shape.runtime.setConvar('mica_phone_item', 'probe_phone');
+    shape.qb.give(people.A, 'probe_phone', 1);
+    shape.forgetNumbers();
+    await shape.fire(A, 'mica:server:shell:checkDeviceItem');
+    const gatedRows = await numbersOfA();
+    const gatedNumber = await shape.numberOf(people.A);
+    shape.runtime.setConvar('mica_phone_item', undefined);
+    shape.forgetNumbers();
+    await shape.fire(A, 'mica:server:shell:checkDeviceItem');
+    // Everybody else's cached number back, before any later flow dials one.
+    await shape.fire(B, 'mica:server:shell:checkDeviceItem');
+    await shape.fire(live.D, 'mica:server:shell:checkDeviceItem');
+    check(
+      `${kind}: A keeps one number on A's phone through a phone item turned on, then off`,
+      [
+        gatedRows.length,
+        gatedRows[0]?.endsWith('@phone'),
+        await numbersOfA(),
+        await shape.numberOf(people.A)
+      ],
+      [1, true, gatedRows, gatedNumber]
+    );
   }
 };
 

@@ -13,8 +13,6 @@ const { dbMock, bridgeMock, convar } = vi.hoisted(() => {
     dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() },
     bridgeMock: {
       getPlayer: vi.fn(),
-      itemSlots: vi.fn(),
-      setItemMetadata: vi.fn(() => true),
       registerUsableItem: vi.fn(),
       countItem: vi.fn(() => 1),
       forgetSource: vi.fn(),
@@ -50,7 +48,7 @@ const SRC = 7;
 const CID = 'ABC12345';
 const SRC_B = 8;
 const CID_B = 'BBB22222';
-const CARRIED = 'a'.repeat(32);
+const EXISTING = 'a'.repeat(32);
 const SEED = [
   { name: 'Dispatch', number: '911' },
   { name: 'Mechanic', number: '555-0100' },
@@ -74,7 +72,7 @@ type DeviceRow = {
   id: number;
   device_id: string;
   citizenid: string;
-  claimed: number;
+  kind: string;
   setup_pending?: number;
 };
 let phoneRows: DeviceRow[];
@@ -124,6 +122,13 @@ const hold = () => {
   return release;
 };
 
+/** The phone a gated resolve answers this source, failing the case on any other answer. */
+const phoneOf = async (src: number): Promise<string> => {
+  const resolution = await resolvePhone(src);
+  if (resolution.status !== 'active') throw new Error(`resolved ${JSON.stringify(resolution)}`);
+  return resolution.device.deviceId;
+};
+
 /** The columns and values of an INSERT, as a record. */
 const inserted = (sql: string, values: unknown[]): Record<string, unknown> => {
   const columns = /\(([^)]*)\) VALUES/
@@ -163,12 +168,12 @@ beforeEach(() => {
             : { phone: row.phone }
         );
     }
-    // `mica_devices`: `findAll` by phone id, or `readUnclaimed` by citizen.
-    const byPhone = (params as unknown[]).find((value) => /^[0-9a-f]{32}$/.test(String(value)));
-    const rows = byPhone
-      ? phoneRows.filter((row) => row.device_id === byPhone)
-      : phoneRows.filter((row) => row.citizenid === params[0] && !row.claimed);
-    return rows.map((row) => ({ ...row, status: 'active' }));
+    // `mica_devices`: a citizen's rows of one kind, newest first (MICA-438).
+    if (!String(sql).includes('`mica_devices`')) return [];
+    return phoneRows
+      .filter((row) => row.citizenid === params[0] && row.kind === params[1])
+      .toSorted((a, b) => b.id - a.id)
+      .map((row) => ({ ...row, status: 'active' }));
   });
   dbMock.insert.mockImplementation(async (sql: string, values: unknown[]) => {
     if (String(sql).includes('`mica_devices`')) {
@@ -177,7 +182,7 @@ beforeEach(() => {
         id: phoneRows.length + 1,
         device_id: String(row.device_id),
         citizenid: String(row.citizenid),
-        claimed: Number(row.claimed),
+        kind: String(row.kind),
         // `DEFAULT 0`, as the column is declared.
         setup_pending: Number(row.setup_pending ?? 0)
       });
@@ -229,7 +234,7 @@ beforeEach(() => {
       row.setup_pending = 0;
       return true;
     }
-    // Nothing else here writes a citizenid since MICA-436: say so if something starts to.
+    // Nothing here writes a citizenid (MICA-438): say so if something starts to.
     if (/SET `citizenid`/.test(flat)) throw new Error(`a phone's rows moved: ${flat}`);
     return true;
   });
@@ -239,7 +244,7 @@ beforeEach(() => {
       ? { citizenid: CID_B, source: SRC_B, setMeta: vi.fn() }
       : { citizenid: CID, source: SRC, setMeta: vi.fn() }
   );
-  bridgeMock.setItemMetadata.mockReturnValue(true);
+  bridgeMock.countItem.mockReturnValue(1);
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -272,16 +277,15 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
 
   it('is finished through the phone in hand on a gated server, too', async () => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     failInsert.add(2);
 
-    await resolvePhone(SRC);
+    const phone = await phoneOf(SRC);
     await settle();
-    expect(numbersOn(CARRIED)).toEqual(['911']);
+    expect(numbersOn(phone)).toEqual(['911']);
 
     await resolvePhone(SRC);
     await settle();
-    expect(numbersOn(CARRIED)).toEqual(SEED.map((entry) => entry.number));
+    expect(numbersOn(phone)).toEqual(SEED.map((entry) => entry.number));
   });
 
   it('does not bring back a default the player deleted before the retry', async () => {
@@ -340,71 +344,70 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
   });
 
   /**
-   * MICA-436: a phone is its first user's for good. Somebody else resolving it while a seed is
-   * running, or queued, is refused it, and every default lands with the owner it was for.
+   * MICA-438: a phone item is a key. Somebody else resolving with one in hand while the owner's
+   * seed is running, or retrying, is on a phone of their own: each seed lands on its own phone,
+   * under its own citizen, and neither waits on the other's.
    */
-  describe('against somebody else holding the phone (MICA-436)', () => {
+  describe('against somebody else holding a phone item (MICA-438)', () => {
     beforeEach(() => {
       convar.mica_phone_item = 'phone';
-      bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     });
 
-    /** Every default on the phone, and the phone row, name the owner. */
-    const allOwnedBy = (citizenid: string) => {
-      expect(numbersOn(CARRIED)).toEqual(SEED.map((entry) => entry.number));
-      expect(contactRows.map((row) => row.citizenid)).toEqual(SEED.map(() => citizenid));
-      expect(phoneRows.map((row) => row.citizenid)).toEqual([citizenid]);
+    /** Every default on each phone names that phone's citizen, and each has one phone row. */
+    const eachOwnTheirOwn = (phoneA: string, phoneB: string) => {
+      expect(phoneA).not.toBe(phoneB);
+      for (const [phone, citizenid] of [
+        [phoneA, CID],
+        [phoneB, CID_B]
+      ]) {
+        expect(numbersOn(phone)).toEqual(SEED.map((entry) => entry.number));
+        expect(
+          contactRows.filter((row) => row.device_id === phone).map((row) => row.citizenid)
+        ).toEqual(SEED.map(() => citizenid));
+      }
+      expect(phoneRows.map((row) => [row.citizenid, row.device_id])).toEqual([
+        [CID, phoneA],
+        [CID_B, phoneB]
+      ]);
     };
 
-    it('refuses them while the first seed runs, and the seed lands with the owner', async () => {
-      // The first run's first insert is held, and B resolves the phone meanwhile.
+    it("is answered their own phone while the owner's first seed runs", async () => {
+      // A's first insert is held, and B resolves meanwhile.
       const release = hold();
-      await resolvePhone(SRC);
+      const phoneA = await phoneOf(SRC);
       await settle();
-      const refused = resolvePhone(SRC_B);
+      const phoneB = await phoneOf(SRC_B);
       await settle();
 
       release();
-      await expect(refused).resolves.toEqual({ status: 'none' });
       await settle();
-      allOwnedBy(CID);
+      eachOwnTheirOwn(phoneA, phoneB);
     });
 
-    it('refuses them while a retry runs, and the retry lands with the owner', async () => {
+    it("is answered their own phone while the owner's retry runs, and read once", async () => {
       failInsert.add(3);
-      await resolvePhone(SRC);
+      const phoneA = await phoneOf(SRC);
       await settle();
-      expect(numbersOn(CARRIED)).toEqual(['911', '555-0100']);
+      expect(numbersOn(phoneA)).toEqual(['911', '555-0100']);
 
-      // A's retry starts and is held on its first insert; B resolves the phone meanwhile.
+      // A's retry starts and is held on its first insert; B resolves meanwhile.
       const release = hold();
       await resolvePhone(SRC);
       await settle();
-      const refused = resolvePhone(SRC_B);
+      const phoneB = await phoneOf(SRC_B);
       await settle();
 
       release();
-      await expect(refused).resolves.toEqual({ status: 'none' });
       await settle();
-      allOwnedBy(CID);
+      eachOwnTheirOwn(phoneA, phoneB);
 
-      // B is cached as refused: asked again, nothing is read.
+      // B's phone is known now: asked again, nothing is read.
       dbMock.query.mockClear();
-      await expect(resolvePhone(SRC_B)).resolves.toEqual({ status: 'none' });
+      await expect(resolvePhone(SRC_B)).resolves.toEqual({
+        status: 'active',
+        device: { deviceId: phoneB }
+      });
       expect(dbMock.query).not.toHaveBeenCalled();
-    });
-
-    it('seeds for the owner when a queued retry finally runs behind their refusal', async () => {
-      failInsert.add(3);
-      await resolvePhone(SRC);
-      await settle();
-
-      const again = resolvePhone(SRC);
-      const refused = resolvePhone(SRC_B);
-      await expect(again).resolves.toMatchObject({ status: 'active' });
-      await expect(refused).resolves.toEqual({ status: 'none' });
-      await settle();
-      allOwnedBy(CID);
     });
   });
 
@@ -484,42 +487,43 @@ describe('a set-up a restart interrupted (MICA-335)', () => {
 
   it('is finished through the phone in hand after the restart, too', async () => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     failInsert.add(2);
-    await resolvePhone(SRC);
+    const phone = await phoneOf(SRC);
     await settle();
-    expect(numbersOn(CARRIED)).toEqual(['911']);
+    expect(numbersOn(phone)).toEqual(['911']);
 
     restart();
     await resolvePhone(SRC);
     await settle();
 
-    expect(numbersOn(CARRIED)).toEqual(seeded);
-    expect(pendingOf(CARRIED)).toBe(0);
+    expect(numbersOn(phone)).toEqual(seeded);
+    expect(pendingOf(phone)).toBe(0);
   });
 
-  it('is left for the owner when somebody else resolves the phone after the restart', async () => {
+  it("is left alone by somebody else's resolve after the restart, and finished by the owner's", async () => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     failInsert.add(3);
-    await resolvePhone(SRC);
+    const phoneA = await phoneOf(SRC);
     await settle();
 
-    // B is refused the phone (MICA-436), and nothing is seeded for them.
+    // B resolves first after the restart: B's own phone, and nothing of A's is read or seeded.
     restart();
-    await expect(resolvePhone(SRC_B)).resolves.toEqual({ status: 'none' });
+    const phoneB = await phoneOf(SRC_B);
     await settle();
-    expect(numbersOn(CARRIED)).toEqual(['911', '555-0100']);
-    expect(pendingOf(CARRIED)).toBe(1);
+    expect(phoneB).not.toBe(phoneA);
+    expect(numbersOn(phoneA)).toEqual(['911', '555-0100']);
+    expect(pendingOf(phoneA)).toBe(1);
 
     // The owner's next resolve finishes it, under them.
     await resolvePhone(SRC);
     await settle();
-    expect(numbersOn(CARRIED)).toEqual(seeded);
-    expect(contactRows.map((row) => row.citizenid)).toEqual(seeded.map(() => CID));
-    expect(phoneRows.map((row) => row.citizenid)).toEqual([CID]);
+    expect(numbersOn(phoneA)).toEqual(seeded);
+    expect(
+      contactRows.filter((row) => row.device_id === phoneA).map((row) => row.citizenid)
+    ).toEqual(seeded.map(() => CID));
+    expect(phoneRows.map((row) => row.citizenid)).toEqual([CID, CID_B]);
   });
 
   /**
@@ -534,14 +538,16 @@ describe('a set-up a restart interrupted (MICA-335)', () => {
     ['still owed (1), seeds every default', 1, seeded]
   ])('on a phone row %s', async (_label, setup_pending, expected) => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    phoneRows.push({ id: 1, device_id: CARRIED, citizenid: CID, claimed: 1, setup_pending });
+    phoneRows.push({ id: 1, device_id: EXISTING, citizenid: CID, kind: 'phone', setup_pending });
 
-    await resolvePhone(SRC);
+    await expect(resolvePhone(SRC)).resolves.toEqual({
+      status: 'active',
+      device: { deviceId: EXISTING }
+    });
     await settle();
 
-    expect(numbersOn(CARRIED)).toEqual(expected);
+    expect(numbersOn(EXISTING)).toEqual(expected);
     expect(seedReads()).toBe(expected.length > 0 ? 1 : 0);
     // A later resolve of the same phone does not ask again either way.
     await resolvePhone(SRC);

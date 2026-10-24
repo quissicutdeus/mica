@@ -13,8 +13,9 @@ the `onPlayerLoaded` subscriber.
 MICA-336 audited the rest and added `forgetOnPlayerLoaded` to `lib/shell.ts`: a
 phase that runs every forgetter before any subscriber, because subscribers run
 in import order and one resolving a device ahead of the forget reads the old
-slot. On it: `deviceItem.ts`'s `lastUsed`, Phone's call and speaker, and Music's
-broadcast. Three traps found on the way:
+slot. On it: Phone's call and speaker, and Music's broadcast; `deviceItem.ts`'s
+`lastUsed` was too, until MICA-438 stopped keeping a slot at all. Three traps
+found on the way:
 
 - **A load is dispatched more than once, minutes apart.** qbx fires the local
   `QBCore:Server:PlayerLoaded` inside its character load and the network

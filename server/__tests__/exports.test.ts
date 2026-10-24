@@ -23,10 +23,7 @@ const { dbMock, bridgeMock } = vi.hoisted(() => ({
     findOfflineByPhone: vi.fn(async () => null),
     registerUsableItem: vi.fn(),
     // `HasPhoneItem` counts through this; `null` is "no inventory can count".
-    countItem: vi.fn(() => 0),
-    // `null`, "this inventory cannot list slots", so `HasPhoneItem` counts as it always did;
-    // a case that lists slots says so (MICA-436).
-    itemSlots: vi.fn((): unknown[] | null => null)
+    countItem: vi.fn((): number | null => 0)
   }
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
@@ -78,7 +75,7 @@ import { __resetBatteryState, currentCharge } from '../services/Battery';
 // Publishes `PostToDarkChat` beside its service (MICA-254); `darkchat.test.ts` drives it.
 import '../services/DarkchatMessages';
 import { __setDeviceResolvers } from '../lib/deviceIdentity';
-import { resolvePhone } from '../services/Devices';
+import { __resetDeviceState, resolvePhone } from '../services/Devices';
 import { PlayerFacingError } from '../lib/errors';
 import { installTestPhone, TEST_PHONE_ID, TEST_TABLET_ID } from './phoneStub';
 
@@ -1039,24 +1036,28 @@ describe('bridge-compat exports (MICA-232)', () => {
     });
   });
 
-  it("HasPhoneItem is false once the only phone held is known to be somebody else's", async () => {
-    // MICA-436: a phone is its first user's for good, so somebody else's does not count.
-    const THEIRS = 'b'.repeat(32);
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: THEIRS } }]);
-    dbMock.query.mockResolvedValue([
-      { id: 1, citizenid: 'OWNER001', device_id: THEIRS, kind: 'phone', claimed: 1 }
-    ]);
+  it("HasPhoneItem is true for any copy of the item, which opens the holder's own phone", async () => {
+    // MICA-438: the item is a key. Whoever bought this copy, it opens the holder's phone.
+    const MINE = 'a'.repeat(32);
+    __resetDeviceState();
+    bridgeMock.countItem.mockReturnValue(1);
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
+      String(sql).includes('`mica_devices`') && params[0] === CID && params[1] === 'phone'
+        ? [{ id: 2, citizenid: CID, device_id: MINE, kind: 'phone', setup_pending: 0 }]
+        : []
+    );
     try {
       await withPhoneItem('phone', async () => {
-        // Synchronous, so a phone whose row is not read yet is held: "cannot say" is not "none".
         expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: true });
-        await expect(resolvePhone(SRC)).resolves.toEqual({ status: 'none' });
-        expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: false });
+        await expect(resolvePhone(SRC)).resolves.toEqual({
+          status: 'active',
+          device: { deviceId: MINE }
+        });
       });
-      // Ruled by slot, not by count.
-      expect(bridgeMock.countItem).not.toHaveBeenCalled();
+      expect(dbMock.insert).not.toHaveBeenCalled();
     } finally {
-      bridgeMock.itemSlots.mockReturnValue(null);
+      dbMock.query.mockResolvedValue([]);
+      __resetDeviceState();
     }
   });
 

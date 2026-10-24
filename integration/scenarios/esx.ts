@@ -7,12 +7,7 @@ import { requireTap } from '../lib/console';
 import { db } from '../lib/db';
 import { ESX_SEED } from '../lib/esxSeed';
 import { assert, expectOk, expectRefusal, unique } from '../lib/mica';
-import {
-  callOn,
-  itemMetadataRoundTripsThroughAStash,
-  phoneItem,
-  phoneItemExistsInOxInventory
-} from '../lib/oxInventory';
+import { callOn, phoneItem, phoneItemExistsInOxInventory } from '../lib/oxInventory';
 import { schemaCreated } from './qbx';
 import { BOOTSTRAP_REFUSED } from './schema';
 
@@ -28,9 +23,8 @@ import { BOOTSTRAP_REFUSED } from './schema';
  * already some proof of both.
  *
  * What none of them can reach is what the qbx run cannot either: a connected player.
- * `FrameworkBridge.getPlayer`, a usable item actually used, an online job and micaOS's own
- * item-metadata seam all need one, so the metadata scenario holds ox_inventory's half of that
- * seam and says so (see `lib/oxInventory.ts`).
+ * `FrameworkBridge.getPlayer`, a usable item actually used, an online job and the item count
+ * the phone's gate asks all need one. micaOS reads and writes no item metadata since MICA-438.
  *
  * What the console proves instead is in the wrapper, which holds the whole console to the line
  * this resource starts too late to hear: micaOS's bridge line for es_extended. The schema line
@@ -124,15 +118,6 @@ export const esxScenarios: Scenario[] = [
     tickets: ['MICA-304', 'MICA-279', 'MICA-280'],
     timeoutMs: 40_000,
     run: phoneItemExistsInOxInventory
-  },
-  {
-    // MICA-279, MICA-280, MICA-219: per-item metadata through a stash, ox_inventory's half of
-    // the seam micaOS reads and writes (see `lib/oxInventory.ts`).
-    id: 'esx-item-metadata-round-trips-through-a-stash',
-    mode: 'esx',
-    tickets: ['MICA-304', 'MICA-279', 'MICA-280', 'MICA-219'],
-    timeoutMs: 40_000,
-    run: itemMetadataRoundTripsThroughAStash
   },
   {
     // MICA-223, MICA-225, MICA-232: a character micaOS has never heard of, known only to ESX's

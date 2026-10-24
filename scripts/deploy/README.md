@@ -538,7 +538,7 @@ log says which one failed. The suite's own console line
 | Convars                         | `mica_standalone 1`                                        | `onesync on`, `setr inventory:framework "qbx"`, `inventory:versioncheck false`, `qbx:acknowledge true`, `mica_phone_item "phone"`; **no** `mica_standalone` |
 | Mounted read-only from the host | `oxmysql`                                                  | `oxmysql`, `ox_lib`, `qbx_core`, `qbx_vehicles`, `ox_inventory`                                                                                             |
 | The console has to say          | `created micaOS's schema for ESX or standalone`            | `created micaOS's schema for qbx/qb`, and `mica: jobs -> qbx_core ...` (micaOS's bridge took qbx_core)                                                      |
-| Scenarios                       | everything under `integration/scenarios/` not marked `qbx` | the six in `integration/scenarios/qbx.ts`                                                                                                                   |
+| Scenarios                       | everything under `integration/scenarios/` not marked `qbx` | the five in `integration/scenarios/qbx.ts`                                                                                                                  |
 
 The resources come from the main checkout's vendor directory, beside `oxmysql`
 (`/opt/fivem-main/server-data/vendor/`), unless `/etc/mica-smoke.env` sets
@@ -571,24 +571,22 @@ in the old one-id-a-line format is refused before anything starts.
 refuses to unless `onesync` and `inventory:framework` are right); micaOS's
 bridge takes qbx_core and not standalone; micaOS registered the phone as a
 usable item with qbx_core (read back through `CanUseItem`, against a control);
-the phone item exists in ox_inventory's item list; per-item metadata round-trips
-through a temporary stash in the shapes micaOS's item-metadata seam reads
-(`GetSlotsWithItem`, `SetMetadata`); an offline lookup of the seeded `players`
-row answers the `charinfo` phone, both ways (`GetPhoneNumber`, `GetCitizenId`);
-and the schema micaOS created on first start is 50 wide in every `citizenid`
-column.
+the phone item exists in ox_inventory's item list; an offline lookup of the
+seeded `players` row answers the `charinfo` phone, both ways (`GetPhoneNumber`,
+`GetCitizenId`); and the schema micaOS created on first start is 50 wide in
+every `citizenid` column.
 
-**What it cannot:** anything that needs a connected player. micaOS's own
-item-metadata seam is keyed by a source and is not an export, so the stash
-scenario proves ox_inventory's half of it, not micaOS's; the offline lookup
-shows the phone but no export returns the name, so `charinfo`'s name is read
-only from the table; a usable item actually used, online jobs and charinfo
-write-back, and "delivered to an online phone" stay unproven by any suite (see
-MICA-304).
+**What it cannot:** anything that needs a connected player. The item count the
+phone's gate asks is keyed by a source and is not an export, so no scenario
+holds it (micaOS reads and writes no item metadata since MICA-438, so there is
+no metadata scenario left); the offline lookup shows the phone but no export
+returns the name, so `charinfo`'s name is read only from the table; a usable
+item actually used, online jobs and charinfo write-back, and "delivered to an
+online phone" stay unproven by any suite (see MICA-304).
 
 **Time.** The standalone run is what the suite cost before (five to ten minutes
 at most: up to 90s for the database, 180s to start, 300s for the suite). The qbx
-run adds up to 90s, 240s and 300s, and in practice runs only six scenarios, so
+run adds up to 90s, 240s and 300s, and in practice runs only five scenarios, so
 expect it to cost a few minutes of FXServer start plus the suite's fixed three
 seconds. An invocation is therefore up to about 20 minutes (570s and 630s), and
 a release now holds the box for three runs (both integration runs, then the

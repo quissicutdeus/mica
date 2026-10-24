@@ -93,8 +93,8 @@ describe('LockState (MICA-60)', () => {
 });
 
 /**
- * MICA-283: the lock is the phone's. A burner picked up locked stays locked, in whoever's
- * hand it lands, and unlocking one phone unlocks nothing else.
+ * MICA-283: the lock is the phone's. A phone locked stays locked through putting its item down
+ * and picking any copy up again (MICA-438), and unlocking one phone unlocks nothing else.
  */
 describe('LockState follows the phone (MICA-283)', () => {
   beforeEach(() => {

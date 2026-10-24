@@ -750,9 +750,9 @@ export const lineForKey = (key: string): RegisteredLine | undefined =>
  * findExternalThread`). The message row is owned by the recipient -- `citizenid` carries the
  * cascade -- and marked with `external_sender` so every reader knows it arrived.
  *
- * The phone is the one `phoneForCitizen` resolves: in hand, else last used, else their
- * identity phone -- the same rule a notification or a dropped photo follows, so an offline
- * player finds the text on the phone they will pick up.
+ * The phone is the one `phoneForCitizen` resolves: the citizen's one phone (MICA-438) -- the
+ * same rule a notification or a dropped photo follows, so an offline player finds the text on
+ * the phone any phone item opens for them.
  *
  * Attachments are the recipient's own media, by id, the same as a player attaching from
  * their gallery: a resource that wants to send an image calls `AddMedia` first. Delivery
@@ -813,8 +813,8 @@ export const sendFromLine = async (
 app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved) => {
   const conversationId = data.conversation_id;
   /**
-   * The phone in hand, resolved by the endpoint (`resolveDeviceFor` below, MICA-362): the same
-   * slot read is the `requirePhoneFor` check, so a text costs one inventory read, not two.
+   * The sender's phone, resolved by the endpoint (`resolveDeviceFor` below, MICA-362): the same
+   * item count is the `requirePhoneFor` check, so a text costs one inventory read, not two.
    * Absent only if that wiring is gone, which must refuse rather than guess a phone.
    */
   if (!resolved) throw new Error('[Messages] send ran without the phone it was sent from.');

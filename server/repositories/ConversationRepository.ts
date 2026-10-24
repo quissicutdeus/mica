@@ -135,7 +135,7 @@ export interface ConversationListRow extends ConversationRow {
 }
 
 /**
- * A membership row as the server holds it (MICA-339). `citizenid` is the phone's owner (MICA-436)
+ * A membership row as the server holds it (MICA-339). `citizenid` is the phone's owner (MICA-438)
  * and `device_id` is the phone; neither reaches another member. `phone_number` is the number on
  * that phone, read with the row — see `PARTICIPANT_NUMBER` for which number that is.
  */
@@ -162,10 +162,9 @@ export interface ParticipantRow {
  *
  * 1. The number row on this membership's phone (`device_id_unique`). Every phone a qb or
  *    standalone server has seen in use carries one (MICA-284).
- * 2. The citizen's legacy row, a number on no phone yet. That exists only on a server whose
- *    inventory cannot carry a phone id — one phone per citizen, so their number *is* this
- *    phone's — or for a citizen who has not used an id'd phone since the upgrade, whose
- *    thread can only be on their identity phone.
+ * 2. The citizen's legacy row, a number on no phone yet: a citizen whose phone has not been
+ *    synced since the upgrade, which attaches it (MICA-439). A character has one phone
+ *    (MICA-438), so their number *is* this phone's either way.
  * 3. Neither: null. On es_extended micaOS holds no numbers at all and the number lives on the
  *    character; `Conversations.get` asks the directory for those, and only there.
  *
@@ -755,7 +754,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * side of the thread's pair columns, so it can only ever restore the phone the thread is
    * with. Named and privileged because it writes the row's citizenid, which no ownership
    * predicate could name first — always the phone's owner, since a resolve answers no other
-   * citizen the phone (MICA-436).
+   * citizen the phone (MICA-438).
    */
   async ensureLineParticipant(
     conversationId: number,
@@ -763,7 +762,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     deviceId: string
   ): Promise<void> {
     // Not versioned (MICA-430 review): a membership's citizenid is always its phone's owner,
-    // which nothing moves (MICA-436).
+    // which nothing moves (MICA-436, MICA-438).
     const restored = await Database.update(
       `UPDATE mica_messages_participants SET left_at = NULL, status = 'active', citizenid = ?
         WHERE conversation_id = ? AND device_id = ? AND status = 'left' AND left_at IS NOT NULL`,

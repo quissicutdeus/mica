@@ -102,10 +102,10 @@ export const deviceScenarios: Scenario[] = [
   },
   {
     // MICA-264, MICA-282: a notification for an offline citizen lands on a phone of theirs,
-    // never on their tablet. The citizen's only device row is an unclaimed tablet, which is
-    // both the row they touched last and the one an unfiltered "unclaimed" read would adopt:
-    // before MICA-264, `phoneForCitizen` would have put the notification on it. The row is a
-    // fixture because nothing but a connected player with a tablet can make micaOS mint one.
+    // never on their tablet. The citizen's only device row is a tablet, the row they touched
+    // last, which a read that did not filter by kind would take: before MICA-264,
+    // `phoneForCitizen` would have put the notification on it. The row is a fixture because
+    // nothing but a connected player with a tablet can make micaOS mint one.
     id: 'devices-offline-notification-lands-on-a-phone-never-the-tablet',
     mode: 'standalone',
     tickets: ['MICA-264', 'MICA-282'],
@@ -116,8 +116,7 @@ export const deviceScenarios: Scenario[] = [
       const tabletId = unique('tablet');
       assert(tabletId.length <= 32, `the fixture tablet id ${tabletId} is wider than device_id`);
       await db.insert(
-        'INSERT INTO `mica_devices` (`citizenid`, `device_id`, `kind`, `claimed`) ' +
-          "VALUES (?, ?, 'tablet', 0)",
+        "INSERT INTO `mica_devices` (`citizenid`, `device_id`, `kind`) VALUES (?, ?, 'tablet')",
         [who.citizenid, tabletId]
       );
 
@@ -157,15 +156,13 @@ export const deviceScenarios: Scenario[] = [
         `the notification landed on ${String(device.citizenid)}'s device`
       );
 
-      // Minting the phone left the tablet as it was: still a tablet, still theirs, not claimed.
+      // Minting the phone left the tablet as it was: still a tablet, still theirs.
       const tablet = await db.row(
-        'SELECT `citizenid`, `kind`, `claimed` FROM `mica_devices` WHERE `device_id` = ?',
+        'SELECT `citizenid`, `kind` FROM `mica_devices` WHERE `device_id` = ?',
         [tabletId]
       );
       assert(
-        tablet?.kind === 'tablet' &&
-          tablet.citizenid === who.citizenid &&
-          Number(tablet.claimed) === 0,
+        tablet?.kind === 'tablet' && tablet.citizenid === who.citizenid,
         `the tablet row changed: ${JSON.stringify(tablet)}`
       );
       const phones = await db.count(

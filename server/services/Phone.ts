@@ -705,13 +705,11 @@ export type PlaceCallResult =
   'placed' | 'unreachable' | 'busy' | 'caller_has_no_phone' | 'invalid_target';
 
 /**
- * Whether `src` holds a phone of their own, where this server requires one to (MICA-339,
- * MICA-436): the rule `ServiceEndpoint` holds a request to, and open wherever that is — no item
- * gate, standalone, an inventory that cannot count. Synchronous, so the `answer` handler can ask
- * it without giving up the ordering that keeps two answers from both winning a group call — and
- * so it counts a slot whose row this process has not read yet as held. Somebody else's phone is
- * refused here once anything has read its row: the gate's own pass on load and on every relayed
- * inventory change, or any request.
+ * Whether `src` holds a phone item, where this server requires one to (MICA-339): the count
+ * `ServiceEndpoint` holds a request to, and open wherever that is — no item gate, standalone,
+ * an inventory that cannot count. Any copy is the holder's own phone (MICA-438). Synchronous,
+ * so the `answer` handler can ask it without giving up the ordering that keeps two answers from
+ * both winning a group call.
  */
 const holdsPhone = (src: number): boolean => {
   const player = FrameworkBridge.getPlayer(src);
@@ -749,9 +747,10 @@ type NumberInHand =
  * First the phone in their hand, through the same resolver a device-owned request uses. On a
  * server that gates on an item, a player holding none is refused here, however their client got
  * the dial out. Then **that phone's own number**, by `numberOfPhone`. It never uses the
- * framework's `charinfo.phone` on qb or standalone. That field names the number a robbed
- * player used to have, and the main phone of a player who has just picked up a burner. Either
- * way a caller id read from it names somebody else's phone.
+ * framework's `charinfo.phone` on qb or standalone. That field is a mirror the sync writes back
+ * only while a phone is held, so it can lag the number micaOS settled; before MICA-438 it named
+ * the main phone of a player who had just picked up a burner, and a caller id read from it
+ * named somebody else's phone.
  *
  * **Asked again who is on the source once the number is read** (MICA-336). `numberOfPhone` can
  * await a whole sync, and a character switch keeps the source. A call placed after one would

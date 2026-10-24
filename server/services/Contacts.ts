@@ -156,9 +156,8 @@ class ContactRepository extends SchemaRepository<Contact> {
   }
 
   /**
-   * Onto the phone the citizen is on (MICA-282): their active one, or the one they used
-   * last, or their identity phone — `phoneForCitizen` decides, and a row with no phone
-   * would be one no phone ever shows.
+   * Onto the citizen's phone (MICA-282): their one phone (MICA-438), held or not —
+   * `phoneForCitizen` decides, and a row with no phone would be one no phone ever shows.
    *
    * **A number the phone already has answers that contact's id** (MICA-335). A job that
    * hands its dispatch number out on every shift used to stack one copy per shift;

@@ -460,10 +460,10 @@ export class Resolver {
    * The phone a row lands on (MICA-282), always derived from the resolved citizen.
    *
    * When the row came with a number and micaOS has a phone on that number, that phone is used
-   * only if the citizen holds it; held by anyone else, the answer is `reassigned` and the row is
+   * only if it is the citizen's; anyone else's, and the answer is `reassigned` and the row is
    * skipped rather than written onto somebody else's phone. Otherwise it is the citizen's own
-   * phone — `phoneForCitizen`, on apply only, since it creates an identity phone for a citizen
-   * who has none and a dry run must not write (`deviceId` is null then).
+   * phone — `phoneForCitizen`, their one phone (MICA-438), on apply only, since it creates the
+   * phone for a citizen who has none and a dry run must not write (`deviceId` is null then).
    */
   phone(
     citizenid: string,

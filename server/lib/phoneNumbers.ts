@@ -46,10 +46,10 @@ export const PHONE_NUMBERS_TABLE = 'mica_phone_numbers';
  *
  * `device_id` is the phone this number belongs to, or **`NULL` for a legacy row**: a number
  * that is this citizen's and has not yet been attached to a phone. Every row was a legacy row
- * before MICA-284, and on a server whose inventory cannot carry a phone id (standalone, or
- * es_extended's own inventory) every row stays one — one number per citizen, exactly as
- * before. `citizenid` is the owner of the phone the number is on — its first user, for good
- * since MICA-436 — so a stolen phone's number still reaches its owner, never the thief.
+ * before MICA-284; each is attached to its citizen's phone on that phone's first sync, on a
+ * server with a phone item or without (MICA-439). `citizenid` is the owner of
+ * the phone the number is on, the one phone a character has (MICA-438), so a number reaches its
+ * citizen whichever phone item they hold, and never somebody holding one of theirs.
  */
 export interface PhoneNumberRow {
   id: number;
@@ -64,12 +64,12 @@ export interface PhoneNumberRow {
  *
  * `FrameworkBridge.getPlayer` is synchronous — `FrameworkPlayer.phone` is a field, and every
  * framework fills it from an object it already has in hand — while the number lives in a
- * table. `assigned` bridges those two: citizenid to the number of the phone that citizen is
- * currently on, filled by `syncNumber` when they load, use a phone, or their inventory
- * changes. `holders` is the reverse, number to the citizen holding it, and is what
- * `getPlayerByPhone` consults before it walks every connected player's `charinfo` — because
- * on qb the `charinfo` mirror is deliberately left stale for a player whose phone was taken
- * (see `writeBack` in the service), so the walk alone would find the victim.
+ * table. `assigned` bridges those two: citizenid to the number of their phone (one per
+ * character since MICA-438), filled by `syncNumber` when they load, use a phone item, or their
+ * inventory changes. `holders` is the reverse, number to its citizen, and is what
+ * `getPlayerByPhone` consults before it walks every connected player's `charinfo`: micaOS's own
+ * answer first, because on qb the `charinfo` mirror is written back only while a phone is held
+ * (see `writeBack` in the service), so it can lag the number micaOS settled.
  *
  * **Keyed by identity, never by source**, which is what keeps them out of the unbounded-map
  * hazard MICA-113/114 closed. FiveM recycles server ids, so a source-keyed cache has to be
@@ -78,10 +78,11 @@ export interface PhoneNumberRow {
  * on drop: the cost is one short string pair per distinct player since the last restart, and
  * the benefit is that a reconnecting player's number is right immediately.
  *
- * A number is no longer assigned once and never changed — it moves with the phone — so an
- * entry here is "true as of the last sync" rather than true forever. `rememberNumber` keeps
- * both maps consistent: a number arriving under a new holder leaves the old holder's forward
- * entry only if it pointed somewhere else.
+ * An entry here is "true as of the last sync" rather than true forever: a legacy number
+ * attaches to the phone on its first sync, and before MICA-436 a number moved with a
+ * phone that changed hands. `rememberNumber` keeps both maps consistent: a number recorded
+ * under another citizen leaves the previous one's forward entry only if it pointed somewhere
+ * else.
  */
 const assigned = new Map<string, string>();
 const holders = new Map<string, string>();
@@ -129,9 +130,9 @@ export interface AssignedNumberRow {
  *
  * `device_id IS NULL` is the whole definition. Before MICA-284 every row was one of these,
  * and the migration seeds one per existing qb character, so on upgrade this is where a
- * player's number is found the first time they use a phone, and the row is then attached to
- * it rather than a fresh number issued. On a server that cannot carry a phone id every row
- * stays legacy and this is simply "their number", as it was.
+ * player's number is found the first time their phone is synced, and the row is then attached
+ * to it rather than a fresh number issued — on a server with a phone item or without, since
+ * MICA-439. A legacy row left is a citizen whose phone has not been synced since.
  *
  * **Status-blind on purpose.** `lib/retention.ts` is explicit that nothing in this codebase
  * ever hard-deletes a soft-deleted row, so a row that ever reached `status = 'deleted'` still
@@ -165,10 +166,10 @@ export const readRowByPhoneId = async (deviceId: string): Promise<AssignedNumber
 /**
  * The stored number for a citizenid, or null when they have never had one.
  *
- * The number of the phone they most recently used, which is what `updated_at DESC` says: a
- * row's `citizenid` moves to whoever uses the phone, and moving it touches `updated_at`. For
- * a citizen with one legacy row — every citizen, on a server that cannot carry a phone id —
- * this is simply their number. Status-blind, for the reason `readLegacyRow` gives.
+ * The most recently written of their rows, which is what `updated_at DESC` says. A character
+ * has one phone (MICA-438) and so one number, legacy or attached; several rows are left only
+ * where an earlier build let a character hold several phones. Status-blind, for the reason
+ * `readLegacyRow` gives.
  */
 export const readNumber = async (citizenid: string): Promise<string | null> => {
   if (!citizenid) return null;
@@ -186,8 +187,8 @@ export const ACTIVE_STATUS = 'active';
 /**
  * The phone this number is on, or null — for a legacy row not yet attached to one, and for a
  * number micaOS has no row for at all (ESX). What a message or a call addressed to a number
- * lands on (MICA-282): the phone, which is its owner's for good (MICA-436), so what arrives
- * while somebody else holds it waits there for the owner.
+ * lands on (MICA-282): the phone, which is its citizen's whichever item they hold (MICA-438),
+ * so what arrives while they hold none waits there for them.
  */
 export const readPhoneIdByNumber = async (number: string): Promise<string | null> => {
   if (!number) return null;
@@ -234,23 +235,21 @@ export interface NumberSources {
  *
  * - **ESX: the framework's number.** micaOS keeps no rows there. The number belongs to the
  *   character, so it is the number of whatever phone they hold.
- * - **The phone's own row**, by its device id. This is every item phone the sync has reached.
- * - **The sync, awaited, then the citizen's legacy row** (`device_id IS NULL`). The legacy row
- *   is the identity phone's number on a server that cannot carry a phone id. On a server that
- *   can, the first phone synced takes the legacy row, so it never names a different phone.
- *   Reading it after the sync is what makes that hold: a sync still attaching the legacy row to
- *   another phone has finished by then.
+ * - **The phone's own row**, by its device id. This is every phone the sync has reached.
+ * - **The sync, awaited, then the citizen's legacy row** (`device_id IS NULL`). The phone takes
+ *   the legacy row on its first sync that can write the attach (MICA-439; a version is written
+ *   with it, so not before `micaschema apply`), and until then the legacy row is the number. It
+ *   never names a different phone. Reading it after the sync is what makes that hold: a sync
+ *   still attaching it has finished by then.
  * - **The phone's own row again**, which the sync has just written for a phone picked up
  *   moments ago.
  * - Otherwise **null**: no number, never another phone's.
  *
- * **Never the framework's number on qb or standalone.** On qb and standalone it is the number
- * of the phone the last sync settled. After a switch to a burner that has no row yet, that is
- * the main phone. It stays the main phone until the sync lands, and for good if assignment
- * gives up. A call or text from the burner used to carry it, which told the other end whose
- * burner it was. The sync's own answer is unusable for the same reason. A sync joined while
- * it was resolving a different phone answers that phone's number. Only a row keyed by this
- * phone's id answers for this phone.
+ * **Never the framework's number on qb or standalone.** There it is whatever the last sync
+ * settled for the citizen, which is not a statement about this phone: before MICA-438 it named
+ * the main phone while a burner's sync was still in flight, and a call from the burner told the
+ * other end whose it was. The sync's own answer is unusable for the same reason. Only a row
+ * keyed by this phone's id answers for this phone.
  *
  * A sync that rejects is logged, and the reads go ahead without it. A read that throws is the
  * caller's to handle.

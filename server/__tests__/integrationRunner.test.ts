@@ -342,8 +342,8 @@ describe('the runs', () => {
  */
 describe('the registered suite', () => {
   const STANDALONE = 68;
-  const QBX = 7;
-  const ESX = 6;
+  const QBX = 6;
+  const ESX = 5;
 
   const printed = async (mode: Mode) => {
     const lines: string[] = [];

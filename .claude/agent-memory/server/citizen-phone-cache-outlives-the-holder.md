@@ -1,24 +1,27 @@
-# A citizen-keyed phone cache outlives a robbery, on purpose
+# A stolen phone's rows wait for its owner, on purpose
 
-`Devices.ts` keeps `activeByCitizen`, which every resolve writes and nothing
-clears. After a robbery it still names the phone the thief now holds.
+Three answers in a row to "where do a robbed player's new rows land":
 
-Before MICA-436 that was a bug (MICA-339 F7). `phoneForCitizen(victim)` filed
-notifications, line texts and dropped photos on the stolen phone under the
-victim, and the next handover walk gave them to the thief. The fix checked the
-cache against `holderNow`.
+- **Before MICA-436** a citizen-keyed cache (`activeByCitizen`) still named the
+  phone the thief now held. `phoneForCitizen(victim)` filed notifications, line
+  texts and dropped photos there, and the next handover walk gave them to the
+  thief (MICA-339 F7). The fix checked the cache against `holderNow`.
+- **MICA-436** made a phone its first user's for good. The thief was refused it,
+  nothing moved, and the stale cache became right: rows waited for the owner.
+- **MICA-438** removed the cache. A character has one phone, the `mica_devices`
+  row of `kind = 'phone'` naming them. `phoneForCitizen` is that row, held or
+  not. Any phone item opens the holder's own phone, so the thief opens the
+  thief's phone, and the victim's new item opens the victim's phone with
+  everything filed there meanwhile. That is MICA-339's "stashed keeps receiving"
+  decision, with nothing to invalidate.
 
-Since MICA-436 a phone is its first user's for good. The thief is refused it
-(`judgeRow` answers `foreign`), nothing on it moves, and `activeByCitizen` is
-only ever written for a phone the resolve found to be the caller's. So the cache
-naming the taken phone is right: rows filed there wait for the owner, which is
-MICA-339's "stashed keeps receiving" decision. `holderNow` is gone.
-
-`devices.test.ts` "keeps filing a victim's rows on their phone while a thief
-holds it" holds both halves: the victim's answer stays the phone, and the
-thief's own rows never land on it.
+`devices.test.ts` "resolves a thief holding the victim's item to the thief's own
+phone, and touches nothing" holds it: the thief's resolve reads only the thief's
+rows, the victim's `phoneForCitizen` still answers the victim's phone, and a new
+item opens it again.
 
 Any new cache keyed by citizen or by source that names a device still needs the
-question: who else can reach it, and what clears it?
+question: who else can reach it, and what clears it? `activeBySource` is the one
+left, cleared on `playerDropped` and by any resolve that finds none held.
 
 Related: [[a-foreign-read-skips-the-owners-read]]

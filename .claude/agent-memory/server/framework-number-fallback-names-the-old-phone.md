@@ -24,8 +24,11 @@ citizen. A burner used during the main phone's load sync was then never synced.
 Now a trigger queues one run behind the running one, and later triggers join
 that queued run. A "same phone" join would need Devices' slot rule copied into
 PhoneNumbers, and a copy that drifts reopens the bug without any error. The
-queued run is all cache when nothing changed. Tested in `phoneNumbers.test.ts`
-("numbers a burner swapped in mid-sync").
+queued run is all cache when nothing changed. Since MICA-438 a character has one
+phone and there are no burners, but the queue still matters: a run that counted
+no phone must not swallow the trigger of a phone picked up mid-run. Tested in
+`phoneNumbers.test.ts` ("numbers a phone picked up while a sync that found none
+is still running").
 
 **Still never use `syncNumber`'s return value as "this phone's number".**
 `numberOfPhone` reads the row keyed by the phone's id. The

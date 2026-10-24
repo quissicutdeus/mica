@@ -41,8 +41,9 @@ vi.mock('../lib/DiscordWebhook', () => ({ forwardReportFiled: vi.fn(), forwardAu
 /**
  * Source 5 is whoever `bridge.current` names, for the one-request cases; source 6 is always
  * CIT_B, so two requests in flight at once come from two connections, as they would in game.
- * One source carries one character: the endpoint asks it again after an await and refuses a
- * request whose source has become somebody else (MICA-436 review).
+ * One source carries one character, as one connection does in game: the endpoint asks it again
+ * after a schema that awaited, and refuses a request whose source has become somebody else
+ * (MICA-362).
  */
 const bridge = vi.hoisted(() => ({ current: 'CIT_A' }));
 const citizenOn = (src?: number): string => (src === 6 ? 'CIT_B' : bridge.current);

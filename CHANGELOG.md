@@ -52,14 +52,14 @@ Run it straight after updating: until it has created the new table, every edit
 listed here is refused with a message saying so. Editing a message, a Blab, a
 Glimpse caption, a note, a contact, a place, an account's name, bio or avatar, a
 Spark profile or a thread's name now copies the old text into a new table first,
-in the same transaction, so a version exists exactly when the edit applied. So
-does a legacy phone number being attached to a phone. Sealed values are copied
-sealed, and `micacrypt status` and `backfill` now count and re-seal them too;
-keep a key line until `status` says it can be retired. Only staff can read
-versions, through the report review, and each read is audited. Players still see
-only the latest text, a player's export leaves versions out, and a privacy
-delete erases a player's versions like their other rows. State is not versioned:
-battery, settings, scores, balances, and read and archive flags.
+in the same transaction, so a version exists exactly when the edit applied.
+Sealed values are copied sealed, and `micacrypt status` and `backfill` now count
+and re-seal them too; keep a key line until `status` says it can be retired.
+Only staff can read versions, through the report review, and each read is
+audited. Players still see only the latest text, a player's export leaves
+versions out, and a privacy delete erases a player's versions like their other
+rows. State is not versioned: battery, settings, scores, balances, and read and
+archive flags.
 
 `micaschema apply` creates the table `mica_versions` (`id`, `citizenid`,
 `source_table`, `source_id`, `edited_by`, `reason`, `snapshot`, `op_key`,
@@ -110,8 +110,10 @@ place that used to remove a row now hides it and keeps it stored as evidence:
   the owner included.
 - **A moderator's takedown is never moved**, and neither are a phone's own
   device rows: they stay live, so the phone's id stays taken, and a deleted
-  character's phone reads closed to whoever holds it next (MICA-436). A shared
-  thread or Dark Chat channel stays live while another member is still in it.
+  character's phone is not opened again on qb and qbx, because a phone is found
+  by its character (MICA-438). On ESX a new character in a deleted character's
+  slot inherits it (MICA-440). A shared thread or Dark Chat channel stays live
+  while another member is still in it.
 - **`micamedia prune`** expires and erases; it deletes nothing.
 
 So the database only grows. Retention frees no disk, and nothing shrinks the
@@ -391,15 +393,15 @@ went through is no longer refused.
 
 **Run `micaschema apply` from the server console: `mica_marketplace` gains a
 column, `seller_phone` (MICA-343).** A listing now shows the number of the phone
-that posted it, not the seller's current main number, so on qb and standalone a
-listing posted from a burner no longer gives the seller's real number away (on
-ESX a phone has no number of its own, as with calls). The column is additive and
-nullable. Listings posted before it exists have no recorded number, and show no
-Call or Text button rather than a number they may never have been posted from;
-so does a listing posted from a phone that had no number assigned yet. **Until
-you run it, posting a listing and opening one both fail.** Sharing a contact
-card no longer sends the sharer's identity or number to the players around them,
-and a leaderboard no longer carries each player's citizenid.
+that posted it, recorded when it is posted, so on qb and standalone it keeps the
+number it was posted from (on ESX a phone has no number of its own, as with
+calls). The column is additive and nullable. Listings posted before it exists
+have no recorded number, and show no Call or Text button rather than a number
+they may never have been posted from; so does a listing posted from a phone that
+had no number assigned yet. **Until you run it, posting a listing and opening
+one both fail.** Sharing a contact card no longer sends the sharer's identity or
+number to the players around them, and a leaderboard no longer carries each
+player's citizenid.
 
 **Run `micaschema apply` from the server console: the device table and its
 column are renamed from phone to device (MICA-344).** Since MICA-264 the table
@@ -411,12 +413,10 @@ renames `mica_phones` to `mica_devices`, and the `phone_id` column to
 `mica_places` and `mica_settings`, with its keys: `device_id`,
 `device_id_unique`, `device_number_unique`, `conversation_device_unique` and
 `device_app_key`. Nothing is retyped and no row changes; running it twice
-changes nothing. **A phone or tablet item now carries its id under `deviceId` in
-its metadata, not `phoneId`**, and the old key is not read: an item still
-carrying `phoneId` is given a fresh id the next time it is used, and the rows
-written under its old id stay with that id. Nothing was live, so nothing was
-kept for it. A script that read `phoneId` from an item's metadata reads
-`deviceId`.
+changes nothing. **An item carries no id at all since MICA-438**, under
+`phoneId`, `deviceId` or any other key: micaOS neither reads nor writes item
+metadata, and a phone or tablet is the character's own row. A script that read
+`phoneId` from an item's metadata has nothing to read.
 
 **Run `micaschema apply` from the server console, then decide whether you want
 the tablet: it is now on by default, with an identity of its own (MICA-264).**
@@ -424,14 +424,14 @@ the tablet: it is now on by default, with an identity of its own (MICA-264).**
 a tablet. It is additive and every existing row reads as a phone, so no data
 changes. **Run it as soon as the new version starts:** until the column exists,
 a player's first phone cannot be created and a notification to a player who is
-offline is dropped. A tablet now gets its own id the first time its item is
-used, and has no phone number; its notes, settings, the add-ons installed from
-its own Store and its passcode are separate from the phone's, and it has a lock
-screen. Admin reads the same on both devices; calls, messages, contacts, mail,
-the camera, Bank and Hodlr stay on the phone. **If you do not want the tablet,
-add `set mica_tablet "false"`.** `LockPhone`, `UnlockPhone` and `IsPhoneLocked`
-with a `device` of `'tablet'` now act on the tablet's own lock screen instead of
-failing with `unsupported`.
+offline is dropped. A tablet now gets its own row the first time a character
+needs it, and has no phone number; its notes, settings, the add-ons installed
+from its own Store and its passcode are separate from the phone's, and it has a
+lock screen. Admin reads the same on both devices; calls, messages, contacts,
+mail, the camera, Bank and Hodlr stay on the phone. **If you do not want the
+tablet, add `set mica_tablet "false"`.** `LockPhone`, `UnlockPhone` and
+`IsPhoneLocked` with a `device` of `'tablet'` now act on the tablet's own lock
+screen instead of failing with `unsupported`.
 
 **Run `micaschema apply` from the server console: `mica_messages_conversations`
 gains an index, `participant_b_status` (MICA-307).** It is additive and changes
@@ -593,55 +593,50 @@ own restart reads the invoice row, which says `paid` and when.
 the phone too — run `micaschema apply` from your server console after updating
 (MICA-283).** `mica_battery` gains a `phone_id` column and key, and the
 migration `0003_battery_follows_the_phone` puts every existing charge on its
-owner's phone, minting an unclaimed phone for any character who had a charge and
-nothing else, and replaces `citizenid_unique` with `phone_id_unique`: two phones
-hold two charges, and a battery bank charges the one in hand. Switching phones
-saves the old phone's charge and loads the new one's. `LockPhone`, `UnlockPhone`
-and `IsPhoneLocked` are keyed on the phone in the player's hand rather than on
-the player, so a burner picked up locked stays locked and unlocking one phone
-unlocks nothing else; a lock applied before a player has resolved a phone stays
-on the player, as before. Using a different phone item now rehydrates the shell,
-so the screen shows that phone's contacts, threads, settings and passcode status
-rather than the previous phone's until the next open. `GetBatteryLevel` answers
-for the phone the character is on. Nothing here changes on a server without the
-phone-item gate, where every character still has exactly one phone.
+owner's phone, minting a phone for any character who had a charge and nothing
+else, and replaces `citizenid_unique` with `phone_id_unique`: the charge is the
+phone's, and a battery bank charges your phone. `LockPhone`, `UnlockPhone` and
+`IsPhoneLocked` are keyed on the character's phone rather than on the player, so
+unlocking one device unlocks nothing else; a lock applied before a player has
+resolved a phone stays on the player, as before. `GetBatteryLevel` answers for
+the phone the character is on. Nothing here changes on a server without the
+phone-item gate, where every character has exactly one phone, as they do with
+it.
 
 **A phone's data now belongs to the phone: contacts, notes, media, the lock
 screen, settings, notifications, the call log, saved places, the block list and
 a thread's membership all follow the item — run `micaschema apply` from your
 server console after updating, before players connect (MICA-282).** This is the
 change the whole phone-as-item work was for: a phone's contacts, messages and
-photos are the phone's, not its holder's, and carry two and each has its own.
-Since MICA-436 a phone's owner is the citizen who first used it, so taking one
-hands its contents to nobody. It reaches every server, gated or not, because it
+photos are the phone's, not its holder's. Since MICA-438 the phone is the
+character's one phone and the item is only a key to it, so taking the item hands
+its contents to nobody. It reaches every server, gated or not, because it
 changes the shape of ten tables, and it is the one migration in this series an
 owner cannot skip.
 
 `mica_contacts`, `mica_notes`, `mica_media`, `mica_lockscreen`, `mica_settings`,
 `mica_notifications`, `mica_phone_call_log`, `mica_places`, `mica_blocklist` and
 `mica_messages_participants` each gain a `phone_id` column and a `phone_id` key.
-`mica_phones` gains a `claimed` column. The migration
-`0002_phone_data_follows_the_phone` then puts every existing row on its owner's
-phone — a character who already has a phone keeps it, and one who does not gets
-one minted for them, which the first phone item they use picks up — attaches
-each character's number to it, rewrites a 1:1 thread's `participant_a` and
-`participant_b` from the two characters to their two phones, and replaces four
-per-character unique keys with per-phone ones: `mica_lockscreen` loses
-`citizenid_unique` for `phone_id_unique`, `mica_settings` loses
-`citizenid_app_key` for `phone_app_key`, `mica_blocklist` loses
-`citizenid_number_unique` for `phone_number_unique`, and
-`mica_messages_participants` loses `conversation_participant_unique` for
-`conversation_phone_unique`. No row is deleted and nothing is rewritten but
-those columns and keys. `citizenid` stays on every table: it names the phone's
-owner, the citizen who first used it, and since MICA-436 nothing moves it.
+`mica_phones` gains a `claimed` column, which nothing has read since MICA-438.
+The migration `0002_phone_data_follows_the_phone` then puts every existing row
+on its owner's phone — a character who already has a phone keeps it, and one who
+does not gets one minted for them — attaches each character's number to it,
+rewrites a 1:1 thread's `participant_a` and `participant_b` from the two
+characters to their two phones, and replaces four per-character unique keys with
+per-phone ones: `mica_lockscreen` loses `citizenid_unique` for
+`phone_id_unique`, `mica_settings` loses `citizenid_app_key` for
+`phone_app_key`, `mica_blocklist` loses `citizenid_number_unique` for
+`phone_number_unique`, and `mica_messages_participants` loses
+`conversation_participant_unique` for `conversation_phone_unique`. No row is
+deleted and nothing is rewritten but those columns and keys. `citizenid` stays
+on every table: it names the phone's owner, and since MICA-436 nothing moves it.
 
-**What a player sees.** On a server that gates the phone on an item, a phone
-shows its own contacts, threads, photos and settings and nothing from the
-player's other phones; a player holding no phone is told so rather than shown
-somebody else's data. A stolen phone is closed to the thief (MICA-436), so its
-threads and passcode wait for their owner. On a server without the gate — every
-ESX server, standalone, and any qb server that never set `mica_phone_item` —
-nothing changes: each character has exactly one phone, as before.
+**What a player sees.** On a server that gates the phone on an item, a player
+holding no phone item is told so rather than shown somebody else's data. A thief
+using a stolen item opens their own phone (MICA-438), so the owner's threads and
+passcode wait for the owner. On a server without the gate — every ESX server,
+standalone, and any qb server that never set `mica_phone_item` — nothing
+changes: each character has exactly one phone, as before.
 
 **What stays with the person, deliberately:** bank, Hodlr, Marketplace listings,
 Blabber and its accounts, high scores, reports, the audit log, mail, and the
@@ -655,42 +650,41 @@ server console after updating (MICA-284).** This is the one change in the
 phone-as-item work that changes who a number belongs to, even though no
 individual number changes value. `mica_phone_numbers` gains a nullable
 `phone_id` column with a unique `phone_id_unique` key, and the migration
-`0001_phone_numbers_follow_the_phone` drops `citizenid_unique`, because a
-character holding two phones holds two numbers.
+`0001_phone_numbers_follow_the_phone` drops `citizenid_unique`, because a number
+belongs to a phone rather than to a character.
 
 **Nobody's number changes on upgrade.** On qb and qbx the migration copies every
 existing character's `charinfo.phone` into `mica_phone_numbers` as that
-character's number, and the first time they use a phone the number moves onto
-it. A character created after the update keeps the number qb issued too: micaOS
-adopts it the first time they connect rather than generating one. The one
-exception is two characters sharing a `charinfo.phone`, which qb does not
-prevent — the second to connect is issued a fresh number, and the migration
+character's number, and the first time their number is synced, it is attached to
+their phone. A character created after the update keeps the number qb issued
+too: micaOS adopts it the first time they connect rather than generating one.
+The one exception is two characters sharing a `charinfo.phone`, which qb does
+not prevent — the second to connect is issued a fresh number, and the migration
 prints how many characters that affects. Apply the migration before players
 connect; a server that skips it has micaOS issue and write back fresh numbers as
 players load, which is the behaviour the migration exists to avoid.
 
-**The framework is kept in step.** Whenever the active phone changes, its number
-is written into `charinfo.phone` through the framework's own export — qbx_core's
-`SetCharInfo`, or a qb-core player's `SetPlayerData` — so `GetPlayerByPhone`,
-your dispatch and job scripts, and anything else reading `charinfo.phone` keep
-working unmodified. A player left holding no phone keeps the last value the
-framework had rather than a blank, which would break those scripts; a phone's
-number stays with the phone, and the phone stays its owner's even once it is
-stolen (MICA-436), and micaOS's own lookups resolve through the phone rather
-than through the stale field.
+**The framework is kept in step.** Whenever the phone's number differs from the
+framework's, it is written into `charinfo.phone` through the framework's own
+export — qbx_core's `SetCharInfo`, or a qb-core player's `SetPlayerData` — so
+`GetPlayerByPhone`, your dispatch and job scripts, and anything else reading
+`charinfo.phone` keep working unmodified. A player left holding no phone keeps
+the last value the framework had rather than a blank, which would break those
+scripts; a phone's number stays with the phone, and the phone stays its owner's
+even once its item is stolen (MICA-438), and micaOS's own lookups resolve
+through the phone rather than through the stale field.
 
 **On es_extended nothing changes.** There is no standard way to set an ESX
 character's phone number, so micaOS keeps reading whatever your phone-number
 resource provides, issues none of its own, and says so once at start. A
-character there keeps their own number whatever phone they hold, and a phone
-that is not theirs is closed to them (MICA-436). Standalone is unchanged apart
-from the new column: it was already micaOS's number, and a standalone server has
-no inventory to hold two phones in.
+character there keeps their own number whatever item they hold. Standalone is
+unchanged apart from the new column: it was already micaOS's number.
 
-This needs the phone-as-item gate (`mica_phone_item`) and `ox_inventory` to mean
-anything per phone; without them every server, qb included, behaves as one
-number per character, exactly as before, with the number now recorded in
-`mica_phone_numbers` as well as `charinfo`.
+A character has one phone and so one number, with the phone-as-item gate
+(`mica_phone_item`) or without it (MICA-438): every server, qb included, behaves
+as one number per character, exactly as before, with the number now recorded in
+`mica_phone_numbers` as well as `charinfo`. Turning the gate on or off changes
+nobody's number (MICA-439, below).
 
 **`mica_messages` gains a `conversation_id_id` key on `(conversation_id, id)` —
 run `micaschema apply` from your server console after updating, or import the
@@ -937,19 +931,16 @@ table is left exactly as it was rather than with no index at all.
 after updating, or import the regenerated `mica.sql` / `mica.esx.sql` on a fresh
 install (MICA-280).** It carries `id`, `citizenid`, `phone_id`, `status`,
 `created_at` and `updated_at`, with a `status` key, a `citizenid_status` key and
-a unique `phone_id_unique` key. It is the first step of the phone becoming a
-thing you carry rather than something a character simply has: a phone gets an
-identity of its own, minted into the inventory item's metadata the first time it
-is used, so two phones are two phones. The phone number is the first thing to
-follow it (MICA-284, above); contacts, messages and the rest of a phone's data
-come in a later release.
+a unique `phone_id_unique` key. It gives the phone an identity of its own: a
+row, with an id that the phone's data is keyed on. The phone number is the first
+thing to follow it (MICA-284, above); contacts, messages and the rest of a
+phone's data come in a later release.
 
-`phone_id` is unique; `citizenid` deliberately is not, because a character is
-meant to be able to hold more than one phone. **This needs `ox_inventory`**: it
-is the only inventory with per-item metadata to mint an id into. On qb-inventory
-support depends on whether your build exposes `SetItemData`, and es_extended's
-own inventory stores quantities only and cannot carry a phone id at all — those
-servers keep exactly the behaviour they have now, and say so once at start.
+`phone_id` is unique; `citizenid` deliberately is not, because a database an
+earlier development build ran on can hold several rows for one character. The
+row is found by its character and is not carried in an item (MICA-438, below),
+so this needs no particular inventory: ox_inventory, qb-inventory and
+es_extended's own inventory behave alike.
 
 Every convar below defaults to the behaviour a server already had, so an update
 that sets none of them changes nothing for your players.
@@ -980,52 +971,87 @@ then on.
 
 ### Added
 
-**A phone belongs to the first citizen who uses it, for good (MICA-436).**
-Someone else holding the item now gets nothing. Until now, the next player to
+**A character has one phone, and a phone item is a key to it (MICA-438).**
+Holding any phone item opens your phone, with everything on it and your number.
+There are no burners to buy and no phone to remember to pick: one keybind, one
+phone. A character has exactly one phone and one tablet, each a row in
+`mica_devices` found by the character, and the item carries nothing; micaOS
+neither reads nor writes an inventory item's metadata. This replaces the model
+of MICA-219 to MICA-436, where each item carried a phone of its own, and it
+supersedes the used-phone-is-a-brick rule of MICA-436 below.
+
+**What a player sees.** A player whose phone is stolen buys a new phone item and
+has everything back — contacts, messages, photos, settings, the passcode and the
+number — as though restored from a backup, and getting the stolen item back
+changes nothing. A thief using the item opens their own phone, with their own
+data, and cannot reach the owner's. A phone item sold or given to someone else
+is a key to that person's phone, so a phone cannot be passed on with what is on
+it, and a second item is a spare key rather than a second phone.
+
+**What you see as an owner.** Nothing to run: no schema change, no convar, no
+command, so no "Action required". `mica_devices.claimed` stays in the table and
+nothing reads it.
+
+- **ESX and qb-inventory need nothing special.** The model counts the item and
+  needs no per-item metadata, so the inventory no longer has to be ox_inventory
+  for anything but the usable-item hook that opens the phone when the item is
+  used.
+- **Metadata on existing items is ignored.** A `deviceId` an earlier build wrote
+  into an item stays there, unread. A script of yours that read it has nothing
+  to read.
+- **A character who used two phone items on a development build** now has the
+  newest row as their phone (newest `updated_at`, then the highest `id`; in
+  practice the last one created or claimed). The older rows stay as they are,
+  unread and unmerged, and the console says so once per character at start.
+  `docs/phone-as-an-item.md` has a query to find them. A server that never ran
+  one has none.
+- **On an ungated server, each character's legacy number row is attached to
+  their phone on that phone's first number sync after this update.** The number
+  does not change, no version row is written, and it works on any schema this
+  code runs on, so there is nothing to run: `micaschema apply` still gates
+  MICA-430's versioned edits as before, and not this. A row from before MICA-436
+  that sits on a phone and names another character is detached back to that
+  character as a legacy number, logged once by token, and their next sync
+  attaches it to their own phone.
+- **Your scripts get simpler.** A shop sells any phone item. A robbery script
+  moves a key and nothing more: moving the item with or without its metadata, or
+  giving a fresh one, comes to the same. An evidence script can store "1 ×
+  phone" as a count and give back a fresh one. `docs/phone-as-an-item.md` has
+  the scripts' side.
+
+**Setting or clearing `mica_phone_item` changes nobody's number (MICA-439).**
+Gated or not, a character's number is read from, and attached to, their one
+phone, so it survives the convar being turned off and on again, on qb and qbx
+alike. ESX keeps no number rows, and standalone has no item gate to toggle. See
+"Turning the gate on and off" in `docs/phone-as-an-item.md`.
+
+**Be aware: on ESX a new character in a deleted character's slot inherits that
+phone (MICA-440).** esx_multicharacter reuses `char<slot>:<license>` as a slot's
+identifier, and MICA-428 keeps a deleted character's device row, passcode and
+battery live, so the new character is on that phone and may meet its passcode.
+This was already so on an ESX server without the gate, and holds with it since
+MICA-438.
+
+**What is not tested.** None of this has run in game. Nothing in the in-server
+suite has a player hold or use a phone item: the qbx and esx runs only check
+that the item exists and is registered as usable, and their item-metadata
+scenarios went with the metadata, so each runs five scenarios. The model is
+covered by unit tests, not by a running server.
+
+**A phone no longer changes hands (MICA-436).** Until now, the next player to
 use a phone that had changed inventories became its holder, and every contact,
 message, photo, note and setting on it, and its number, were rewritten to them.
 That rested on item metadata that any resource can write and on a lock screen
 only the client enforces, so a stolen or duplicated phone was a full read of its
-owner's. The handover is gone, removed rather than switched off. A phone another
-character used now reads closed: the shell stays shut, using the item opens
-nothing, and a request that reaches the server anyway is refused with the "You
-are not holding a phone." toast a player holding no phone gets. Nothing is
-written and nothing changes hands. A tablet follows the same rule. A thief's
+owner's. The handover is gone, removed rather than switched off, and nothing is
+written when somebody else holds the item. What replaced it is the entry above:
+the item is a key, and whoever holds it opens their own phone. A thief's
 `charinfo.phone` is not rewritten to the stolen number, and texts and calls to
 that number are still filed on the phone, where they wait for its owner.
 
-**What you see as an owner.** Nothing to run: no schema change, no convar, no
-command, so no "Action required". A phone another character has used is a brick
-for whoever holds it. A phone nobody has used has no owner yet, so a shop's
-stock is unaffected. A used phone cannot be sold on, given or traded to a second
-player, and there is no way for its owner to reset it for the next one yet
-(MICA-437). A robbery script that moves the item with its metadata moves a
-closed phone; the robber needs a blank one to have a working phone. An officer
-who uses a confiscated phone is refused it as a thief is, and returning it needs
-nothing beyond moving the item back. `docs/phone-as-an-item.md` has the scripts'
-side.
-
-**What this does not cover, and what is not tested:**
-
-- **qb-inventory lists one slot**, so a player holding their own phone and
-  somebody else's can be refused, depending on which slot it reports.
-  ox_inventory lists every slot.
-- **A deleted character's phone is a brick for everyone.** Its device row is
-  kept live (MICA-428) and still names the deleted character.
-- **The check that runs without waiting for the database counts a phone this
-  server has not read yet as held**, until the shell's own pass or a request for
-  the phone's data reads it. That check is behind the `HasPhoneItem` export and
-  behind writes that are not the phone's own, such as sending money. None of
-  them touches the phone's rows, and a request for those is always held to the
-  read.
-- **Nothing in the in-server suite drives this path.** It never has one player
-  hold another's used phone: the door's players hold no item at all, and the qbx
-  and esx runs only check the item and the shapes of its metadata. The refusal
-  is covered by unit tests, not in a running server.
-
-`'handover'` stays a version reason in the ledger, for history, and is still
-written when a legacy number is attached to a phone
-(`PhoneNumberRepository.attachToPhone`).
+`'handover'` stays a version reason in the ledger, for history, and nothing
+writes it any more: a legacy number being attached to a phone is a plain update
+(MICA-438).
 
 **`micastorage` shows where the database's space goes.** Nothing is deleted any
 more, so the tables only grow. The new command lists every `mica_` table,
@@ -1348,13 +1374,13 @@ that answers a new reason, `rate_limited`, which every caller's error handling
 should expect from any export from now on. README's export table has the rest.
 
 **`docs/phone-as-an-item.md` answers the questions the item model raises
-(MICA-231):** how a shop sells a blank phone and what happens on first use, what
-a robbery or a trade does to a phone's data (since MICA-436, nothing moves), how
-a confiscation script takes a phone and gives it back with its data intact, what
-becomes of the rows when an item is destroyed, and what a burner does and does
-not hide. Read it before wiring any of those scripts to the item; the one rule
-it keeps returning to is that a script which removes the item and adds a fresh
-one has made a different phone.
+(MICA-231):** how a shop sells a phone and what happens on first use, what a
+robbery or a trade does to a phone's data (since MICA-438 a thief opens their
+own phone and nothing moves), how a confiscation script takes a phone and gives
+it back, what becomes of a phone when its item is destroyed, and why the item is
+a key and not a phone. Read it before wiring any of those scripts to the item;
+the one rule it keeps returning to is that the item carries nothing, so moving,
+copying or replacing it changes no one's data.
 
 **A phone number can belong to a script, through three new exports:
 `RegisterNumber`, `UnregisterNumber` and `CreateCall` (MICA-226).** A resource
@@ -1719,17 +1745,15 @@ line.
 
 **A phone with no number of its own no longer gives away its holder's main
 number (MICA-346).** On qb and standalone, a call, a text, a forwarded call's
-Recents entry and a shared live location from a phone that had no number yet,
-such as a burner just picked up, carried the holder's main number instead. Each
-now waits for the phone's own number and, if it still has none, refuses: the
-player sees "This phone has no number yet." and nothing is sent. A listing from
-such a phone shows no Call or Text button. A burner used while the main phone's
-number was still syncing now gets its own number rather than none. A player
-holding no phone at all now sees "You are not holding a phone" when dialling. On
-ESX a phone's number is the character's, so the leak never happened there, but a
-character with no number could still text, and nobody could block a text that
-carried no number: such a text is now refused the same way, as its calls already
-were (MICA-348).
+Recents entry and a shared live location from a phone that had no number yet
+carried the holder's main number instead. Each now waits for the phone's own
+number and, if it still has none, refuses: the player sees "This phone has no
+number yet." and nothing is sent. A listing from such a phone shows no Call or
+Text button. A player holding no phone at all now sees "You are not holding a
+phone" when dialling. On ESX a phone's number is the character's, so the leak
+never happened there, but a character with no number could still text, and
+nobody could block a text that carried no number: such a text is now refused the
+same way, as its calls already were (MICA-348).
 
 **A security review closed a set of privacy and authority gaps (MICA-339).** No
 schema change and no command to run. What players and scripts notice:
@@ -1744,9 +1768,9 @@ schema change and no command to run. What players and scripts notice:
   actually in hand.
 - **Messages no longer tell one player another's character name or main
   number.** People show as the reader's saved contact, else their number, and a
-  new 1:1 thread is named the same way. A thread with a burner now shows the
-  burner's own number. 1:1 threads created before this keep the other player's
-  name in the database, but it no longer leaves the server.
+  new 1:1 thread is named the same way. A thread shows the other phone's own
+  number. 1:1 threads created before this keep the other player's name in the
+  database, but it no longer leaves the server.
 - **A player can report, and react to, only what they can see**: a message in
   their own thread, a DM they sent or received, a photo they own or can see
   attached, or a public post that is still up. Anything else is answered as if
@@ -1835,10 +1859,10 @@ battery, or a disconnect. No owner action.
 character load only ever added the new character's rows to that cache. A
 character with no saved dock therefore kept the previous one's, and
 `mica_default_dock` never showed for them. The same went for every other
-setting, add-ons included. A character load, or switching to a different phone
-item, now removes whatever the new character's saved settings do not include. A
-setting changed in the last moment before a reload is kept, and so is anything
-an app deliberately stores per device. No owner action.
+setting, add-ons included. A character load now removes whatever the new
+character's saved settings do not include. A setting changed in the last moment
+before a reload is kept, and so is anything an app deliberately stores per
+device. No owner action.
 
 **Every raw net event declares its arguments as a schema before its handler runs
 (MICA-210).** The five fire-and-forget events outside the contract mechanism —

@@ -70,9 +70,9 @@ const IMPORT_QB_CHECKS = 1;
 /** MICA-165: `micaseed` writes qb's `players`, so its sealed round trip runs on qb only. */
 const CRYPT_SEED_CHECKS = 1;
 /**
- * MICA-431: a sealed note and photo on their phone, and since MICA-436 still the owner's when
- * somebody else resolves the phone in their hand, and the owner's own resolve answers it; each
- * shape.
+ * MICA-431: a sealed note and photo on their phone, and since MICA-438 untouched when somebody
+ * else holding a phone item resolves, and A's own resolve answers A's phone whatever the item
+ * carries; each shape.
  */
 const SEALED_ON_PHONE_CHECKS = 7;
 /** MICA-432: a contact's number behind its blind index, a place, a thread's name, each shape. */
@@ -285,7 +285,7 @@ const loadServerModule = async () => {
     // The real phone resolver, installed when this module loads, as in game: an import writes
     // device-owned rows, and which phone they land on is `services/Devices.ts`'s answer.
     `export { devices } from '${root}/server/services/Devices.ts';`,
-    // MICA-436: the resolve itself, driven with the inventory stubbed, against real rows.
+    // MICA-438: the resolve itself, driven with a real item count, against real rows.
     `export { resolveDevice, __resetDeviceState } from '${root}/server/services/Devices.ts';`,
     // Blabber registers itself as the app that takes imported posts when it loads (core may
     // not name the add-on, so the importer asks a registry). Without it every tweet would be
@@ -487,10 +487,12 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   // migration would, so the repository's phone-scoped reads have something to match.
   const phoneA = 'a'.repeat(32);
   const phoneB = 'b'.repeat(32);
-  await connection.query(
-    `INSERT INTO mica_devices (citizenid, device_id, claimed) VALUES (?, ?, 0), (?, ?, 0)`,
-    [ownerA, phoneA, ownerB, phoneB]
-  );
+  await connection.query(`INSERT INTO mica_devices (citizenid, device_id) VALUES (?, ?), (?, ?)`, [
+    ownerA,
+    phoneA,
+    ownerB,
+    phoneB
+  ]);
   await connection.query(
     `INSERT INTO mica_messages_participants (conversation_id, citizenid, device_id, role, left_at, status)
      VALUES (?, ?, ?, 'admin', NULL, 'active'), (?, ?, ?, 'member', NULL, 'active')`,
@@ -1492,7 +1494,7 @@ const runModerationVariant = async ({ connection, schemaFile, hasPlayers, module
   const phoneB = 'b'.repeat(32);
 
   step(`${label} — A's thread with B: texts 1, 3 and the newest, 2; B has read none`);
-  await q('INSERT INTO mica_devices (citizenid, device_id, claimed) VALUES (?, ?, 0), (?, ?, 0)', [
+  await q('INSERT INTO mica_devices (citizenid, device_id) VALUES (?, ?), (?, ?)', [
     A,
     phoneA,
     B,
@@ -2583,7 +2585,7 @@ const runCharacterDeletedVariant = async ({
     "INSERT INTO mica_lockscreen (citizenid, device_id, passcode_hash, passcode_salt) VALUES (?, 'pa', ?, ?)",
     [A, 'f'.repeat(64), 'e'.repeat(32)]
   );
-  await q("INSERT INTO mica_devices (citizenid, device_id, claimed) VALUES (?, 'pa', 0)", [A]);
+  await q("INSERT INTO mica_devices (citizenid, device_id) VALUES (?, 'pa')", [A]);
 
   const rowsOf = async (owner) => {
     let total = 0;
@@ -3611,11 +3613,14 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
 
     /*
      * MICA-431: a phone's own content is sealed to the phone, and a row on no phone still opens
-     * for its citizen. MICA-436: somebody else holding the phone is refused it by the real
-     * resolve — the inventory stubbed to hand them a slot carrying it — and no row on any
-     * device-keyed table changes. On a real MariaDB, whose columns are as wide as the sealed
-     * bound says (an ASCII photo at the camera's cap, a title of three-byte characters at its
-     * own).
+     * for its citizen. MICA-438: a character has one phone, and a phone item is a key to it. A
+     * citizen with no rows yet resolving with an item carrying A's phone id creates their own
+     * phone row and nothing else, and no row of A's on any device-keyed table changes; A
+     * resolves to A's own row from an item with no metadata and from one carrying a stale id
+     * alike. The real resolve, with the
+     * real item count through a qb player's `GetItemByName`. On a real MariaDB, whose columns
+     * are as wide as the sealed bound says (an ASCII photo at the camera's cap, a title of
+     * three-byte characters at its own).
      */
     useKeys(rotated);
     step(`${label} — a sealed note and photo on their phone, still the owner's`);
@@ -3660,16 +3665,15 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
       true
     );
 
-    // The phone is A's: claimed, set up, as a resolve of A's would have left it.
+    // The phone is A's: set up, as A's first resolve would have left it.
     await modules.devices.repo.create({
       citizenid: A,
       device_id: PHONE,
       kind: 'phone',
-      claimed: 1,
       setup_pending: 0
     });
-    // Every device-keyed table, each row's id, owner and phone folded into a count and a
-    // checksum: anything a resolve wrote to any of them changes one or the other.
+    // Every device-keyed table, each of a citizen's rows' id, owner and phone folded into a
+    // count and a checksum: anything a resolve wrote to any of them changes one or the other.
     const deviceTables = (
       await q(
         `SELECT TABLE_NAME AS name FROM information_schema.COLUMNS
@@ -3677,51 +3681,129 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
             AND TABLE_NAME LIKE 'mica\\_%' ORDER BY TABLE_NAME`
       )
     ).map((row) => row.name);
-    const fingerprint = async () => {
+    const fingerprintOf = async (citizenid) => {
       const out = {};
       for (const table of deviceTables) {
         const [row] = await q(
           `SELECT COUNT(*) AS n,
                   BIT_XOR(CRC32(CONCAT_WS('|', id, citizenid, IFNULL(device_id, '-')))) AS sum
-             FROM \`${table}\``
+             FROM \`${table}\` WHERE citizenid = ?`,
+          [citizenid]
         );
         out[table] = `${row.n}:${row.sum}`;
       }
       return out;
     };
-    const tablesBefore = await fingerprint();
-    const holding = (citizenid, source) => ({ citizenid, source, rawPlayer: {} });
-    const previousSlots = modules.FrameworkBridge.itemSlots;
+    // The phone A's resolve answers: A's newest live phone row, by the rule's own order. The
+    // import and the seeds above may have given A one already; PHONE is the newest.
+    const [newestOfA] = await q(
+      `SELECT device_id FROM mica_devices
+        WHERE citizenid = ? AND kind = 'phone' AND status = 'active'
+        ORDER BY updated_at DESC, id DESC LIMIT 1`,
+      [A]
+    );
+    const aBefore = await fingerprintOf(A);
+    // Somebody nothing above has given a row, so what their resolve creates is all theirs.
+    const THIEF = hasPlayers ? 'CIT_THIEF' : `char2:${'7'.repeat(40)}`;
+    const bPhonesBefore = await q(
+      "SELECT device_id FROM mica_devices WHERE citizenid = ? AND kind = 'phone'",
+      [THIEF]
+    );
+    const bBefore = await fingerprintOf(THIEF);
+    // A qb player holding one phone item, carrying `info` as qb-core's item table does.
+    let counted = 0;
+    const holding = (citizenid, source, info) => ({
+      citizenid,
+      source,
+      rawPlayer: {
+        Functions: {
+          GetItemByName: (name) => {
+            counted += 1;
+            return { name, amount: 1, slot: 3, info };
+          }
+        }
+      }
+    });
     const keyConvar = globalThis.GetConvar;
-    modules.FrameworkBridge.itemSlots = () => [{ slot: 3, metadata: { deviceId: PHONE } }];
+    // One default contact, so the thief's new phone has a set-up that lands somewhere.
     globalThis.GetConvar = (name, fallback) =>
-      name === 'mica_phone_item' ? 'phone' : keyConvar(name, fallback);
-    let thief;
-    let owner;
+      name === 'mica_phone_item'
+        ? 'phone'
+        : name === 'mica_default_contacts'
+          ? JSON.stringify([{ name: 'Dispatch', number: '911' }])
+          : keyConvar(name, fallback);
+    const warned = console.warn;
+    console.warn = () => {};
+    let byB;
+    let aBlank;
+    let aStale;
     try {
       modules.__resetDeviceState();
-      thief = await modules.resolveDevice(9001, 'phone', holding(B, 9001));
-      owner = await modules.resolveDevice(9002, 'phone', holding(A, 9002));
+      // The thief holds A's old item: it carries A's phone id.
+      byB = await modules.resolveDevice(9001, 'phone', holding(THIEF, 9001, { deviceId: PHONE }));
+      // The new phone's set-up hooks run after the resolve, reading the convar above: wait for
+      // the mark they leave when they have all finished (MICA-335).
+      const setUpBy = Date.now() + 10_000;
+      for (;;) {
+        const [mark] = await q(
+          'SELECT setup_pending FROM mica_devices WHERE citizenid = ? ORDER BY id DESC LIMIT 1',
+          [THIEF]
+        );
+        if (mark && Number(mark.setup_pending) === 0) break;
+        if (Date.now() > setUpBy) throw new Error("the thief's new phone never finished set-up");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      modules.__resetDeviceState();
+      aBlank = await modules.resolveDevice(9002, 'phone', holding(A, 9002, {}));
+      modules.__resetDeviceState();
+      aStale = await modules.resolveDevice(
+        9002,
+        'phone',
+        holding(A, 9002, { deviceId: 'e'.repeat(32) })
+      );
     } finally {
-      modules.FrameworkBridge.itemSlots = previousSlots;
       globalThis.GetConvar = keyConvar;
+      console.warn = warned;
       modules.__resetDeviceState();
     }
-    const tablesAfter = await fingerprint();
+    const bPhonesAfter = await q(
+      "SELECT device_id FROM mica_devices WHERE citizenid = ? AND kind = 'phone'",
+      [THIEF]
+    );
+    const bAfter = await fingerprintOf(THIEF);
+    const created = bPhonesAfter.find(
+      (row) => !bPhonesBefore.some((was) => was.device_id === row.device_id)
+    );
+    const bChanged = Object.keys(bAfter).filter((table) => bAfter[table] !== bBefore[table]);
+    const thiefContacts = await q('SELECT device_id FROM mica_contacts WHERE citizenid = ?', [
+      THIEF
+    ]);
     check(
-      `${label}: somebody else's resolve of the phone in their hand is refused, and no row moves`,
+      `${label}: a resolve with A's old item creates the holder's own phone, seeded there, and nothing of A's moves`,
       [
-        thief,
-        deviceTables.includes('mica_notes'),
-        deviceTables.includes('mica_devices'),
-        tablesAfter
+        bPhonesBefore.length,
+        bPhonesAfter.length,
+        byB.status,
+        byB.device?.deviceId === created?.device_id,
+        created?.device_id !== PHONE,
+        bChanged.toSorted(),
+        // Its seeded default landed on its own new phone, under it.
+        thiefContacts.map((row) => row.device_id === created?.device_id),
+        deviceTables.length >= 13,
+        await fingerprintOf(A)
       ],
-      [{ status: 'none' }, true, true, tablesBefore]
+      [0, 1, 'active', true, true, ['mica_contacts', 'mica_devices'], [true], true, aBefore]
     );
     check(
-      `${label}: the owner's resolve answers the phone, and writes nothing either`,
-      [owner, await fingerprint()],
-      [{ status: 'active', device: { deviceId: PHONE, slot: 3 } }, tablesBefore]
+      `${label}: A resolves to A's own phone from an item with no metadata and a stale id alike`,
+      [newestOfA?.device_id, aBlank, aStale, counted, await fingerprintOf(A)],
+      [
+        PHONE,
+        { status: 'active', device: { deviceId: PHONE } },
+        { status: 'active', device: { deviceId: PHONE } },
+        3,
+        aBefore
+      ]
     );
     const note = await notesRepo.findById(noteId, A, PHONE);
     const picture = await mediaRepo.findById(photoId, A, PHONE);

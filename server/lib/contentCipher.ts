@@ -91,8 +91,9 @@ const AAD_DOMAIN = 'micaOS content v1';
  * The domain of a value bound to a **phone** rather than a character (MICA-431): a column of a
  * `deviceOwned` table, whose rows belong to the device. Bound to `device_id`, which nothing
  * rewrites, a value opens only on its own phone. When MICA-431 chose this, a handover moved a
- * phone's rows to a new holder by rewriting `citizenid`; MICA-436 removed the handover, so the
- * binding no longer has a move to survive, but it still keeps a value off every other phone.
+ * phone's rows to a new holder by rewriting `citizenid`; MICA-436 removed the handover and
+ * MICA-438 gave each character one phone, so the binding no longer has a move to survive, but
+ * it still keeps a value off every other phone, the same character's tablet included.
  *
  * A separate domain rather than the device id in the citizen slot, so no value sealed under one
  * meaning can ever be read under the other.

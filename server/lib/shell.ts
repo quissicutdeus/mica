@@ -490,8 +490,8 @@ const playerLoadedForgetters: SourceForgetter[] = [];
  * A character load on a source that is already connected can be a character switch — a
  * multichar logout and pick — and FiveM fires no `playerDropped` for it. So everything keyed by
  * source and cleared only on drop still names the previous character when the next one loads:
- * the slot they last used a phone from, the call they were on. Battery's `phoneOf` was the first
- * of these found (MICA-326).
+ * the call they were on, and until MICA-438 the slot they last used a phone from. Battery's
+ * `phoneOf` was the first of these found (MICA-326).
  *
  * **At logout too, where the framework says so (MICA-382).** A framework that fires an unload
  * event (`PLAYER_UNLOADED_EVENTS`) runs every forgetter registered with `atLogout` — the
@@ -507,9 +507,10 @@ const playerLoadedForgetters: SourceForgetter[] = [];
  * second call-log row. The same character picked again is not a switch and runs nothing.
  *
  * A phase of its own rather than an ordinary subscriber, because subscribers run in import
- * order and read each other's state: a subscriber that resolves a device ahead of the one
- * that forgets the last-used slot would resolve the previous character's phone. Every
- * forgetter runs first, so no subscriber can be handed state from before the load.
+ * order and read each other's state: a subscriber that reads per-source state ahead of the one
+ * that forgets it — a call, a speaker, until MICA-438 the last-used device slot — would act on
+ * the previous character's. Every forgetter runs first, so no subscriber can be handed state
+ * from before the load.
  *
  * **Only on a switch.** A load is announced more than once: qbx fires the local
  * `QBCore:Server:PlayerLoaded` inside its character load, and the network
@@ -685,12 +686,11 @@ onPlayerLoaded('framework-sources', FrameworkBridge.rememberSource);
  * ledger, permanently — the record of a staff member's moderation outlives the staff member.
  *
  * **And the device rows, live** (MICA-428). They are the phone's identity and state, not the
- * character's content, and the phone item can outlive its character. Erased, the next holder's
- * resolve would read no `active` row and its create would be refused by `device_id_unique`.
- * Left `active`, the row still names the deleted character, and since MICA-436 a phone is its
- * first user's for good: the next holder is refused it like any phone that is not theirs, and
- * nothing on it moves. Before MICA-428 the purge deleted them and the next resolve minted the
- * row afresh.
+ * character's content. Left `active`, the row still names the deleted character. Since MICA-438
+ * a resolve reads only its own citizen's rows, and a phone item that outlives its character
+ * opens its next holder's own phone, so another character reads these rows only where a
+ * framework hands a new character the deleted one's identifier — ESX can (MICA-440), and that
+ * character then resolves to this phone as its own. Before MICA-428 the purge deleted them.
  *
  * Everything else they owned is erased. The entries are a player's own delete's, taken from
  * `SELF_SERVICE_EXCEPT` rather than restated, so the pending-report predicate cannot drift

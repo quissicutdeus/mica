@@ -426,36 +426,39 @@ DDL.
 
 ### Which tables follow the phone
 
-A phone is an item (MICA-219), and since MICA-282 its data belongs to the
-**phone**, not to the character holding it. A service opts in with
-`deviceOwned: true`, which injects a nullable `device_id` column and a
-`device_id` key, makes every generic action scope by the caller's active phone
-as well as their citizenid, and hands custom handlers the phone id as their
-sixth argument. The phone id is resolved by `ServiceEndpoint` from the item in
-the caller's own inventory (`services/Devices.ts`, through
-`lib/deviceIdentity.ts`), never from a payload — `device_id` is refused by the
-write and filter allowlists whatever a client sends (MICA-281).
+Since MICA-282 a table's data can belong to the **phone** rather than to the
+character as a whole, and since MICA-438 the phone is the character's one phone:
+the item that opens it is a key and carries nothing, and a character has exactly
+one phone and one tablet. A service opts in with `deviceOwned: true`, which
+injects a nullable `device_id` column and a `device_id` key, makes every generic
+action scope by the caller's device as well as their citizenid, and hands custom
+handlers the device id as their sixth argument. The id is resolved by
+`ServiceEndpoint` from the caller's own `mica_devices` row
+(`services/Devices.ts`, through `lib/deviceIdentity.ts`), never from a payload
+and never from an item — `device_id` is refused by the write and filter
+allowlists whatever a client sends (MICA-281). Because a character has one
+device of each kind, `device_id` says which of the character's devices a row
+belongs to, phone or tablet; it no longer tells one of their phones from
+another.
 
-**The predicate is still both, and `citizenid` is the phone's first user.**
-Every read and write on a device-owned table names
-`citizenid = ? AND device_id = ?`. The `citizenid` on such a row, `mica_devices`
-first, is the citizen who first used the phone, **for good** (MICA-436), and it
-stays the orphan sweep's key. Nothing rewrites it to whoever holds the item:
-when `resolveDevice` finds a slot whose `mica_devices` row names somebody else,
-it skips the slot (`judgeRow` in `services/Devices.ts`, the one rule), and a
-player left with no slot of their own is answered `'none'` and refused with
-`server.phone.notHeld`. The item gate (`lib/deviceItem.ts`) counts by the same
-rule, so the shell stays shut for them. Nothing is written for a skipped slot.
+**The predicate is still both, and `citizenid` is the device's owner.** Every
+read and write on a device-owned table names `citizenid = ? AND device_id = ?`.
+The `citizenid` on such a row, `mica_devices` first, is the citizen the device
+belongs to, and it stays the orphan sweep's key. Nothing rewrites it:
+`resolveDevice` finds the row by the caller's own citizenid (`identityDevice` in
+`services/Devices.ts`), so there is never a row of somebody else's to skip. On a
+server that gates a device on an item, a player holding none is answered
+`'none'` and refused with `server.phone.notHeld`; the item gate
+(`lib/deviceItem.ts`) counts the item by name and nothing else.
 
 That rules out, for anyone adding a table or a write path: a statement that
 rewrites `citizenid` on a device-owned row to the player in hand. Before
 MICA-436 a handover did exactly that, across every table with a `device_id`
 column, and a possessed item was full read access to its owner's phone. A new
-device-owned table needs nothing to follow its phone. Two named writes still set
-`citizenid` on a phone's rows, and both set it to the phone's owner:
-`PhoneNumberRepository.transferToHolder` puts a number row recorded before
-MICA-436 back with the owner, and `ConversationRepository.ensureLineParticipant`
-reopens a line thread's membership for the phone it left.
+device-owned table needs nothing to follow its phone. One named write still sets
+`citizenid` on a phone's rows, and sets it to the phone's owner:
+`ConversationRepository.ensureLineParticipant` reopens a line thread's
+membership for the phone it left.
 
 **A tablet is a device too (MICA-264).** `mica_devices.kind` says which, and a
 device-owned table keys a tablet's rows on the tablet's own id exactly as it
@@ -492,32 +495,41 @@ bug that looks like a feature, so the reasoning is written down:
 | `mica_messages`, `mica_messages_attachments`, `mica_messages_reactions`         | Authored content: the author keeps authorship, the _thread_ follows via participants              |
 | `mica_messages_conversations`                                                   | The creator's row; its `participant_a`/`participant_b` are **phone ids**, so a pair is two phones |
 
-**Unique keys widen with the split.** A character with two phones has two
-passcodes, two themes, two block lists and two memberships in a thread, so
-`mica_lockscreen`, `mica_settings`, `mica_blocklist` and
-`mica_messages_participants` are unique per phone, not per citizen.
-`0002_phone_data_follows_the_phone` did the swap; a new device-owned table with
-a per-owner unique key should name `device_id` in it from the start.
+**Unique keys are per device.** `mica_lockscreen`, `mica_settings`,
+`mica_blocklist` and `mica_messages_participants` are unique per phone, not per
+citizen, because a character's phone and their tablet each have a passcode, a
+theme, a block list and a membership in a thread of their own.
+`0002_phone_data_follows_the_phone` did the swap, at a time when a character
+could hold several phones; a new device-owned table with a per-owner unique key
+should name `device_id` in it from the start.
 
 **Rows written on a player's behalf** — a notification, a photo dropped on them,
 a contact a job hands them, a call logged against them — land on the phone
-`phoneForCitizen` resolves: the one in their hand, else the one they used last,
-else their identity phone. A row addressed by **number** lands on the phone that
-owns the number (`readPhoneIdByNumber`).
+`phoneForCitizen` resolves, which is the character's one phone (`identityPhone`
+in `services/Devices.ts`), created if they have none yet. It does not matter
+whether they are online or holding an item. A row addressed by **number** lands
+on the phone that owns the number (`readPhoneIdByNumber`).
 
-**After a robbery, those rows wait on the phone** (MICA-339, MICA-436). The
-cached phone is always the citizen's own, so it still names the phone the thief
-now holds, and rows filed under its owner keep landing there until the owner
-starts using another. The thief is refused the phone and cannot read them; the
-owner can only if it comes back, as with a phone in a stash.
+**After a robbery, those rows wait on the phone** (MICA-339). A thief holding
+the victim's item opens the thief's own phone, so the rows filed under the
+victim keep landing on the victim's, where only they can read them, whenever
+they next hold a phone item. That is a phone in a stash, and the owner chose it
+that way.
 
-**A server that cannot carry a phone id** — an ungated qb server, standalone,
-es_extended's own inventory — gives every citizen one unclaimed _identity phone_
-(`mica_devices.claimed = 0`), minted on demand and never written into an item.
-On a gated server the first item a citizen uses adopts that phone, which is how
-the migration's backfill lands on a real item. A player on a gated server
-holding no phone is refused with a player-facing message; there is no phone for
-their rows to belong to.
+**Every server resolves the same way.** An ungated qb server, standalone,
+es_extended's own inventory and a gated ox_inventory server all find or create
+the citizen's `mica_devices` row of that kind by their citizenid; nothing is
+read from or written to an item. This is what used to be called the _identity
+phone_, the path a server took when no inventory could carry a phone id, and
+since MICA-438 it is the only path. The `claimed` column that tracked whether an
+item had adopted it is unused: every insert leaves it at its default and no read
+names it, and it is kept only because dropping it would be a schema change for
+nothing. A player on a gated server holding no phone item is refused with a
+player-facing message, because the phone is closed for them.
+
+**A character with several phone rows** — only a database an earlier build ran
+on can have them — uses the one whose `updated_at` is newest, then the highest
+`id`; the others stay where they are. `docs/phone-as-an-item.md` has the rest.
 
 ### Declaring the custom actions: `contract`
 
@@ -806,10 +818,12 @@ MICA-300, MICA-428), and **neither deletes anything**: each row moves to
 `moderated`, with its takedown told the owner erased it. Several survive live:
 reports the character filed that staff have not resolved, their rows in the
 audit ledger (never swept), and the device rows (`mica_devices`,
-`mica_phone_numbers`, `mica_battery`, `mica_lockscreen`), which the phone item
-can outlive its character to need. A table with no `status` is skipped. The rows
-that hang off an erased account or profile (follows, blocks, reactions, ears,
-swipes, matches) are erased with it, through `registerDependentRows`.
+`mica_phone_numbers`, `mica_battery`, `mica_lockscreen`), which are the phone's
+identity and state rather than the character's content (on ESX a new character
+in a deleted character's slot reuses them, MICA-440). A table with no `status`
+is skipped. The rows that hang off an erased account or profile (follows,
+blocks, reactions, ears, swipes, matches) are erased with it, through
+`registerDependentRows`.
 
 **A shared row stays while others are in it** (`registerSharedRows`, from
 `lib/orphanSweep.ts`). A service whose rows other players share through a

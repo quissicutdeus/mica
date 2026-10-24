@@ -573,13 +573,13 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    * The rows follow the phone, not the character (MICA-282).
    *
    * Injects a nullable `device_id` column and a `device_id` index, and makes every generic
-   * action scope by the caller's active phone as well as their citizenid — the phone id is
-   * resolved by `ServiceEndpoint` from the item in the caller's own inventory and handed to
-   * custom handlers as their sixth argument. A row's `citizenid` names the phone's owner, the
-   * citizen who first used it, and nothing moves it (MICA-436): somebody else holding the phone
-   * is refused it, so its rows stay where they are. Declare it for what belongs to the
-   * *device* — contacts, notes, media, the lock screen — and never for what belongs to the
-   * *person*, which would leave somebody's money behind on a phone they lost.
+   * action scope by the caller's phone as well as their citizenid — the phone id is resolved by
+   * `ServiceEndpoint`, the citizen's one phone of the device kind asked for (MICA-438), and
+   * handed to custom handlers as their sixth argument. A row's `citizenid` names the phone's
+   * owner and nothing moves it: any phone item in a citizen's hand opens their own phone, never
+   * somebody else's. Declare it for what belongs to the *device* — contacts, notes, media, the
+   * lock screen — and never for what belongs to the *person*: a tablet has rows of its own, and
+   * the person's would be split across their two devices.
    * `docs/schema-and-services.md` has the split, table by table.
    */
   deviceOwned?: boolean;
