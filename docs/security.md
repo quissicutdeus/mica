@@ -1341,12 +1341,17 @@ by this list until someone re-weighs it.
   `media-src` and `font-src` are `data: blob:` plus `networkHosts`, and
   `img-src` alone also carries the server's image host when one is configured
   (MICA-243); `frame-src`, `child-src`, `form-action` and `base-uri` are
-  `'none'`, and `child-src 'none'` also stops Web Workers. **`script-src` and
-  `style-src` are still open to any `https:` or `http:` host**, kept at the
-  reach they had before MICA-196. The add-on's bundle is inlined into the frame
-  and needs neither, so all they do is let a pinned bundle `import()` code its
-  SHA never covered, and carry a payload out in a script or stylesheet URL,
-  plaintext included. MICA-442 scopes both to `networkHosts`.
+  `'none'`, and `child-src 'none'` also stops Web Workers. Since MICA-442
+  `script-src` and `style-src` are `'unsafe-inline'` (and `'unsafe-eval'` for
+  scripts) plus `data: blob:` plus `networkHosts`. Until then both also allowed
+  any `https:` or `http:` host, the reach they had before MICA-196, which let a
+  pinned bundle `import()` code its SHA never covered and carry a payload out in
+  a script or stylesheet URL, plaintext included. The add-on's bundle is inlined
+  into the frame as one module script with its CSS injected as a `<style>`, so
+  it needs neither. **What stays open, said plainly:** a host an add-on declares
+  can serve it a script, so what runs in the frame is the pinned bundle plus
+  whatever its declared hosts serve. The manifest shows those hosts; nothing
+  here can show what they serve tomorrow.
 - **Message and DM bodies are readable by whoever operates the server, and that
   is inherent to what a FiveM resource is, not a defect in micaOS (MICA-70).** A
   message lands in the operator's own MySQL database as plaintext

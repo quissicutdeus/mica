@@ -85,22 +85,73 @@ describe('srcdocFor', () => {
       expect(directives).toContain("base-uri 'none'");
     });
 
+    /** One directive's sources, split the way a browser tokenizes them. */
+    const sources = (directives: string[], name: string): string[] => {
+      const value = directives.find((d) => d.startsWith(`${name} `));
+      if (value === undefined) throw new Error(`no ${name} in the policy`);
+      return value.split(' ').slice(1);
+    };
+
     /**
-     * `script-src`/`style-src` behave exactly as they did when they were unset. Under a
-     * `default-src 'none'` floor that has to be written out, and getting it wrong breaks
-     * every add-on at once — the inlined module script would simply never run.
+     * MICA-442: the bundle is inline, so inline is what `script-src`/`style-src` must admit
+     * — get that wrong and every add-on breaks at once, since the module script would never
+     * run. What they no longer admit is a script or stylesheet from any host the manifest
+     * did not name, which was every `https:` and `http:` host until this ticket.
      */
-    it('leaves script and style exactly as permissive as an unset directive was', () => {
-      const directives = policy(srcdocFor('x'));
-      const script = directives.find((d) => d.startsWith('script-src '));
-      const style = directives.find((d) => d.startsWith('style-src '));
-      expect(script).toBeDefined();
-      expect(style).toBeDefined();
-      // The inlined module and the fallback error listener are both inline scripts.
-      expect(script).toContain("'unsafe-inline'");
-      expect(script).toContain("'unsafe-eval'");
-      // Svelte injects `<style>` at runtime.
-      expect(style).toContain("'unsafe-inline'");
+    it('lets scripts and styles run inline and load only from data: and blob: when nothing is declared', () => {
+      for (const html of [srcdocFor('x'), srcdocFor('x', [])]) {
+        const directives = policy(html);
+        // The inlined module and the fallback error listener are both inline scripts.
+        expect(directives).toContain("script-src 'unsafe-inline' 'unsafe-eval' data: blob:");
+        // The add-on build injects its CSS as a `<style>`, and Svelte may inject more.
+        expect(directives).toContain("style-src 'unsafe-inline' data: blob:");
+      }
+    });
+
+    it('scopes script and style loads to the declared hosts, exactly as connect-src is', () => {
+      const directives = policy(
+        srcdocFor('x', ['https://api.example.com', 'https://cdn.example.com:8443'])
+      );
+      expect(directives).toContain(
+        "script-src 'unsafe-inline' 'unsafe-eval' data: blob: https://api.example.com https://cdn.example.com:8443"
+      );
+      expect(directives).toContain(
+        "style-src 'unsafe-inline' data: blob: https://api.example.com https://cdn.example.com:8443"
+      );
+    });
+
+    it('admits no bare scheme that would let a script or stylesheet come from an undeclared host', () => {
+      for (const html of [
+        srcdocFor('x'),
+        srcdocFor('x', ['https://api.example.com']),
+        srcdocFor('x', ['https://api.example.com'], ['https://img.example.test'])
+      ]) {
+        const directives = policy(html);
+        for (const directive of ['script-src', 'style-src']) {
+          const list = sources(directives, directive);
+          // `https:` alone is every https host on the internet, and `http:` every
+          // plaintext one; both were here from MICA-196 until MICA-442.
+          expect(list).not.toContain('https:');
+          expect(list).not.toContain('http:');
+          // The frame's origin is opaque, so `'self'` would match nothing.
+          expect(list).not.toContain("'self'");
+          // Every source is a keyword, a local scheme, or an exact declared origin.
+          for (const source of list) {
+            expect(source).toMatch(/^('unsafe-inline'|'unsafe-eval'|data:|blob:|https:\/\/.+)$/);
+          }
+        }
+      }
+    });
+
+    /** The image host is for drawing photos (MICA-243), never for running code. */
+    it('keeps the image host out of script-src and style-src', () => {
+      const directives = policy(
+        srcdocFor('x', ['https://api.example.com'], ['https://img.example.test'])
+      );
+      expect(sources(directives, 'script-src')).not.toContain('https://img.example.test');
+      expect(sources(directives, 'style-src')).not.toContain('https://img.example.test');
+      expect(sources(directives, 'script-src')).toContain('https://api.example.com');
+      expect(sources(directives, 'style-src')).toContain('https://api.example.com');
     });
 
     /**

@@ -29,9 +29,30 @@ import { fileURLToPath } from 'node:url';
 const WEB = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const E2E = path.join(WEB, 'e2e');
 
-/** Reading a colour back out of the DOM — the only thing that can differ between schemes. */
-const READS_A_COLOUR =
-  /--color-|getPropertyValue\(\s*['"`]--|toHaveCSS\(|backgroundColor|getComputedStyle/;
+/**
+ * Properties that never hold a colour. Kept tight on purpose: anything not named here —
+ * `color`, `border*`, `*shadow`, `fill`, `stroke`, `cursor`, a custom property — counts.
+ */
+const NOT_A_COLOUR =
+  /font(?:-[a-z]+)*|text-(?:overflow|align)|white-space|overflow(?:-[xy])?|display|visibility|position|opacity|z-index|(?:min-|max-)?(?:width|height)|line-height|letter-spacing/;
+
+/**
+ * Reading a colour back out of the DOM — the only thing that can differ between schemes.
+ *
+ * A `toHaveCSS` whose first argument is a string literal naming a property above is not a
+ * colour read (MICA-442's font-weight check tripped it); every other `toHaveCSS` still is.
+ */
+const READS_A_COLOUR = new RegExp(
+  [
+    '--color-',
+    String.raw`getPropertyValue\(\s*['"\x60]--`,
+    // `\s*` inside the lookahead: outside it, `\s*` backtracks to match less whitespace and
+    // the lookahead then sees a space instead of the quote, so a wrapped call would count.
+    String.raw`toHaveCSS\((?!\s*(?<quote>['"\x60])(?:${NOT_A_COLOUR.source})\k<quote>)`,
+    'backgroundColor',
+    'getComputedStyle'
+  ].join('|')
+);
 
 function specFiles(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -53,6 +74,32 @@ function themeSpecs(): string[] {
 /** `**‍/theme-modes.spec.ts` matches `e2e/theme-modes.spec.ts`. Basename is all that varies here. */
 const matches = (globs: string[], file: string) =>
   globs.some((glob) => path.basename(glob) === path.basename(file));
+
+describe('READS_A_COLOUR', () => {
+  /**
+   * The regex both ways. A `toHaveCSS` of a property that cannot hold a colour is not a
+   * colour read; every other `toHaveCSS` is, including one whose property is not a literal.
+   */
+  it.each([
+    ["toHaveCSS('font-weight', '600')", false],
+    ['toHaveCSS("text-overflow", "ellipsis")', false],
+    ['toHaveCSS(\n      `opacity`, "1")', false],
+    ["toHaveCSS('max-height', '0px')", false],
+    ["toHaveCSS('color', 'rgb(0, 0, 0)')", true],
+    ["toHaveCSS('background-color', 'rgb(0, 0, 0)')", true],
+    ["toHaveCSS('border-top-color', 'rgb(0, 0, 0)')", true],
+    ["toHaveCSS('border-width', '1px')", true],
+    ["toHaveCSS('box-shadow', 'none')", true],
+    ["toHaveCSS('fill', 'rgb(0, 0, 0)')", true],
+    ["toHaveCSS('--color-x', '#000')", true],
+    ['toHaveCSS(prop, value)', true],
+    ['toHaveCSS(`font-${part}`, value)', true],
+    ["toHaveCSS('text-decoration-color', 'rgb(0, 0, 0)')", true],
+    ["toHaveCSS('text-shadow', 'none')", true]
+  ] as const)('%j → %s', (source, reads) => {
+    expect(READS_A_COLOUR.test(source)).toBe(reads);
+  });
+});
 
 describe('e2e colour-scheme coverage', () => {
   it('runs every colour-asserting spec in both schemes', () => {

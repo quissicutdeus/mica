@@ -1631,6 +1631,14 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A Store add-on can no longer run code its pin never covered (MICA-442).** An
+add-on's frame allowed scripts and stylesheets from any `https:` or `http:`
+host, so a bundle whose SHA matched the catalog could `import()` more code from
+anywhere and run it, or carry a player's data out in a script or stylesheet URL.
+Scripts and styles now load only inline, from `data:`/`blob:`, or from a host
+the add-on's manifest declares, the rule images, media and fonts already
+followed (MICA-202). Nothing to do on the server.
+
 **A Store add-on can no longer send a player's money anywhere (MICA-441).** A
 `core: false` add-on that declared `bank` could call `sendMoney` and
 `payInvoice` from its frame once the player had accepted "Send Money" on its
@@ -2031,6 +2039,15 @@ nothing, so `sendMoney` and `payInvoice` stop compiling. Show a balance through
 `account`, which is unchanged. An add-on with its own server service still
 spends inside that service's own rules, as Casino and Hodlr do. The contract
 version stays `1`.
+
+**Scripts and stylesheets load only from a host your manifest declares
+(MICA-442).** The frame's `script-src` and `style-src` no longer admit any
+`https:` or `http:` host: they are `'unsafe-inline'` (and `'unsafe-eval'` for
+scripts), `data:`, `blob:` and your `networkHosts`. An add-on built with the
+template is one inlined module with its CSS injected as a `<style>`, and is
+unaffected. One that loads a script or stylesheet from a CDN stops loading it:
+bundle it, or declare the host in `networkHosts` (with `requiresNetwork: true`),
+which the Store shows the player.
 
 **A manifest's `color` is gone: write `tile`, and read `tile` (MICA-419).**
 `defineApp` used to accept the old `color` string beside `tile`, and every

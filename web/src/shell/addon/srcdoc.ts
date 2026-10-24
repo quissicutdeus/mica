@@ -22,11 +22,13 @@
  * `networkHosts` was advisory: a declared allowlist of one origin, with three unpoliced
  * doors beside it.
  *
- * The answer to MICA-24's caution is `default-src 'none'` plus two explicit escape
- * hatches. `script-src` and `style-src` are spelled out at exactly the reach they had when
- * they were unset, so nothing about how an add-on's own code and styles load changes: the
- * concern was real and this does not test it. Everything MICA-24 left open *and did not
- * have a reason to* is shut.
+ * The answer to MICA-24's caution was `default-src 'none'` plus explicit escape hatches.
+ * MICA-196 wrote `script-src` and `style-src` out at exactly the reach they had when they
+ * were unset — any `https:` or `http:` host — so how an add-on's own code and styles loaded
+ * did not change while everything else was shut. MICA-442 answered the rest of that
+ * caution: both things MICA-24 feared breaking are inline (the module script, and the
+ * `<style>` the add-on build injects), and `'unsafe-inline'` is what admits them, not the
+ * scheme list. So the scheme list went.
  *
  * ## Directive by directive
  *
@@ -59,11 +61,27 @@
  *   (`server/lib/mediaHost.ts`, `services/imageHost.ts`), never a wildcard. What it opens
  *   is stated plainly: an add-on can beacon to the image host with an `<img>`, exactly as
  *   it can to its own `networkHosts`. An owner who hosts images has chosen that host.
- * - `script-src` / `style-src` — **exactly as before this existed**. Unset with no
- *   `default-src` meant unrestricted; under a `default-src 'none'` floor, "unrestricted"
- *   has to be written out, which is what the scheme list and the two `'unsafe-'` keywords
- *   are. They are not an endorsement — they are the honest spelling of today's behaviour,
- *   and narrowing them is its own ticket with its own in-game verification.
+ * - `script-src`: `'unsafe-inline' 'unsafe-eval' data: blob:` plus `networkHosts`, and
+ *   `style-src` the same without `'unsafe-eval'` (MICA-442). Not the image host, which
+ *   stays `img-src`'s alone. From MICA-196 until MICA-442 both also carried `https: http:`
+ *   — the reach they had when unset, written out so the `default-src 'none'` floor would
+ *   not change it. Nothing an add-on is made of is loaded by URL: its bundle is the
+ *   verified text inlined below as one module script, built as a single chunk with its CSS
+ *   injected as a `<style>` (`codeSplitting: false`, and `mica-inline-css` in
+ *   `web/vite.addon.config.ts` or `mica-addon-inline-css` in the template's
+ *   `vite.config.ts`), and the dev loop fetches source *text* and inlines it the same way
+ *   (`devAddOn.ts`). So all the scheme list did was let `await import('https://any/x.js')`
+ *   or an appended `<script src>` run code the pinned SHA never covered, and let any script
+ *   or stylesheet URL carry a query string to any host, plaintext included.
+ *   - `'unsafe-inline'` is what the module script, the fallback `error` listener and the
+ *     injected `<style>` need. A nonce or hash would add nothing while `'unsafe-eval'`
+ *     stands: code that can `eval` can run any text it holds.
+ *   - `'unsafe-eval'` is unchanged. It runs text the bundle already holds and reaches no
+ *     host, so it is not an exit, and this directive's job is the exits.
+ *   - `data:` and `blob:` stay for the reason they stay in `img-src`: neither leaves the
+ *     frame, and a script built from one is text the bundle already had.
+ *   - `networkHosts`, because the manifest is the one statement of where a bundle may
+ *     reach, for code as for everything else — see the last section.
  * - `frame-src 'none'` / `child-src 'none'` — no nested browsing context, which is the
  *   CSP-inheritance hole above. `child-src` is also `worker-src`'s fallback, so this stops
  *   a `Worker`/`SharedWorker` too. That is a real narrowing for an add-on that used one;
@@ -84,12 +102,17 @@
  *
  * ## What this still does not stop
  *
- * A declared host is a declared host: an add-on whose `networkHosts` names
+ * A declared host is a declared host. An add-on whose `networkHosts` names
  * `https://api.example.com` can beacon to it with an `<img>` exactly as it can `fetch()`
- * it, and that is the point — the manifest is the whole statement of where a bundle may
- * send bytes, and a reader no longer has to know that images were the exception. What
- * remains is the sandbox's own self-navigation, which no directive Chromium ships can
- * stop and which the host counts documents to catch (`IframeHostServer.ts`).
+ * it, and that is the point: the manifest is the whole statement of where a bundle may send
+ * bytes, and a reader no longer has to know that images, scripts or styles were the
+ * exception. The same rule has a cost for code, said plainly: an add-on can also
+ * `import()` a script or load a stylesheet from a host it declared, so what runs in the
+ * frame is the SHA-pinned bundle **plus whatever its declared hosts serve**. A reader of
+ * the manifest can see that much; what those hosts serve tomorrow, nothing here can.
+ * Beyond that, what remains is the sandbox's own self-navigation, which no directive
+ * Chromium ships can stop and which the host counts documents to catch
+ * (`IframeHostServer.ts`).
  */
 function cspFor(networkHosts: readonly string[], imageHosts: readonly string[]): string {
   /**
@@ -104,17 +127,24 @@ function cspFor(networkHosts: readonly string[], imageHosts: readonly string[]):
    * may reach. Never `'none'`, because `data:` is always in the list — and never `https:`
    * again, which is what MICA-202 closed.
    */
-  const loads = ['data:', 'blob:', ...networkHosts].join(' ');
+  const subresources = ['data:', 'blob:', ...networkHosts];
+  const loads = subresources.join(' ');
   /** Images alone may also come from the server's image host (MICA-243). */
-  const images = [...new Set(['data:', 'blob:', ...networkHosts, ...imageHosts])].join(' ');
+  const images = [...new Set([...subresources, ...imageHosts])].join(' ');
+  /**
+   * Code and styles: inline, which is what the bundle is, then the same sources a
+   * subresource may use (MICA-442). Never a bare scheme again, and never the image host.
+   */
+  const scripts = ["'unsafe-inline'", "'unsafe-eval'", ...subresources].join(' ');
+  const styles = ["'unsafe-inline'", ...subresources].join(' ');
   const policy = [
     "default-src 'none'",
     `connect-src ${connect}`,
     `img-src ${images}`,
     `media-src ${loads}`,
     `font-src ${loads}`,
-    "script-src 'unsafe-inline' 'unsafe-eval' https: http: data: blob:",
-    "style-src 'unsafe-inline' https: http: data: blob:",
+    `script-src ${scripts}`,
+    `style-src ${styles}`,
     "frame-src 'none'",
     "child-src 'none'",
     "form-action 'none'",

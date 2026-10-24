@@ -21,7 +21,7 @@ interface CatalogEntry {
   devices?: AppDevice[];
   /** Whether the phone should block this app while signal is out. Defaults to `false`. */
   requiresNetwork?: boolean;
-  /** The exact origins the installed app's frame may `fetch()`. Defaults to none (MICA-24). */
+  /** The exact origins the installed add-on's frame may reach, scripts included. See `AppManifest.networkHosts`. */
   networkHosts?: string[];
 }
 ```

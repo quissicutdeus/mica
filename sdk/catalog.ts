@@ -49,7 +49,7 @@ export interface CatalogEntry {
   devices?: readonly AppDevice[];
   /** Whether the phone should block this app while signal is out. Defaults to `false`. */
   requiresNetwork?: boolean;
-  /** MICA-24: the exact origins the installed add-on's frame may `fetch()`. See `AppManifest.networkHosts`. */
+  /** MICA-24: the exact origins the installed add-on's frame may reach, scripts included. See `AppManifest.networkHosts`. */
   networkHosts?: readonly string[];
   /**
    * MICA-196: the server services this app owns. See `AppManifest.services`.

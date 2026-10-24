@@ -412,13 +412,16 @@ export interface AppManifest {
    */
   requiresNetwork?: boolean;
   /**
-   * MICA-24: the exact origins a `core: false` add-on's sandboxed frame may `fetch()`.
+   * MICA-24: the exact origins a `core: false` add-on's sandboxed frame may reach, for
+   * every kind of request: `fetch()`, and since MICA-202 and MICA-442 an image, a clip, a
+   * font, a script or a stylesheet too.
    *
-   * The frame has no Content-Security-Policy otherwise, so an add-on's own JS — not just
-   * the code an author wrote, but anything a supply-chain compromise slipped into its
-   * bundle — could silently call out to any host on the internet. `srcdoc.ts` turns this
-   * list into the frame's `connect-src`; an empty or absent list means `connect-src
-   * 'none'`, blocking outbound `fetch()` entirely.
+   * Without it, an add-on's own JS — not just the code an author wrote, but anything a
+   * supply-chain compromise slipped into its bundle — could call out to any host on the
+   * internet, or load code its pinned SHA never covered. `srcdoc.ts` writes this list into
+   * the frame's `connect-src` and beside `data: blob:` in every subresource directive; an
+   * empty or absent list means `connect-src 'none'` and nothing loaded from any host. A
+   * host named here can also serve the frame a script, so declare only hosts you control.
    *
    * Declaring this without also declaring `requiresNetwork: true` is refused by
    * `defineApp` — asking for real network egress while saying the app does not need

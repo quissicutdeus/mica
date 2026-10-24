@@ -9,7 +9,7 @@ its one-line summary.
 - [Building an add-on outside the repo](out-of-tree-addon-build.md) — pnpm 11
   reads overrides from `pnpm-workspace.yaml` only; the git specifier that works
 - [CSP violations in the add-on sandbox](csp-blockeduri-opaque-frame.md) —
-  `blockedURI` is an origin from an opaque frame; assert on that, never a path
+  `blockedURI` carries the full URL, path and query, in chromium and cef-floor
 - [First test pays the cold transform](cold-import-first-test-timeout.md) — on
   the Forgejo runner that is the whole 20s budget; warm the import in
   `beforeAll`, do not raise `testTimeout`
