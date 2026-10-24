@@ -49,7 +49,9 @@ let checksRun = 0;
  * moderated rows through the purges (PURGE_MODERATED_CHECKS), MICA-433's log-token salt
  * (LOG_SALT_CHECKS), and MICA-431's sealed note and photo on their phone, still the owner's
  * (SEALED_ON_PHONE_CHECKS), and MICA-432's blind index, place and thread name
- * (BLIND_INDEX_CHECKS), on each shape.
+ * (BLIND_INDEX_CHECKS), on each shape. Plus MICA-440's deleted character resolved again under
+ * the same identifier, a new phone with no passcode and a full battery (RECREATE_CHECKS) on each
+ * shape, and on qb a new number (RECREATE_NUMBER_CHECKS).
  */
 const IMPORT_CHECKS = 16;
 const RETENTION_CHECKS = 25;
@@ -105,6 +107,15 @@ const MODERATION_CHECKS = 11;
 const LOG_SALT_CHECKS = 4;
 const PURGE_MODERATED_CHECKS = 10;
 /**
+ * MICA-440: a character deleted through the hook and its identifier resolved again in the same
+ * process, as ESX reuses a slot's: the seeded schema's one and seven, on each shape — the phone,
+ * its lock screen and its battery, kept while a purge could not erase the phone, and no phone
+ * created while the character does not exist — and on qb one more for the number. ESX keeps the number on
+ * the character (`numberOfPhone` answers the framework's), so it is not micaOS's to assert there.
+ */
+const RECREATE_CHECKS = 8;
+const RECREATE_NUMBER_CHECKS = 1;
+/**
  * MICA-430: an edit keeps what it replaced, on each shape — one version and only when the edit
  * applies (another owner, a takedown, and a takedown that lands while the edit waits on the row
  * all write neither), opened from its snapshot, and carried through a key rotation. And the
@@ -120,6 +131,8 @@ const MINIMUM_CHECKS =
   MODERATION_CHECKS * 2 +
   LOG_SALT_CHECKS * 2 +
   PURGE_MODERATED_CHECKS * 2 +
+  RECREATE_CHECKS * 2 +
+  RECREATE_NUMBER_CHECKS +
   BOOTSTRAP_CHECKS * 2 +
   CRYPT_CHECKS * 2 +
   CRYPT_SEED_CHECKS +
@@ -355,10 +368,18 @@ const loadPrivacyModule = async () => {
     `export { eraseStrandedDependents } from '${root}/server/lib/sweep/dependents.ts';`,
     // MICA-426: the reopen's restore, in the same bundle as the purge whose record it reads.
     `export { moderateTarget, restoreTarget } from '${root}/server/lib/moderation.ts';`,
-    `export { __setPurgeHookForTests, ownedTables, purgeOwnedRows } from '${root}/server/lib/orphanSweep.ts';`,
+    `export { __resetCreateVerdictForTests, __setPurgeHookForTests, ownedTables, purgeOwnedRows } from '${root}/server/lib/orphanSweep.ts';`,
     // MICA-300: the character-deleted hook and the start-up sweep are driven through the
     // handlers `lib/shell.ts` registers, so the sweep needs the framework stand-in.
     `export { __setResourceLookup } from '${root}/server/lib/FrameworkBridge.ts';`,
+    // MICA-440: a character's phone, lock screen, battery and number, resolved again under the
+    // same identifier once the hook has run, through the same services the hook forgets in.
+    `export { identityPhone, __resetDeviceState } from '${root}/server/services/Devices.ts';`,
+    `export { syncNumber, __resetPhoneNumberState } from '${root}/server/services/PhoneNumbers.ts';`,
+    `export { __resetAssignedNumbers } from '${root}/server/lib/phoneNumbers.ts';`,
+    `export { currentCharge, sendLoadedBatteryToClient, __resetBatteryState } from '${root}/server/services/Battery.ts';`,
+    `export { lockscreen } from '${root}/server/services/Lockscreen.ts';`,
+    `export { CHARACTER_EXCEPT } from '${root}/server/lib/shell.ts';`,
     // MICA-306: the real first-start bootstrap, with every service declared, so the statements it
     // runs are the ones a server's own declarations produce.
     `export { runSchemaBootstrap } from '${root}/server/lib/schemaBootstrap.ts';`,
@@ -2522,8 +2543,8 @@ const fireAndWait = async (fire, finished) => {
  * MICA-300, on each shape: the framework deletes character A, and the character-deleted hook —
  * or, where nothing fired it, the next start-up sweep — cleans up by MICA-168's plan. Another
  * player's rows, a reported post, what hangs off it (the attachment, its hosted photo), a post
- * reported mid-purge and the parents B's rows still reference all survive; A's accountability
- * records and device rows go with A, since there is no A any more.
+ * reported mid-purge and the parents B's rows still reference all survive; A's ledger row and
+ * pending report stay, and A's invoice, import ledger and phone go with A (MICA-440).
  *
  * On qb this is also the proof that the `players` cascade is gone: deleting the row takes
  * nothing, and it is the hook or the sweep that decides. After the sweep, the reports resolve
@@ -2743,7 +2764,7 @@ const runCharacterDeletedVariant = async ({
     );
     check(`${label}: and nothing is requested of the image host`, requested, []);
     check(
-      `${label}: A's ledger row, pending report and device stay live; invoice and import go`,
+      `${label}: A's ledger row and pending report stay live; invoice, import and phone go`,
       [
         Number(
           (await q('SELECT COUNT(*) AS n FROM mica_audit_logs WHERE citizenid = ?', [A]))[0].n
@@ -2751,10 +2772,11 @@ const runCharacterDeletedVariant = async ({
         await live('mica_reports'),
         await live('mica_invoices'),
         await live('mica_import_ledger'),
+        // MICA-440: the phone is erased, so a new character under A's identifier gets their own.
         await live('mica_lockscreen'),
         await live('mica_devices')
       ],
-      [1, 1, 0, 0, 1, 1]
+      [1, 1, 0, 0, 0, 0]
     );
 
     if (via === 'hook') {
@@ -2801,6 +2823,304 @@ const runCharacterDeletedVariant = async ({
   } finally {
     globalThis.GetConvar = previousConvar;
     globalThis.fetch = previousFetch;
+    privacy.__setResourceLookup();
+  }
+};
+
+/**
+ * MICA-440, on each shape: a character deleted through the hook, and the same identifier resolved
+ * again in the same process — esx_multicharacter hands a deleted character's `char<slot>:` id to
+ * the next character created in the slot. Before, that character resolved to the old phone, its
+ * passcode on the lock screen and its charge; the purge kept the rows and `Devices.ts` kept them
+ * cached. Now the phone, its lock screen and its battery are erased, the caches forgotten, and the
+ * new character is a first resolve: a new phone with no passcode, a full battery and, on qb, a new
+ * number, while the old number stays on the old phone so it is never issued to anybody. ESX keeps
+ * the number on the character (`numberOfPhone` answers the framework's own field), so whether it
+ * changes is the framework's business, and the number is asserted on qb only.
+ *
+ * Driven through the real services in the privacy bundle, which the hook's forgetters run in,
+ * with a framework stand-in naming A on one source. No module state is reset between the delete
+ * and the second resolve: what would have answered from a cache must not.
+ */
+const runCharacterRecreatedVariant = async ({
+  connection,
+  schemaFile,
+  hasPlayers,
+  privacy,
+  hooks
+}) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const SRC = 9101;
+  const label = `a character recreated under its identifier on ${framework}`;
+
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'recreated' });
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+  const ID = /^[0-9a-f]{32}$/;
+
+  // A on SRC: qbx_core's player, whose `charinfo.phone` still names the old number after the
+  // delete (the worst case for a new character), or an ESX xPlayer.
+  const charinfo = { firstname: 'Alice', lastname: 'Test', phone: '555-0001' };
+  const qbxPlayer = { PlayerData: { citizenid: A, charinfo, metadata: {} } };
+  const xPlayer = {
+    identifier: A,
+    source: SRC,
+    getName: () => 'Alice Test',
+    get: () => undefined,
+    setMeta: () => {}
+  };
+  privacy.__setResourceLookup(
+    hasPlayers
+      ? (name) =>
+          name === 'qbx_core'
+            ? {
+                GetPlayer: (src) => (src === SRC ? qbxPlayer : null),
+                // Nobody listed as online: A is asked after by the owner table, not a source.
+                GetQBPlayers: () => ({}),
+                SetCharInfo: (_src, key, value) => {
+                  charinfo[key] = value;
+                }
+              }
+            : undefined
+      : (name) =>
+          name === 'es_extended'
+            ? {
+                getSharedObject: () => ({
+                  GetPlayerFromId: (src) => (src === SRC ? xPlayer : null),
+                  GetExtendedPlayers: () => []
+                })
+              }
+            : undefined
+  );
+  const reset = () => {
+    privacy.__resetDeviceState();
+    privacy.__resetPhoneNumberState();
+    privacy.__resetAssignedNumbers();
+    privacy.__resetBatteryState();
+    // The owner verdict a create is judged under is cached a minute; this is another database.
+    privacy.__resetCreateVerdictForTests();
+  };
+  /** A new phone's set-up hooks run after its resolve; wait for the mark they leave. */
+  const setUp = async (deviceId) => {
+    const by = Date.now() + 10_000;
+    for (;;) {
+      const [row] = await q('SELECT setup_pending FROM mica_devices WHERE device_id = ?', [
+        deviceId
+      ]);
+      if (row && Number(row.setup_pending) === 0) return;
+      if (Date.now() > by) throw new Error(`${label}: phone ${deviceId} never finished set-up`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  };
+  const statuses = async (table, column = 'device_id') =>
+    (
+      await q(`SELECT ${column} AS k, status FROM ${table} WHERE citizenid = ? ORDER BY id`, [A])
+    ).map((r) => [r.k, r.status]);
+  // The number is micaOS's on qb only; on ESX these are left out of every check.
+  const onQb = (...items) => (hasPlayers ? items : []);
+  // The sync's "the framework's number is on another phone" line, expected on qb below.
+  const { warn } = console;
+  console.warn = () => {};
+
+  try {
+    reset();
+    // B, who lives on: the same rows as A gets below, so the owners the sweep samples include
+    // somebody who exists. Without one, the sweep refuses this server as `identity-mismatch`,
+    // and so does a create's existence check (MICA-440 review): it then creates and says so.
+    const otherPhone = await privacy.identityPhone(B);
+    await setUp(otherPhone);
+    await q(
+      'INSERT INTO mica_lockscreen (citizenid, device_id, passcode_hash, passcode_salt) VALUES (?, ?, ?, ?)',
+      [B, otherPhone, 'f'.repeat(64), 'e'.repeat(32)]
+    );
+    await q('INSERT INTO mica_battery (citizenid, device_id, level) VALUES (?, ?, 80)', [
+      B,
+      otherPhone
+    ]);
+    if (hasPlayers) {
+      await q('INSERT INTO mica_phone_numbers (citizenid, number, device_id) VALUES (?, ?, ?)', [
+        B,
+        '555-0002',
+        otherPhone
+      ]);
+    }
+
+    step(`${label} — A's phone, with a passcode, a charge and, on qb, a number`);
+    const oldPhone = await privacy.identityPhone(A);
+    await setUp(oldPhone);
+    await q(
+      'INSERT INTO mica_lockscreen (citizenid, device_id, passcode_hash, passcode_salt) VALUES (?, ?, ?, ?)',
+      [A, oldPhone, 'f'.repeat(64), 'e'.repeat(32)]
+    );
+    // The load creates the battery row through the save; then it drains to 37.
+    await privacy.sendLoadedBatteryToClient(SRC);
+    await q('UPDATE mica_battery SET level = 37 WHERE device_id = ?', [oldPhone]);
+    const oldNumber = hasPlayers ? await privacy.syncNumber(SRC) : null;
+    check(
+      `${label}: A's phone has its passcode and its charge${hasPlayers ? ', and its number' : ''}`,
+      [
+        ID.test(oldPhone),
+        (await privacy.lockscreen.repo.findForPhone(A, oldPhone)) !== null,
+        await statuses('mica_battery', 'level'),
+        ...onQb(oldNumber, await statuses('mica_phone_numbers', 'number'))
+      ],
+      [true, true, [[37, 'active']], ...onQb('555-0001', [['555-0001', 'active']])]
+    );
+
+    step(`${label} — a purge that could not erase the phone leaves its battery and lock screen`);
+    // The phone kept as a failed erase would leave it: its state must stay live with it, or no
+    // save could create the battery row again under `device_id_unique` (MICA-440 review).
+    const failed = await privacy.purgeOwnedRows(A, {
+      except: [...privacy.CHARACTER_EXCEPT, { table: 'mica_devices' }],
+      first: ['mica_devices'],
+      purpose: 'with its phone left live'
+    });
+    check(
+      `${label}: with the phone still live, its battery and lock screen are kept`,
+      [
+        failed.failures,
+        await statuses('mica_devices'),
+        await statuses('mica_lockscreen'),
+        await statuses('mica_battery')
+      ],
+      [[], [[oldPhone, 'active']], [[oldPhone, 'active']], [[oldPhone, 'active']]]
+    );
+
+    step(`${label} — the framework deletes A, and the hook runs`);
+    await q(
+      hasPlayers
+        ? 'DELETE FROM players WHERE citizenid = ?'
+        : 'DELETE FROM users WHERE identifier = ?',
+      [A]
+    );
+    const lines = await fireAndWait(
+      () => hooks.get('mica:server:shell:characterDeleted').forEach((fn) => fn(A)),
+      /\[mica\] (erased \d+ row\(s\) for deleted character|purge for a deleted character failed)/
+    );
+    check(
+      `${label}: the hook erased the phone, its lock screen and battery` +
+        (hasPlayers ? ', and kept the number' : ''),
+      [
+        lines.filter((line) => /failed/.test(line)),
+        await statuses('mica_devices'),
+        await statuses('mica_lockscreen'),
+        await statuses('mica_battery'),
+        ...onQb(await statuses('mica_phone_numbers'))
+      ],
+      [
+        [],
+        [[oldPhone, 'erased']],
+        [[oldPhone, 'erased']],
+        [[oldPhone, 'erased']],
+        ...onQb([[oldPhone, 'active']])
+      ]
+    );
+
+    step(`${label} — while A does not exist, nothing creates a phone for them`);
+    // Judged under the verdict as it stands now, not one cached before the delete.
+    privacy.__resetCreateVerdictForTests();
+    const refused = await privacy.identityPhone(A).then(
+      () => 'created',
+      (error) => (/no character .* exists here/.test(error.message) ? 'refused' : error.message)
+    );
+    check(
+      `${label}: a write on A's behalf creates no phone while A does not exist`,
+      [refused, await statuses('mica_devices')],
+      ['refused', [[oldPhone, 'erased']]]
+    );
+
+    step(`${label} — a new character is created under the same identifier, in the same process`);
+    await q(
+      hasPlayers
+        ? 'INSERT INTO players (citizenid, charinfo) VALUES (?, ?)'
+        : 'INSERT INTO users (identifier, firstname, lastname) VALUES (?, ?, ?)',
+      hasPlayers ? [A, JSON.stringify(charinfo)] : [A, 'Ada', 'New']
+    );
+    const newPhone = await privacy.identityPhone(A);
+    await setUp(newPhone);
+    check(
+      `${label}: the identifier resolves to a new phone of its own, the old one still erased`,
+      [ID.test(newPhone), newPhone !== oldPhone, await statuses('mica_devices')],
+      [
+        true,
+        true,
+        [
+          [oldPhone, 'erased'],
+          [newPhone, 'active']
+        ]
+      ]
+    );
+    check(
+      `${label}: the new phone has no passcode, and no live lock-screen row is A's`,
+      [
+        await privacy.lockscreen.repo.findForPhone(A, newPhone),
+        await privacy.lockscreen.repo.findForPhone(A, oldPhone),
+        Number(
+          (
+            await q(
+              "SELECT COUNT(*) AS n FROM mica_lockscreen WHERE citizenid = ? AND status = 'active'",
+              [A]
+            )
+          )[0].n
+        )
+      ],
+      [null, null, 0]
+    );
+    await privacy.sendLoadedBatteryToClient(SRC);
+    check(
+      `${label}: the new phone starts full on a battery row of its own; the old one stays erased`,
+      [
+        privacy.currentCharge(SRC),
+        (
+          await q(
+            'SELECT device_id, level, status FROM mica_battery WHERE citizenid = ? ORDER BY id',
+            [A]
+          )
+        ).map((r) => [r.device_id, r.level, r.status])
+      ],
+      [
+        100,
+        [
+          [oldPhone, 37, 'erased'],
+          [newPhone, 100, 'active']
+        ]
+      ]
+    );
+    if (hasPlayers) {
+      const newNumber = await privacy.syncNumber(SRC);
+      const numbers = (
+        await q(
+          'SELECT number, device_id, status FROM mica_phone_numbers WHERE citizenid = ? ORDER BY id',
+          [A]
+        )
+      ).map((r) => [
+        r.number === oldNumber ? 'old' : r.number === newNumber ? 'new' : r.number,
+        r.device_id,
+        r.status
+      ]);
+      check(
+        `${label}: a new number on the new phone, though the framework still named the old one, which stays on the old phone`,
+        [
+          /^\d{7}$/.test(String(newNumber)),
+          newNumber !== oldNumber,
+          numbers,
+          charinfo.phone === newNumber
+        ],
+        [
+          true,
+          true,
+          [
+            ['old', oldPhone, 'active'],
+            ['new', newPhone, 'active']
+          ],
+          true
+        ]
+      );
+    }
+  } finally {
+    console.warn = warn;
+    reset();
     privacy.__setResourceLookup();
   }
 };
@@ -4584,6 +4904,20 @@ const main = async () => {
           via
         });
       }
+    }
+
+    // MICA-440: and the same identifier resolved again in the same process, as ESX reuses a slot.
+    for (const [schemaFile, hasPlayers] of [
+      ['mica.sql', true],
+      ['mica.esx.sql', false]
+    ]) {
+      await runCharacterRecreatedVariant({
+        connection,
+        schemaFile,
+        hasPlayers,
+        privacy,
+        hooks: capture.hooks
+      });
     }
 
     // MICA-306: the schema a fresh install creates for itself, against the engine, one statement

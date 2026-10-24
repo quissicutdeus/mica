@@ -3,10 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { Scenario } from '../runner';
+import { bootOrphanSweepEnded } from '../lib/bootSweep';
 import { requireTap } from '../lib/console';
 import { db } from '../lib/db';
 import { ESX_SEED } from '../lib/esxSeed';
+import { serverWho } from '../lib/logToken';
 import { assert, expectOk, expectRefusal, unique } from '../lib/mica';
+import { eventually } from '../lib/wait';
 import { callOn, phoneItem, phoneItemExistsInOxInventory } from '../lib/oxInventory';
 import { schemaCreated } from './qbx';
 import { BOOTSTRAP_REFUSED } from './schema';
@@ -241,6 +244,172 @@ export const esxScenarios: Scenario[] = [
       if (refused.length > 0) {
         throw new Error(`micaOS refused to create the schema: ${refused.join(' | ')}`);
       }
+    }
+  },
+  {
+    // MICA-440: esx_multicharacter hands a deleted character's `char<slot>:` identifier to the
+    // next character created in the slot, and on ESX the identifier is the citizenid. That
+    // character used to resolve to the deleted one's phone, which the purge kept live and this
+    // process kept cached, with its passcode on the lock screen. With nobody connected, an
+    // offline notification resolves the citizen's phone (`phoneForCitizen`), before the delete
+    // and after it, in the same micaOS process; one sent while the character does not exist
+    // creates no phone at all. The battery needs a connected player, and ESX keeps the number on
+    // the character: `scripts/test-schema.js` covers the battery on each shape, the number on qb.
+    id: 'esx-character-recreated-in-its-slot-gets-a-new-phone',
+    mode: 'esx',
+    tickets: ['MICA-440', 'MICA-438', 'MICA-428'],
+    timeoutMs: 60_000,
+    run: async (signal) => {
+      await schemaCreated(signal);
+      // Nothing is planted while the start-up sweep runs: with the `users` row gone it would
+      // erase the character's rows itself, before this scenario's own delete.
+      await bootOrphanSweepEnded(requireTap(), 10_000, signal);
+      const tap = requireTap();
+      const identifier = `char1:${unique('slot')}`;
+      const digits = (n: number): string =>
+        String(Math.floor(Math.random() * 10 ** n)).padStart(n, '0');
+      const ssn = (): string => `9${digits(2)}-${digits(2)}-${digits(4)}`;
+      assert(identifier.length <= 60, `the fixture identifier ${identifier} is wider than ESX's`);
+      const app = `ext_${GetCurrentResourceName().replace(/[^a-z0-9_]/g, '_')}`;
+      /**
+       * A `users` row as the box's wrapper seeds `ESX_SEED`'s (`mica-smoke-release.sh`): every
+       * column legacy.sql gives no default, `ssn` among them, NOT NULL and unique, so each
+       * character takes one of its own in the seed's shape and never the seed's `555-…`.
+       */
+      // `exec`, not `insert`: `users` is keyed by its identifier, so there is no insert id.
+      const character = (lastname: string) =>
+        db.exec(
+          'INSERT INTO `users` (`identifier`, `ssn`, `accounts`, `group`, `inventory`, `job`, ' +
+            '`job_grade`, `loadout`, `metadata`, `position`, `firstname`, `lastname`, ' +
+            '`dateofbirth`, `sex`, `height`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            identifier,
+            ssn(),
+            JSON.stringify({ money: 0, bank: 0, black_money: 0 }),
+            'user',
+            '[]',
+            'unemployed',
+            0,
+            '[]',
+            '{}',
+            JSON.stringify({ x: 0.0, y: 0.0, z: 0.0, heading: 0.0 }),
+            'Slot',
+            lastname,
+            '01/01/1990',
+            'f',
+            170
+          ]
+        );
+      /** The phone an offline notification of this `kind` landed on, once it is written. */
+      const notifiedPhone = async (kind: string): Promise<string> => {
+        const pushed = await expectOk<{ delivered: boolean }>('SendNotification', identifier, {
+          app,
+          kind,
+          sourceLabel: 'Integration',
+          title: 'Which phone',
+          body: 'offline'
+        });
+        assert(pushed.delivered === false, 'an offline notification was reported delivered');
+        return await eventually(
+          async () => {
+            const row = await db.row(
+              'SELECT `device_id` FROM `mica_notifications` WHERE `citizenid` = ? AND `kind` = ?',
+              [identifier, kind]
+            );
+            return row?.device_id ? String(row.device_id) : null;
+          },
+          5_000,
+          signal,
+          `the ${kind} notification`
+        );
+      };
+      const statusOf = async (table: string, deviceId: string): Promise<string[]> =>
+        (
+          await db.rows(`SELECT \`status\` FROM \`${table}\` WHERE \`device_id\` = ?`, [deviceId])
+        ).map((row) => String(row.status));
+
+      await character('Old');
+      const oldPhone = await notifiedPhone('mica440_before');
+      await db.insert(
+        'INSERT INTO `mica_lockscreen` (`citizenid`, `device_id`, `passcode_hash`, `passcode_salt`) ' +
+          'VALUES (?, ?, ?, ?)',
+        [identifier, oldPhone, 'f'.repeat(64), 'e'.repeat(32)]
+      );
+
+      // The character is deleted: es_extended's row goes, and the owner's hook fires.
+      await db.exec('DELETE FROM `users` WHERE `identifier` = ?', [identifier]);
+      const token = await serverWho(identifier);
+      const mark = tap.mark();
+      emit('mica:server:shell:characterDeleted', identifier);
+      const said = await tap.waitFor(
+        mark,
+        new RegExp(
+          `^\\[mica\\] (erased \\d+ row\\(s\\) for deleted character|purge for) .*${token}`
+        ),
+        30_000,
+        signal,
+        "the purge's summary"
+      );
+      assert(said.startsWith('[mica] erased'), said);
+      for (const table of ['mica_devices', 'mica_lockscreen']) {
+        const status = await statusOf(table, oldPhone);
+        assert(
+          status.length === 1 && status[0] === 'erased',
+          `the deleted character's ${table} row is ${JSON.stringify(status)}, not erased`
+        );
+      }
+
+      // While the character does not exist, a write on their behalf creates no phone for them:
+      // the notification is dropped, said with their token, and nothing lands.
+      const gone = tap.mark();
+      const refused = await expectOk<{ delivered: boolean }>('SendNotification', identifier, {
+        app,
+        kind: 'mica440_gone',
+        sourceLabel: 'Integration',
+        title: 'Nobody',
+        body: 'offline'
+      });
+      assert(refused.delivered === false, 'a notification to nobody was reported delivered');
+      await tap.waitFor(
+        gone,
+        new RegExp(`^\\[mica\\] no phone to notify ${token} on; dropping the row`),
+        10_000,
+        signal,
+        'the dropped notification for a character who does not exist'
+      );
+      const live = await db.count(
+        "SELECT COUNT(*) FROM `mica_devices` WHERE `citizenid` = ? AND `status` = 'active'",
+        [identifier]
+      );
+      assert(live === 0, `a character who does not exist was given ${live} live phone(s)`);
+
+      // A new character in the same slot: the same identifier, in the same micaOS process.
+      await character('New');
+      const newPhone = await notifiedPhone('mica440_after');
+      assert(newPhone !== oldPhone, "the new character's notification landed on the old phone");
+      const phones = await db.rows(
+        'SELECT `device_id`, `kind`, `status` FROM `mica_devices` WHERE `citizenid` = ? ORDER BY `id`',
+        [identifier]
+      );
+      assert(
+        JSON.stringify(phones.map((row) => [row.device_id, row.kind, row.status])) ===
+          JSON.stringify([
+            [oldPhone, 'phone', 'erased'],
+            [newPhone, 'phone', 'active']
+          ]),
+        `the identifier's device rows are ${JSON.stringify(phones)}`
+      );
+      const locks = await db.count(
+        "SELECT COUNT(*) FROM `mica_lockscreen` WHERE `citizenid` = ? AND `status` = 'active'",
+        [identifier]
+      );
+      assert(locks === 0, `the new character has ${locks} live lock-screen row(s), not none`);
+      // The positive twin of the refusal above: the same write, once the character exists.
+      const dropped = await db.count(
+        'SELECT COUNT(*) FROM `mica_notifications` WHERE `citizenid` = ? AND `kind` = ?',
+        [identifier, 'mica440_gone']
+      );
+      assert(dropped === 0, 'the notification sent while nobody existed was written after all');
     }
   }
 ];

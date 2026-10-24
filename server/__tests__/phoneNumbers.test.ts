@@ -21,7 +21,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * holds the committed DDL to the declaration, and `pnpm test:migrations` runs the migration
  * against a real MariaDB on both framework shapes.
  */
-const { dbMock, framework, subscribers, bridgeMock, player } = vi.hoisted(() => {
+const { dbMock, framework, subscribers, deletedForgetters, bridgeMock, player } = vi.hoisted(() => {
   // The gate is read at import, so the convar has to exist before the modules load. `qb` at
   // import so `deviceItem.ts` registers its usable-item callback; each case sets its own kind.
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
@@ -60,6 +60,11 @@ const { dbMock, framework, subscribers, bridgeMock, player } = vi.hoisted(() => 
      * points behave; this only needs the one subscriber the phone item adds.
      */
     subscribers: [] as { name: string; run: (src: number) => unknown }[],
+    /** What `onCharacterDeleted` was handed at import (MICA-440): Devices' and this service's. */
+    deletedForgetters: [] as {
+      name: string;
+      forget: (citizenid: string, purged: Promise<void>) => void;
+    }[],
     bridgeMock: {
       getPlayer: vi.fn((src: number) => (src === 5 ? loaded : null)),
       getCitizenId: vi.fn((src: number) => (src === 5 ? CITIZEN : null)),
@@ -77,7 +82,13 @@ vi.mock('../lib/shell', () => ({
   onPlayerLoaded: (name: string, run: (src: number) => unknown) => {
     subscribers.push({ name, run });
   },
-  forgetOnPlayerLoaded: () => {}
+  forgetOnPlayerLoaded: () => {},
+  onCharacterDeleted: (
+    name: string,
+    forget: (citizenid: string, purged: Promise<void>) => void
+  ) => {
+    deletedForgetters.push({ name, forget });
+  }
 }));
 vi.mock('../lib/FrameworkBridge', () => ({
   detectFramework: () => framework.kind,
@@ -1094,5 +1105,72 @@ describe('syncing the number with the phone in hand', () => {
     expect(numberFor(CITIZEN)).toBe('5552222');
     expect(dbMock.insert).not.toHaveBeenCalled();
     expect(updates()).toEqual([]);
+  });
+});
+
+/**
+ * MICA-440: the character-deleted purge erases a deleted character's phone and keeps their
+ * number row, still on that phone, so the number is never issued again. A character created
+ * under the same citizenid — ESX's reused slot — then gets a phone and a number of their own.
+ * `lib/shell.ts` is mocked here, so the forgetters it would run are run directly, as it runs
+ * them: Devices' and this service's, both registered at import.
+ */
+describe('a deleted character (MICA-440)', () => {
+  const OLD_PHONE = 'c'.repeat(32);
+  const forgetDeleted = (citizenid: string) => {
+    expect(deletedForgetters.map(({ name }) => name).toSorted()).toEqual([
+      'devices',
+      'phonenumbers'
+    ]);
+    for (const { forget } of deletedForgetters) forget(citizenid, Promise.resolve());
+  };
+
+  it('forgets their number, and the next character under the id gets a new phone and number', async () => {
+    dbMock.single.mockResolvedValue(row('5561234'));
+    await expect(issue()).resolves.toBe('5561234');
+    expect(numberFor(CITIZEN)).toBe('5561234');
+    expect(citizenIdForNumber('5561234')).toBe(CITIZEN);
+
+    forgetDeleted(CITIZEN);
+    expect(numberFor(CITIZEN)).toBeNull();
+    expect(citizenIdForNumber('5561234')).toBeNull();
+
+    // The purge erased the phone: no live device row. The number row stays on the old phone,
+    // so the new one has none, and there is no legacy row to attach.
+    dbMock.query.mockResolvedValue([]);
+    dbMock.single.mockResolvedValue(null);
+    dbMock.insert.mockClear();
+    dbMock.update.mockClear();
+    const fresh = await issue();
+
+    expect(fresh).toMatch(/^\d{7}$/);
+    expect(fresh).not.toBe('5561234');
+    const inserts = dbMock.insert.mock.calls.map(([sql, values]) => ({
+      sql: String(sql),
+      values: values as unknown[]
+    }));
+    const phone = inserts.find(({ sql }) => sql.includes('`mica_devices`'));
+    const newPhone = phone?.values.find((v) => typeof v === 'string' && /^[0-9a-f]{32}$/.test(v));
+    expect(newPhone).toBeDefined();
+    expect(newPhone).not.toBe(OLD_PHONE);
+    const number = inserts.find(({ sql }) => sql.includes(PHONE_NUMBERS_TABLE));
+    expect(number?.values).toContain(newPhone);
+    expect(number?.values).toContain(fresh);
+    expect(number?.values).not.toContain(OLD_PHONE);
+    // The old number's row is neither moved onto the new phone nor reactivated. (The new
+    // phone's own set-up mark is the one update, MICA-335.)
+    expect(updates().filter(({ sql }) => sql.includes(PHONE_NUMBERS_TABLE))).toEqual([]);
+    expect(numberFor(CITIZEN)).toBe(fresh);
+  });
+
+  it("leaves another character's cached number alone (the positive twin)", () => {
+    rememberNumber(CITIZEN, '5561234');
+    rememberNumber(OTHER, '5564321');
+
+    forgetDeleted(CITIZEN);
+
+    expect(numberFor(OTHER)).toBe('5564321');
+    expect(citizenIdForNumber('5564321')).toBe(OTHER);
+    expect(numberFor(CITIZEN)).toBeNull();
   });
 });

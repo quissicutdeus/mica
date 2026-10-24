@@ -817,13 +817,13 @@ MICA-300, MICA-428), and **neither deletes anything**: each row moves to
 `erased` and stays, with `updated_at` pinned. A `moderated` row (MICA-426) stays
 `moderated`, with its takedown told the owner erased it. Several survive live:
 reports the character filed that staff have not resolved, their rows in the
-audit ledger (never swept), and the device rows (`mica_devices`,
-`mica_phone_numbers`, `mica_battery`, `mica_lockscreen`), which are the phone's
-identity and state rather than the character's content (on ESX a new character
-in a deleted character's slot reuses them, MICA-440). A table with no `status`
-is skipped. The rows that hang off an erased account or profile (follows,
-blocks, reactions, ears, swipes, matches) are erased with it, through
-`registerDependentRows`.
+audit ledger (never swept), and their phone number (`mica_phone_numbers`), so it
+is never issued again. Their phone, passcode and battery (`mica_devices`,
+`mica_lockscreen`, `mica_battery`) are erased with the rest (MICA-440): on ESX
+the next character in a deleted character's slot has the same citizenid, and
+would otherwise inherit them. A table with no `status` is skipped. The rows that
+hang off an erased account or profile (follows, blocks, reactions, ears, swipes,
+matches) are erased with it, through `registerDependentRows`.
 
 **A shared row stays while others are in it** (`registerSharedRows`, from
 `lib/orphanSweep.ts`). A service whose rows other players share through a

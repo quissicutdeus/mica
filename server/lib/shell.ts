@@ -7,7 +7,7 @@ import { detectFramework, FrameworkBridge } from './FrameworkBridge';
 import { s } from '@mica/shared/schema';
 import { guardNetEvent } from './netGuard';
 import { registerService } from './services';
-import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
+import { ownedTables, purgeOwnedRows, sweepOrphanedRows, type PurgeException } from './orphanSweep';
 import { AUDIT_LOG_TABLE } from './AuditLogger';
 import { whenSchemaReady } from './schemaReady';
 import { SELF_SERVICE_EXCEPT } from '../services/Privacy';
@@ -685,39 +685,61 @@ onPlayerLoaded('framework-sources', FrameworkBridge.rememberSource);
  * resolved yet, which keep holding the content they name, and their rows in the moderation
  * ledger, permanently — the record of a staff member's moderation outlives the staff member.
  *
- * **And the device rows, live** (MICA-428). They are the phone's identity and state, not the
- * character's content. Left `active`, the row still names the deleted character. Since MICA-438
- * a resolve reads only its own citizen's rows, and a phone item that outlives its character
- * opens its next holder's own phone, so another character reads these rows only where a
- * framework hands a new character the deleted one's identifier — ESX can (MICA-440), and that
- * character then resolves to this phone as its own. Before MICA-428 the purge deleted them.
+ * **And their phone number, live.** The number row keeps the number theirs, so it is never
+ * issued again: a text or a call addressed to it reaches the dead character's phone, which
+ * nobody resolves to, rather than a stranger who was handed the number later.
  *
- * Everything else they owned is erased. The entries are a player's own delete's, taken from
- * `SELF_SERVICE_EXCEPT` rather than restated, so the pending-report predicate cannot drift
+ * **The phone itself is erased** (MICA-440): its `mica_devices` row, its lock screen and its
+ * battery. MICA-428 kept them so a phone item would work for its next holder, which held while
+ * an item carried a device id. Since MICA-438 a phone is found by its citizen alone, so nobody
+ * else ever resolves to a deleted character's phone, and the only one who can is a new
+ * character handed the same identifier — ESX's `char<slot>:<license>`, reused for the slot.
+ * Left live, that character got the old phone, its passcode on the lock screen and its charge.
+ * Erased, their first resolve creates a phone of their own. On qb and standalone its first sync
+ * issues it a number, a new one, since the number above stays on the old phone; on ESX the
+ * number is the framework's, and micaOS issues none.
+ *
+ * **The lock screen and battery go only once the phone has** (`whilePhoneLives`): each row is
+ * kept while a live `mica_devices` row has its device id, and the phone table is erased first
+ * (`PHONE_FIRST`). A purge that failed on the phone table and erased its battery would leave a
+ * live phone with an erased battery row under `device_id_unique`, where no save could create
+ * another and the revive takes only `deleted` (`services/Battery.ts`). Kept, both go with the
+ * phone on a later run.
+ *
+ * Everything else they owned is erased. The other entries are a player's own delete's, taken
+ * from `SELF_SERVICE_EXCEPT` rather than restated, so the pending-report predicate cannot drift
  * between the two. Taking them by name is checked loudly: a rename there that dropped one would
  * otherwise erase it with nothing said (`orphanSweep.test.ts` holds it too).
  */
-const CHARACTER_KEEPS = [
-  AUDIT_LOG_TABLE,
-  'mica_reports',
-  'mica_devices',
-  'mica_phone_numbers',
-  'mica_battery',
-  'mica_lockscreen'
-];
-export const CHARACTER_EXCEPT = SELF_SERVICE_EXCEPT.filter(({ table }) =>
-  CHARACTER_KEEPS.includes(table)
-);
-if (CHARACTER_EXCEPT.length !== CHARACTER_KEEPS.length) {
+const CHARACTER_KEEPS = [AUDIT_LOG_TABLE, 'mica_reports', 'mica_phone_numbers'];
+const PHONE_TABLE = 'mica_devices';
+const PHONE_FIRST = [PHONE_TABLE];
+/** A table of a phone's own state, kept while its phone's `mica_devices` row is live. */
+const whilePhoneLives = (table: string): PurgeException => ({
+  table,
+  keep: (row) => ({
+    sql:
+      `EXISTS (SELECT 1 FROM \`${PHONE_TABLE}\` ph WHERE ph.\`device_id\` = ${row}.\`device_id\` ` +
+      "AND ph.`status` = 'active')",
+    params: []
+  })
+});
+const KEPT_BY_NAME = SELF_SERVICE_EXCEPT.filter(({ table }) => CHARACTER_KEEPS.includes(table));
+if (KEPT_BY_NAME.length !== CHARACTER_KEEPS.length) {
   console.error(
     `[mica] a deleted character's ${CHARACTER_KEEPS.join(', ')} rows should be kept, but ` +
       "Privacy's SELF_SERVICE_EXCEPT no longer names them all; they will be erased."
   );
 }
+export const CHARACTER_EXCEPT: readonly PurgeException[] = [
+  ...KEPT_BY_NAME,
+  whilePhoneLives('mica_battery'),
+  whilePhoneLives('mica_lockscreen')
+];
 
 /**
  * The character-deleted purge and the start-up sweep, as their hooks below run them: the write
- * in `orphanSweep.ts`, leaving `CHARACTER_EXCEPT` as it is.
+ * in `orphanSweep.ts`, leaving `CHARACTER_EXCEPT` as it is, the phone table first.
  *
  * **Both leave the same rows**, and the sweep's copy is not optional: with no foreign key onto
  * the owner, a kept report is an orphan like any other at the next start. A pending report is
@@ -726,9 +748,63 @@ if (CHARACTER_EXCEPT.length !== CHARACTER_KEEPS.length) {
 export const purgeDeletedCharacter = (citizenid: string) =>
   purgeOwnedRows(citizenid, {
     except: CHARACTER_EXCEPT,
+    first: PHONE_FIRST,
     purpose: 'for a deleted character'
   });
-export const sweepDeletedCharacters = () => sweepOrphanedRows({ except: CHARACTER_EXCEPT });
+export const sweepDeletedCharacters = () =>
+  sweepOrphanedRows({ except: CHARACTER_EXCEPT, first: PHONE_FIRST });
+
+/**
+ * Forget what this process holds for a character that was just deleted. Handed the citizenid,
+ * and a promise that settles once the purge has finished, erased or failed.
+ */
+type CharacterForget = (citizenid: string, purged: Promise<void>) => void;
+
+const characterDeletedForgetters: { name: string; forget: CharacterForget }[] = [];
+
+/**
+ * Forget what a deleted character left in memory, when the character-deleted hook below runs
+ * (MICA-440).
+ *
+ * The purge erases rows, and a module that cached what it read from them still answers from
+ * the cache. On qb nobody asks again, because a deleted citizenid never comes back. On ESX the
+ * next character created in the slot has the same identifier, and until a restart they were
+ * answered the deleted character's phone from `Devices.ts`'s cache, whatever the purge erased.
+ * So each module that keys state by citizenid registers here and drops that citizen's entries.
+ * One that would fill them again from a row the purge has not reached yet waits for `purged`.
+ *
+ * Synchronous, each its own failure, like `forgetOnPlayerLoaded`'s. The start-up sweep runs
+ * none: it cannot name the characters it erases for, and at a start nothing is cached.
+ */
+export const onCharacterDeleted = (name: string, forget: CharacterForget): void => {
+  characterDeletedForgetters.push({ name, forget });
+};
+
+/**
+ * Each source the deleted character was the last to load on gets every switch forgetter, as a
+ * different character's load would run them. A character created in the same ESX slot loads
+ * with the same citizenid, which `replacedCharacter` reads as the same character picked again,
+ * so without this the battery's charge, the external lock and the rest of what
+ * `forgetOnPlayerLoaded` clears carried over to them. Then every `onCharacterDeleted` forgetter.
+ */
+const forgetDeletedCharacter = (citizenid: string, purged: Promise<void>): void => {
+  for (const [src, loaded] of loadedCharacter) {
+    if (loaded === citizenid) forgetCharacter(src, citizenid, everyForgetter);
+  }
+  for (const { name, forget } of characterDeletedForgetters) {
+    try {
+      forget(citizenid, purged);
+    } catch (error) {
+      console.error(
+        `[mica] character-deleted forgetter '${name}' threw for ${who(citizenid)}. What it ` +
+          'holds for them may be answered until a restart; the rest still ran.',
+        traceOf(error)
+      );
+    }
+  }
+};
+
+const settled = (): void => undefined;
 
 /**
  * Told that a character is gone, erase its rows in every table that owned any (MICA-428).
@@ -762,13 +838,20 @@ export const sweepDeletedCharacters = () => sweepOrphanedRows({ except: CHARACTE
  * character leaves micaOS's rows in place for this to decide over. It erases with the write a
  * player's own delete uses (`purgeDeletedCharacter`), keeping less live: every row of the
  * character's moves to `erased`, except their pending reports, moderation ledger rows and
- * device rows (`CHARACTER_EXCEPT`) and a takedown's `moderated` row.
+ * phone number (`CHARACTER_EXCEPT`) and a takedown's `moderated` row.
+ *
+ * **And it forgets what this process holds for them** (MICA-440, `onCharacterDeleted`), at once
+ * rather than after the purge, so nothing answers from a cache meanwhile. An owner who never
+ * fires this, on a server that reuses an ESX slot before the next restart, still hands the new
+ * character the old phone: the identifier exists again, so the sweep cannot see it.
  */
 on(`mica:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
   const citizenid = typeof rawCitizenid === 'string' ? rawCitizenid.trim() : '';
   if (citizenid.length === 0) return;
 
-  void purgeDeletedCharacter(citizenid)
+  const purge = purgeDeletedCharacter(citizenid);
+  forgetDeletedCharacter(citizenid, purge.then(settled, settled));
+  void purge
     .then(({ erased, kept, failures }) => {
       // Unconditionally, including zero, for the reason the start-up sweep below gives at
       // length: a query issued while oxmysql has no pool hangs rather than failing, so an

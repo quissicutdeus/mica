@@ -4,16 +4,24 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { dbMock, handlers } = vi.hoisted(() => {
+const { dbMock, handlers, localHandlers } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
   const previous = (globalThis as any).onNet;
   (globalThis as any).onNet = (event: string, handler: Function) => {
     captured.set(event, handler);
     return typeof previous === 'function' ? previous(event, handler) : undefined;
   };
+  // The local handlers too, for the character-deleted hook `lib/shell.ts` registers (MICA-440).
+  const local = new Map<string, Function>();
+  const previousOn = (globalThis as any).on;
+  (globalThis as any).on = (event: string, handler: Function) => {
+    local.set(event, handler);
+    return typeof previousOn === 'function' ? previousOn(event, handler) : undefined;
+  };
   return {
     dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() },
-    handlers: captured
+    handlers: captured,
+    localHandlers: local
   };
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
@@ -439,5 +447,49 @@ describe('passcode attempt limiting (MICA-164)', () => {
     });
 
     expect(await call('check', { passcode: '000000' }, 'CIT_B')).toEqual({ ok: false });
+  });
+
+  /**
+   * MICA-440: an ESX character deleted and created again in the slot has the same citizenid.
+   * Their lock screen row is erased with the phone, and a streak left here would refuse the
+   * first passcode the new character ever set.
+   */
+  describe('a deleted character', () => {
+    const deleteCharacter = async (citizenid: string) => {
+      const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        localHandlers.get('mica:server:shell:characterDeleted')!(citizenid);
+        // Let the purge it starts finish, so its statements land in this case and no other.
+        await vi.waitFor(() =>
+          expect(logged.mock.calls.some((c) => /for deleted character/.test(String(c[0])))).toBe(
+            true
+          )
+        );
+      } finally {
+        logged.mockRestore();
+      }
+    };
+    const lockedOut = {
+      error: expect.stringContaining('Too many attempts'),
+      key: 'server.lockscreen.tooManyAttempts',
+      params: { seconds: expect.any(Number) }
+    };
+
+    it('takes their wrong streak with them', async () => {
+      for (let i = 0; i < 5; i++) await wrong();
+      expect(await wrong()).toEqual(lockedOut);
+
+      await deleteCharacter('CIT_A');
+
+      expect(await call('check', { passcode: '482091' })).toEqual({ ok: true });
+    });
+
+    it("leaves another character's lockout standing (the positive twin)", async () => {
+      for (let i = 0; i < 5; i++) await wrong();
+
+      await deleteCharacter('CIT_B');
+
+      expect(await wrong()).toEqual(lockedOut);
+    });
   });
 });

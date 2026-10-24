@@ -1012,14 +1012,14 @@ What a purge leaves as it is:
   erased it, so a reopen restores `erased`.
 - **The audit ledger**, and **pending reports the player filed**, in every
   purge. A resolved report goes with the rest.
-- **The device's rows, live**: `mica_devices`, `mica_phone_numbers`,
-  `mica_battery` and `mica_lockscreen`. They are the phone's identity and state
-  rather than the character's content. A phone is found by its character
-  (MICA-438), so on qb and qbx nothing resolves to a deleted character's phone
-  again: the rows still name the deleted character, and the item that opened it
-  opens its next holder's own phone. On ESX a new character in the same slot
-  inherits the phone, passcode included (MICA-440). The player's own delete
-  keeps them too, and also keeps open invoices they owe and the import ledger.
+- **The phone number** (`mica_phone_numbers`) in the character-deleted purge and
+  the sweep, so a deleted character's number is never issued to another phone.
+  The phone itself, its lock-screen passcode and its battery (`mica_devices`,
+  `mica_lockscreen`, `mica_battery`) are erased there with the rest (MICA-440):
+  a phone is found by its character (MICA-438), and on ESX a new character in a
+  deleted character's slot has the same citizenid, so a live phone row handed it
+  the old phone, passcode included. The player's own delete keeps all four, and
+  also keeps open invoices they owe and the import ledger.
 - **A group thread or channel others are still in** (`registerSharedRows`). The
   owner's own membership and messages are erased, but the thread or channel
   stays live while another member is `active`, and the next orphan sweep erases

@@ -454,10 +454,15 @@ table (`users(identifier)` on ESX, `players(citizenid)` on qb) who exists and
 hides the rows belonging to characters who do not. **Nothing is deleted**
 (MICA-428): the rows move to `erased` and stay in the database, hidden from
 every player and kept for staff. Both leave a row staff have taken down, the
-character's pending reports and their audit-log entries, and the phone's own
-device rows, which stay live because the phone item can outlive its character. A
-group thread or Dark Chat channel the character started stays live while another
-member is still in it, and the next sweep erases it once the last has left.
+character's pending reports, their audit-log entries and their micaOS phone
+number, which stays live so it is never issued to another character; the phone
+itself, its passcode and its battery are erased with the rest (MICA-440). On
+ESX, fire the event: esx_multicharacter gives a deleted character's identifier
+to the next character in its slot, and a slot reused before the next restart
+holds a character the sweep sees as existing, who inherits everything the old
+one had. A group thread or Dark Chat channel the character started stays live
+while another member is still in it, and the next sweep erases it once the last
+has left.
 
 **It refuses to run rather than guess, and you will see it say so.** Treating an
 owner table it cannot read as "everybody is an orphan" would delete your

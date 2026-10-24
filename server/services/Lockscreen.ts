@@ -7,6 +7,7 @@ import { randomBytes, scrypt } from 'node:crypto';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { AuditLogger } from '../lib/AuditLogger';
+import { onCharacterDeleted } from '../lib/shell';
 import { lockscreenContract } from '@mica/shared/contracts/lockscreen';
 
 /**
@@ -256,6 +257,15 @@ export const __setLockscreenClock = (fn?: () => number): void => {
   now = fn ?? (() => Date.now());
 };
 export const __resetLockscreenAttempts = (): void => attempts.clear();
+
+/**
+ * A deleted character's wrong streak goes with them (MICA-440). Their lock screen row is erased
+ * with the phone, and a new ESX character in the slot has the same citizenid, so a lockout left
+ * here would refuse the first passcode they ever set.
+ */
+onCharacterDeleted('lockscreen', (citizenid) => {
+  attempts.delete(citizenid);
+});
 
 const maxAttempts = (): number => {
   const raw = Number.parseInt(GetConvar(ATTEMPTS_CONVAR, String(DEFAULT_MAX_ATTEMPTS)), 10);

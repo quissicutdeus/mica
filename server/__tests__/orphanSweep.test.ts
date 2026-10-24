@@ -1342,29 +1342,36 @@ describe('the character-deleted hook', () => {
     expect(netHandlers.has(CHARACTER_DELETED_EVENT)).toBe(false);
   });
 
-  /** What a deleted character keeps live: the ledger, pending reports, and the device. */
-  const DEVICE = ['mica_devices', 'mica_phone_numbers', 'mica_battery', 'mica_lockscreen'];
-  const erasedTables = () => reached().filter((table) => !DEVICE.includes(table));
+  /**
+   * What a deleted character keeps live besides the ledger and pending reports: their number,
+   * so it is never issued again. Their phone's own rows are erased (MICA-440).
+   */
+  const NUMBER = 'mica_phone_numbers';
+  const PHONE = ['mica_devices', 'mica_battery', 'mica_lockscreen'];
+  /** A phone's own state, erased only once its phone is (MICA-440 review). */
+  const PHONE_STATE = ['mica_battery', 'mica_lockscreen'];
+  const erasedTables = () => reached().filter((table) => table !== NUMBER);
   const PENDING = "`mica_reports`.`status` = 'active' AND `mica_reports`.`resolution` = 'pending'";
   const answering = () =>
     dbMock.query.mockImplementation(async (sql: string) =>
       sql.startsWith('SELECT') ? [] : { affectedRows: ERASE.test(sql) ? 1 : 0 }
     );
 
-  it('erases when told a character is gone, and leaves the device live (MICA-428)', async () => {
+  it('erases when told a character is gone, their phone too, and keeps the number', async () => {
     answering();
 
     localHandlers.get(CHARACTER_DELETED_EVENT)![0]('CID_Z');
     await vi.waitFor(() => expect(writes().length).toBe(erasedTables().length));
 
-    // A player's own delete leaves these too; a deleted character's are erased (MICA-300).
+    // A player's own delete leaves these too; a deleted character's are erased (MICA-300), and
+    // since MICA-440 so is the phone, its lock screen and its battery: a new ESX character
+    // under the same identifier must not resolve to it.
     const tables = writes().map((sql) => ERASE.exec(sql)![1]);
-    for (const table of ['mica_import_ledger', 'mica_invoices']) {
+    for (const table of ['mica_import_ledger', 'mica_invoices', ...PHONE]) {
       expect(tables, table).toContain(table);
     }
-    // The phone item can outlive its character: an erased device row would refuse its next
-    // holder's resolve on `device_id_unique` for good.
-    for (const table of DEVICE) expect(tables, table).not.toContain(table);
+    // The number stays theirs, live, so it is never issued to anybody else.
+    expect(tables).not.toContain(NUMBER);
     for (const call of dbMock.query.mock.calls) {
       if (ownWrites().includes(String(call[0]))) expect(call[1][1]).toBe('CID_Z');
     }
@@ -1387,13 +1394,70 @@ describe('the character-deleted hook', () => {
     expect(CHARACTER_EXCEPT.map(({ table }) => table).toSorted()).toEqual([
       'mica_audit_logs',
       'mica_battery',
-      'mica_devices',
       'mica_lockscreen',
       'mica_phone_numbers',
       'mica_reports'
     ]);
-    // Taken from Privacy's list, not restated, so the two predicates cannot drift.
-    for (const entry of CHARACTER_EXCEPT) expect(SELF_SERVICE_EXCEPT).toContain(entry);
+    // Taken from Privacy's list, not restated, so the two predicates cannot drift. The phone's
+    // battery and lock screen are the hook's own (MICA-440), kept only while their phone lives.
+    for (const entry of CHARACTER_EXCEPT) {
+      if (PHONE_STATE.includes(entry.table)) expect(entry.keep, entry.table).toBeDefined();
+      else expect(SELF_SERVICE_EXCEPT).toContain(entry);
+    }
+  });
+
+  /**
+   * MICA-440 review: a purge that failed on the phone table but erased its battery left a live
+   * phone whose battery row sat erased under `device_id_unique`, where no save could create
+   * another. So the phone table goes first, and the battery and lock screen are erased only
+   * where their phone is no longer live. What the predicate selects is MariaDB's to prove
+   * (`scripts/test-schema.js`); this holds the order and the text.
+   */
+  it('erases the phone before every other table, then its state only where the phone is gone', async () => {
+    answering();
+
+    localHandlers.get(CHARACTER_DELETED_EVENT)![0]('CID_Z');
+    await vi.waitFor(() => expect(writes().length).toBe(erasedTables().length));
+
+    expect(ERASE.exec(writes()[0])![1]).toBe('mica_devices');
+    for (const table of PHONE_STATE) {
+      const sql = writes().find((statement) => statement.startsWith(`UPDATE \`${table}\` `))!;
+      expect(sql, table).toContain(
+        `NOT (EXISTS (SELECT 1 FROM \`mica_devices\` ph WHERE ph.\`device_id\` = \`${table}\`.\`device_id\` ` +
+          "AND ph.`status` = 'active'))"
+      );
+    }
+  });
+
+  it('keeps the phone first in the start-up sweep too', async () => {
+    healthyServer({ matched: 1, removedPerTable: 1 });
+
+    const handlers = localHandlers.get('onResourceStart') ?? [];
+    const sweepStart = handlers.find((fn) => /orphan sweep starting/.test(String(fn)))!;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      sweepStart('mica');
+      await vi.waitFor(() =>
+        expect(log.mock.calls.some((c) => /orphan sweep finished/.test(String(c[0])))).toBe(true)
+      );
+    } finally {
+      log.mockRestore();
+    }
+
+    expect(ERASE.exec(writes()[0])![1]).toBe('mica_devices');
+    for (const table of PHONE_STATE) {
+      const sql = writes().find((statement) => statement.startsWith(`UPDATE \`${table}\` `))!;
+      expect(sql, table).toContain('NOT (EXISTS (SELECT 1 FROM `mica_devices` ph');
+    }
+    // Only the erase moved. The identity check still samples owners from the first table in
+    // the declared order: sampling the phone table first refused a sweep whose only phone rows
+    // were a deleted character's, as identity-mismatch.
+    const [first] = ownedTables();
+    expect(first.table).not.toBe('mica_devices');
+    const sampled = dbMock.query.mock.calls
+      .map(([sql]: any[]) => String(sql))
+      .find((sql: string) => sql.startsWith('SELECT DISTINCT'));
+    expect(sampled).toContain(`FROM ${first.table} `);
   });
 
   it('keeps the same rows in the start-up sweep, so they are not swept as orphans', async () => {
@@ -1413,8 +1477,10 @@ describe('the character-deleted hook', () => {
 
     const statements = dbMock.query.mock.calls.map((c: any[]) => String(c[0]));
     expect(statements.some((sql) => sql.includes('mica_audit_logs'))).toBe(false);
-    for (const table of DEVICE) {
-      expect(writes().some((sql) => sql.startsWith(`UPDATE \`${table}\``))).toBe(false);
+    expect(writes().some((sql) => sql.startsWith(`UPDATE \`${NUMBER}\``))).toBe(false);
+    // A deleted character's phone is an orphan like the rest of their rows (MICA-440).
+    for (const table of PHONE) {
+      expect(writes().some((sql) => sql.startsWith(`UPDATE \`${table}\``))).toBe(true);
     }
     const reports = writes().find((sql) => sql.startsWith('UPDATE `mica_reports` '))!;
     expect(reports).toContain(`NOT (${PENDING})`);

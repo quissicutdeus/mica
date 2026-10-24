@@ -216,9 +216,9 @@ export const EXPORT_EXCLUDED: ReadonlySet<string> = new Set([AUDIT_LOG_TABLE, VE
 /**
  * What a player's own delete keeps (MICA-168). The test for each: is this a moderation or
  * accountability record, rather than content the player made? The character-deleted purge
- * and the orphan sweep pass two of these -- the audit ledger and pending reports, which
- * outlive the character (MICA-300, `CHARACTER_EXCEPT` in `lib/shell.ts`); the rest only a
- * self-service delete keeps.
+ * and the orphan sweep pass three of these -- the audit ledger and pending reports, which
+ * outlive the character (MICA-300), and the phone number, which is never issued again
+ * (MICA-440; `CHARACTER_EXCEPT` in `lib/shell.ts`); the rest only a self-service delete keeps.
  *
  * - `mica_audit_logs`, whole: the moderation ledger. A staff member must not be able to
  *   erase the record of their own moderation and admin reads (MICA-70).
@@ -233,7 +233,8 @@ export const EXPORT_EXCLUDED: ReadonlySet<string> = new Set([AUDIT_LOG_TABLE, VE
  * - `mica_devices`, `mica_phone_numbers`, `mica_battery`, `mica_lockscreen`, whole: the
  *   device's identity and state, not the player's content. Deleting them under a live session
  *   desyncs it — the number registry and the lock keep the old row, and a number could be
- *   reassigned while its holder still has the phone open. They stay in the export.
+ *   reassigned while its holder still has the phone open. They stay in the export. A deleted
+ *   character has no session, so its purge erases all but the number (MICA-440).
  * - `mica_import_ledger`, whole: the operator's record of what `micaimport` brought over. It
  *   is how a re-run knows a row was already imported, so deleting it would let the next run
  *   bring the deleted data straight back.
@@ -530,9 +531,10 @@ export const onBeforeSelfServiceDelete = (name: string, run: BeforeSelfServiceDe
  * hooks run first.
  *
  * Only this purge runs them. The character-deleted purge and the start-up sweep
- * (`lib/shell.ts`) delete the device rows too, so a 1:1 pair they leave behind names a phone
- * that is gone. That pair stays held only if the phone's item outlives its character and is
- * used again. That case is not handled here.
+ * (`lib/shell.ts`) erase the phone too (MICA-440), so a 1:1 pair they leave behind names a phone
+ * nobody resolves to again: since MICA-438 an item opens its holder's own phone, and a new ESX
+ * character in the slot is given a new one. The other party's thread with it stays as it was.
+ * That case is not handled here.
  */
 export const selfServicePurge = async (citizenid: string) => {
   for (const hook of beforeDeleteHooks) {

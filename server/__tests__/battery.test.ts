@@ -844,6 +844,98 @@ describe('a character switch on the same source', () => {
   });
 });
 
+/**
+ * MICA-440: an ESX character deleted and created again in the same slot comes back under the
+ * same citizenid, often on the same source. The shell reads that load as the same character
+ * announced again, so before the character-deleted hook forgot the source the new character was
+ * handed the old phone's live charge, its charger still plugged in.
+ */
+describe('a character deleted, and created again under the same identifier', () => {
+  const PHONE_A = 'a'.repeat(32);
+  const PHONE_B = 'b'.repeat(32);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const load = async () => {
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+    await settle();
+    await settle();
+  };
+  const tickAMinute = () => {
+    for (let i = 0; i < 12; i += 1) __tickBattery();
+  };
+  const deleteCharacter = async (citizenid: string) => {
+    handlers.get('mica:server:shell:characterDeleted')!(citizenid);
+    await settle();
+  };
+  /** Every handler's `playerDropped`, the shell's included, so no earlier case's load is held. */
+  const dropSource = () => {
+    (globalThis as any).source = SRC;
+    for (const dropped of everyHandler.get('playerDropped') ?? []) dropped();
+  };
+
+  beforeEach(() => {
+    dropSource();
+    __resetBatteryState();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    bridgeMock.getPlayer.mockImplementation(() => mockPlayer());
+    __setDeviceResolvers({ forRequest: async () => PHONE_A });
+    // The old phone's row answers 30; the new phone has none, so it starts full.
+    dbMock.query.mockImplementation(async (_sql: string, params: unknown[] = []) =>
+      params[0] === PHONE_A ? [{ id: 1, citizenid: CID, device_id: PHONE_A, level: 30 }] : []
+    );
+  });
+
+  it("starts the new character on their own phone's charge, off the charger", async () => {
+    await load();
+    setCharging(SRC, true);
+    tickAMinute();
+    expect(currentCharge(SRC)).toBe(40);
+
+    await deleteCharacter(CID);
+    __setDeviceResolvers({ forRequest: async () => PHONE_B });
+    dbMock.insert.mockClear();
+    await load();
+
+    expect(currentCharge(SRC)).toBe(100);
+    expect(emittedCharge()).toBe(100);
+    // The new phone's own row, adopted at full.
+    expect(
+      dbMock.insert.mock.calls.some(([, values]) => (values as unknown[]).includes(PHONE_B))
+    ).toBe(true);
+    tickAMinute();
+    // Draining: the deleted character's charger is not theirs.
+    expect(currentCharge(SRC)).toBe(99);
+  });
+
+  it('forgets a charge loaded through battery:load, which the shell never saw', async () => {
+    // No character load dispatched on this source since the drop, as after a resource restart.
+    await sendLoadedBatteryToClient(SRC);
+    setCharging(SRC, true);
+    expect(currentCharge(SRC)).toBe(30);
+
+    await deleteCharacter(CID);
+
+    (globalThis.emitNet as any).mockClear();
+    tickAMinute();
+    // No charge left to tick for the deleted character.
+    expect(chargeCalls()).toEqual([]);
+    expect(currentCharge(SRC)).toBe(100);
+  });
+
+  it("leaves the charge alone when somebody else's character is deleted (the positive twin)", async () => {
+    await load();
+    setCharging(SRC, true);
+    tickAMinute();
+
+    await deleteCharacter('OTHER001');
+    await load();
+
+    expect(currentCharge(SRC)).toBe(40);
+    tickAMinute();
+    expect(currentCharge(SRC)).toBe(50);
+  });
+});
+
 const notifies = () =>
   (globalThis.emitNet as any).mock.calls.filter((c: any[]) => c[0] === 'mica:client:shell:notify');
 const chargeCalls = () =>

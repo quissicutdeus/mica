@@ -43,6 +43,7 @@ import {
 } from './exports';
 import { SendSystemEmail } from '../services/Mail';
 import { sendFromLine, type LineSender } from '../services/Messages';
+import { NoSuchCharacterError } from '../services/Devices';
 import { readCitizenIdByNumber } from './phoneNumbers';
 import { phoneNumberFrom } from './netGuard';
 import { getBatteryLevel, setBatteryLevel, setCharging } from '../services/Battery';
@@ -244,6 +245,24 @@ const MEDIA_KINDS: readonly MediaKind[] = [
 const SAFE_URL = /^(https?:|data:image\/)/i;
 
 /**
+ * A write on a character's behalf, answered `unknown_player` where it was refused because no
+ * such character exists (MICA-440, `NoSuchCharacterError`): the answer `SendMessage` and
+ * `SendInvoice` give a citizenid nobody has, rather than an `internal_error` and a stack trace
+ * for a caller's mistake. Decided where the phone would have been created, so it is the same
+ * question the rows are refused by, and never asked twice; anything else still throws.
+ */
+const forACharacter = async <T>(write: () => Promise<T>): Promise<ExportOutcome<T>> => {
+  try {
+    return ok(await write());
+  } catch (error) {
+    if (error instanceof NoSuchCharacterError) {
+      return fail<T>('unknown_player', 'No character with that citizenid.');
+    }
+    throw error;
+  }
+};
+
+/**
  * Put media in a player's gallery.
  *
  * The camera can only ever produce a `photo`, so before this the six other kinds the
@@ -292,20 +311,20 @@ const AddMedia = async (
     addForPlayer(citizenid: string, item: Partial<MediaItem>): Promise<number>;
   };
 
-  const id = await repo.addForPlayer(citizenid, {
-    kind,
-    data,
-    url,
-    thumbnail: item.thumbnail ? String(item.thumbnail) : undefined,
-    mime_type: item.mime_type ? String(item.mime_type) : undefined,
-    width: Number.isFinite(item.width) ? Number(item.width) : undefined,
-    height: Number.isFinite(item.height) ? Number(item.height) : undefined,
-    duration_ms: Number.isFinite(item.duration_ms) ? Number(item.duration_ms) : undefined,
-    byte_size: Number.isFinite(item.byte_size) ? Number(item.byte_size) : undefined,
-    alt_text: item.alt_text ? String(item.alt_text).slice(0, 255) : undefined
-  });
-
-  return ok({ id });
+  return await forACharacter(async () => ({
+    id: await repo.addForPlayer(citizenid, {
+      kind,
+      data,
+      url,
+      thumbnail: item.thumbnail ? String(item.thumbnail) : undefined,
+      mime_type: item.mime_type ? String(item.mime_type) : undefined,
+      width: Number.isFinite(item.width) ? Number(item.width) : undefined,
+      height: Number.isFinite(item.height) ? Number(item.height) : undefined,
+      duration_ms: Number.isFinite(item.duration_ms) ? Number(item.duration_ms) : undefined,
+      byte_size: Number.isFinite(item.byte_size) ? Number(item.byte_size) : undefined,
+      alt_text: item.alt_text ? String(item.alt_text).slice(0, 255) : undefined
+    })
+  }));
 };
 
 /**
@@ -335,15 +354,15 @@ const AddContact = async (
     addForPlayer(citizenid: string, item: Partial<Contact>): Promise<number>;
   };
 
-  const id = await repo.addForPlayer(citizenid, {
-    firstname: firstname.slice(0, 50),
-    lastname: item.lastname ? String(item.lastname).slice(0, 50) : undefined,
-    phone: phone.slice(0, 20),
-    email: item.email ? String(item.email).slice(0, 100) : undefined,
-    favorite: item.favorite === true
-  });
-
-  return ok({ id });
+  return await forACharacter(async () => ({
+    id: await repo.addForPlayer(citizenid, {
+      firstname: firstname.slice(0, 50),
+      lastname: item.lastname ? String(item.lastname).slice(0, 50) : undefined,
+      phone: phone.slice(0, 20),
+      email: item.email ? String(item.email).slice(0, 100) : undefined,
+      favorite: item.favorite === true
+    })
+  }));
 };
 
 /**

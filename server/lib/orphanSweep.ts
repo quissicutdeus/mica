@@ -2,8 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { Database } from './Database';
 import { ownedTables, type OwnedTable } from './sweep/tables';
 import { announceSkip, resolveOwner, type SkipReason } from './sweep/owner';
+import { identifier } from './sweep/sql';
 import { citizenScope, orphanScope } from './sweep/scope';
 import {
   purgePlanned,
@@ -122,7 +124,24 @@ export interface SweepOptions {
    * sweep is what would otherwise take those rows as orphans at the next start (MICA-300).
    */
   except?: readonly PurgeException[];
+  /** Tables to erase before every other, in this order (`ordered`). */
+  first?: readonly string[];
 }
+
+/**
+ * `tables` with those named in `first` moved to the front, in `first`'s order, the rest as they
+ * were. A purge erases one table after another, so this is how one table's erase can be judged
+ * by another's that has already run (MICA-440: the phone before its battery and lock screen,
+ * whose `keep` asks whether the phone is still live). A name not in `tables` is ignored.
+ */
+const ordered = (
+  tables: readonly OwnedTable[],
+  first: readonly string[] | undefined
+): OwnedTable[] => {
+  if (!first || first.length === 0) return [...tables];
+  const leading = first.flatMap((name) => tables.filter(({ table }) => table === name));
+  return [...leading, ...tables.filter(({ table }) => !first.includes(table))];
+};
 
 /**
  * Erase every row whose owner no longer exists (MICA-428: a status change, never a delete).
@@ -145,6 +164,8 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
   const tables = options.only ?? ownedTables();
   if (tables.length === 0) return skip('nothing-owned');
 
+  // In the declared order, never `first`'s: the identity check samples owners from the first
+  // table that has rows, and which table that is must not move with the order of the erase.
   const verdict = await resolveOwner(tables);
   if (verdict.skipped !== null || !verdict.owner) {
     const reason = verdict.skipped ?? 'unknown-framework';
@@ -155,9 +176,11 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
 
   try {
     // log-identity-ok: the owner table and column, a schema name, not a player
-    const done = await purgePlanned(orphanScope(owner, match, label), tables, {
-      except: options.except
-    });
+    const done = await purgePlanned(
+      orphanScope(owner, match, label),
+      ordered(tables, options.first),
+      { except: options.except }
+    );
     /**
      * And the catch-all (MICA-429 review): any erased account or profile anywhere that still has
      * a follow, block, reaction, ear, swipe or match not yet erased — one a reopen put back to
@@ -186,7 +209,9 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
  *
  * - **The character-deleted purge** (`lib/shell.ts`, MICA-300): the framework has deleted the
  *   character, so everything they owned is erased — except the pending reports they filed,
- *   their rows in the moderation ledger, and the device rows (`CHARACTER_EXCEPT`).
+ *   their rows in the moderation ledger, and their phone number (`CHARACTER_EXCEPT`). Their
+ *   phone's own rows go since MICA-440, so a new ESX character in the slot gets a phone of
+ *   their own.
  * - **A player's own delete** (MICA-168, `services/Privacy.ts`), keeping more by `except`.
  * - **The media-only purge** (`services/Media.ts`), restricted to `mica_media` by `only`.
  *
@@ -200,7 +225,7 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
  */
 export async function purgeOwnedRows(
   citizenid: string,
-  options: PurgeOptions = {}
+  options: PurgeOptions & { first?: readonly string[] } = {}
 ): Promise<PurgeResult> {
   const owner = typeof citizenid === 'string' ? citizenid.trim() : '';
   if (owner.length === 0) return { erased: 0, kept: 0, failures: [] };
@@ -208,8 +233,77 @@ export async function purgeOwnedRows(
   // log-identity-ok: the citizenid is bound in SQL; the scope's label and purpose are logged
   const { erased, kept, failures } = await purgePlanned(
     citizenScope(owner, purpose),
-    options.only ?? ownedTables(),
+    ordered(options.only ?? ownedTables(), options.first),
     options
   );
   return { erased, kept, failures };
 }
+
+/**
+ * The owner verdict a create is judged under (`characterExists`): the sweep's own, from
+ * `resolveOwner` over every owned table, override and identity check included. Read again at
+ * most once a minute rather than per create, as `lib/statusWrites.ts` re-reads its answer: a
+ * cold create is rare, but an import makes thousands, and an operator's fix to the override
+ * is picked up within the minute.
+ */
+const VERDICT_TTL_MS = 60_000;
+let verdictRead: { at: number; verdict: ReturnType<typeof resolveOwner> } | null = null;
+const createVerdict = (): ReturnType<typeof resolveOwner> => {
+  const now = Date.now();
+  if (!verdictRead || now - verdictRead.at > VERDICT_TTL_MS) {
+    verdictRead = { at: now, verdict: resolveOwner(ownedTables()) };
+  }
+  return verdictRead.verdict;
+};
+
+/** Test seam: the next create reads the owner verdict again. */
+export const __resetCreateVerdictForTests = (): void => {
+  verdictRead = null;
+};
+
+/**
+ * The sweep's refusals that only say there is nothing to judge yet: no framework, no micaOS rows
+ * at all, no characters at all. A fresh server is all three, and none of it is a fault.
+ */
+const NOTHING_TO_JUDGE: readonly SkipReason[] = [
+  'unknown-framework',
+  'nothing-owned',
+  'owner-empty'
+];
+
+/**
+ * Whether a character exists, asked **only under an owner verdict the sweep itself would act on**
+ * (MICA-440): `true` or `false` from a read of that owner table, `null` where there is nothing
+ * to judge yet (`NOTHING_TO_JUDGE`), and a throw otherwise — a `mica_orphan_owner_table` that
+ * does not verify, an owner table that cannot be read, or one that names none of micaOS's own
+ * owners (`identity-mismatch`), all of which the sweep refuses too. **A read that fails throws**,
+ * and is never `false`: "could not ask" read as "is not there" is what this file exists to refuse.
+ *
+ * For `services/Devices.ts`, which creates no phone for a character who does not exist. Under the
+ * same verdict as the sweep, a create never disagrees with it: no phone is refused while the
+ * sweep would not erase, and none is made for somebody it would. An override naming a real but
+ * wrong column used to refuse every offline create for a phoneless character, while the sweep
+ * refused itself at every start.
+ */
+export const characterExists = async (citizenid: string): Promise<boolean | null> => {
+  const id = typeof citizenid === 'string' ? citizenid.trim() : '';
+  if (id.length === 0) return false;
+  const verdict = await createVerdict();
+  if (verdict.skipped !== null || !verdict.owner) {
+    const reason = verdict.skipped ?? 'unknown-framework';
+    if (NOTHING_TO_JUDGE.includes(reason)) return null;
+    const detail = 'detail' in verdict && verdict.detail ? `: ${verdict.detail}` : '';
+    throw new Error(`the orphan sweep would not act on its owner table (${reason}${detail}).`);
+  }
+  const table = identifier(verdict.owner.table, 'the owner table');
+  const column = identifier(verdict.owner.column, 'the owner column');
+  // Bound, never compared column to column: es_extended's collation may differ from ours.
+  const row = await Database.single<unknown>(
+    `SELECT 1 AS \`found\` FROM \`${table}\` WHERE \`${column}\` = ? LIMIT 1`,
+    [id]
+  );
+  // oxmysql answers `null` for no row. Anything else that is not a row is not an answer.
+  if (row === null) return false;
+  if (typeof row === 'object') return true;
+  throw new Error(`characterExists: unrecognised answer reading ${table}.`);
+};

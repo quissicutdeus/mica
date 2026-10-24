@@ -241,21 +241,25 @@ character exactly where a lost item always does: without a key, and able to buy
 another. Nothing is left on an id that no item carries, and nothing needs
 cleaning up. A trade is not this case at all; see "Robbery and trade".
 
-What does leave rows nobody can reach is a **deleted character**. Their phone
-row and the rows on it stay live (`mica_devices`, `mica_phone_numbers`,
-`mica_battery` and `mica_lockscreen`, kept by `CHARACTER_EXCEPT` in
-`server/lib/shell.ts`), but a phone is found by its character, so on qb and qbx
-no one resolves to it again. **ESX is the exception (MICA-440):**
+What does leave rows nobody can reach is a **deleted character**, and since
+MICA-440 only its number stays live (`mica_phone_numbers`, kept by
+`CHARACTER_EXCEPT` in `server/lib/shell.ts`), so it is never issued again. Its
+phone row, passcode and battery (`mica_devices`, `mica_lockscreen`,
+`mica_battery`) are erased with its content. That matters on ESX:
 esx_multicharacter reuses `char<slot>:<license>` as a slot's identifier, so a
-new character created in a deleted character's slot has the same citizenid and
-inherits that phone, and may meet its passcode. What covers some of that:
+new character created in a deleted character's slot has the same citizenid, and
+before MICA-440 it inherited that phone and could meet its passcode. What covers
+some of that:
 
 - **The orphan sweep** (`server/lib/orphanSweep.ts`) hides the rows of a
   _character_ that no longer exists (`erased`, MICA-428: nothing is deleted). It
   runs at resource start and when another server resource triggers
   `mica:server:shell:characterDeleted` with a citizenid. On qb it is a backstop
   for the schema's old `ON DELETE CASCADE`; on ESX it is the cleanup. It leaves
-  the device rows live, as above.
+  the number live, as above. On ESX it has to run between the delete and the
+  slot's next character: a slot reused first holds a character that exists
+  again, who inherits everything the old one had, so fire the event from your
+  deletion flow.
 - **Notification retention** (`mica_notification_retention`, 30 days) hides old
   notifications on every phone.
 - **Media retention** (`mica_media_retention`, 365 days by default since
@@ -266,10 +270,10 @@ inherits that phone, and may meet its passcode. What covers some of that:
   or photo stays restorable. It deletes nothing past the window, on purpose:
   moderation depends on a soft-deleted row surviving.
 
-Nothing deletes a row, so a deleted character's few device rows are small and
-inert, and are never reclaimed. An owner who needs that has to delete
-`WHERE device_id = ?` by hand across the device-owned tables, in the order
-`docs/schema-and-services.md` lists them.
+Nothing deletes a row, so a deleted character's device rows, erased or live,
+stay in the database and are never reclaimed. An owner who needs that has to
+delete `WHERE device_id = ?` by hand across the device-owned tables, in the
+order `docs/schema-and-services.md` lists them.
 
 ## Why a key, and what it rules out
 

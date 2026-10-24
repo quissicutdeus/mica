@@ -108,12 +108,12 @@ place that used to remove a row now hides it and keeps it stored as evidence:
 - **A character's deletion, the orphan sweep, a player's privacy delete and
   `micaseed clear`** move rows to a new `erased` status, hidden from everyone,
   the owner included.
-- **A moderator's takedown is never moved**, and neither are a phone's own
-  device rows: they stay live, so the phone's id stays taken, and a deleted
-  character's phone is not opened again on qb and qbx, because a phone is found
-  by its character (MICA-438). On ESX a new character in a deleted character's
-  slot inherits it (MICA-440). A shared thread or Dark Chat channel stays live
-  while another member is still in it.
+- **A moderator's takedown is never moved.** A deleted character's phone number
+  stays live too, so it is never issued again, while their phone, passcode and
+  battery are erased with the rest (MICA-440): a new ESX character in that slot
+  gets a phone of its own. A player's privacy delete keeps every row of their
+  phone live. A shared thread or Dark Chat channel stays live while another
+  member is still in it.
 - **`micamedia prune`** expires and erases; it deletes nothing.
 
 So the database only grows. Retention frees no disk, and nothing shrinks the
@@ -1025,13 +1025,6 @@ phone, so it survives the convar being turned off and on again, on qb and qbx
 alike. ESX keeps no number rows, and standalone has no item gate to toggle. See
 "Turning the gate on and off" in `docs/phone-as-an-item.md`.
 
-**Be aware: on ESX a new character in a deleted character's slot inherits that
-phone (MICA-440).** esx_multicharacter reuses `char<slot>:<license>` as a slot's
-identifier, and MICA-428 keeps a deleted character's device row, passcode and
-battery live, so the new character is on that phone and may meet its passcode.
-This was already so on an ESX server without the gate, and holds with it since
-MICA-438.
-
 **What is not tested.** None of this has run in game. Nothing in the in-server
 suite has a player hold or use a phone item: the qbx and esx runs only check
 that the item exists and is registered as usable, and their item-metadata
@@ -1630,6 +1623,29 @@ somehow emitted it should call the `AddBatteryCharge` or `SetBatteryLevel`
 export instead, which authenticates its caller.
 
 ### Fixed
+
+**On ESX, a new character in a deleted character's slot gets a phone of its own
+(MICA-440).** esx_multicharacter gives the next character in a slot the deleted
+one's identifier, `char<slot>:<license>`, and micaOS kept a deleted character's
+phone, lock-screen passcode and battery live, so the new character opened the
+old phone and could meet a passcode they never set. Deleting a character now
+erases those three with the rest of its rows, on every framework, and the
+start-up sweep does the same for a character it finds gone. A qb or qbx
+character's micaOS number stays live, so it is never issued to anyone else.
+Nothing to do on the server, but on ESX fire
+`mica:server:shell:characterDeleted` from your deletion flow: a slot reused
+before the next restart holds a character that exists again, so the sweep cannot
+see that anything was deleted, and the new character inherits the old one's
+phone and everything on it.
+
+A character the framework no longer has is no longer given a new phone by an
+export that names it, because on ESX that phone would be the next character's in
+the slot. `SendNotification` drops the notification with a line in the console,
+and `AddContact` and `AddMedia` answer `unknown_player`, as `SendMessage` and
+`SendInvoice` already did; nothing is written. If micaOS cannot tell, because it
+cannot read the character table or the orphan sweep would not trust it, it
+creates the phone as before and says so once. Standalone, which has no character
+table, is unchanged.
 
 **A Store add-on can no longer run code its pin never covered (MICA-442).** An
 add-on's frame allowed scripts and stylesheets from any `https:` or `http:`

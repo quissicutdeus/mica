@@ -5,8 +5,10 @@
 import { defineService } from '../lib/defineService';
 import { detectFramework, FrameworkBridge, type FrameworkPlayer } from '../lib/FrameworkBridge';
 import { onPhoneStateChanged } from '../lib/deviceItem';
+import { onCharacterDeleted } from '../lib/shell';
 import {
   ACTIVE_STATUS,
+  forgetNumbersOf,
   generatePhoneNumber,
   MAX_ASSIGN_ATTEMPTS,
   PHONE_NUMBERS_TABLE,
@@ -150,6 +152,18 @@ const reportOnce = (key: string, message: string): void => {
   reported.add(key);
   console.warn(message);
 };
+
+/**
+ * A deleted character's numbers in this process's caches go with them (MICA-440); the rows stay,
+ * so the number is never issued again. Their phone is erased, so no sync reaches `onPhone`'s
+ * entry for it again either, and it is dropped rather than kept until a restart.
+ */
+onCharacterDeleted('phonenumbers', (citizenid) => {
+  forgetNumbersOf(citizenid);
+  for (const [deviceId, entry] of onPhone) {
+    if (entry.citizenid === citizenid) onPhone.delete(deviceId);
+  }
+});
 
 /** Test seam: module state that would otherwise leak between cases. */
 export const __resetPhoneNumberState = (): void => {
@@ -517,7 +531,7 @@ const syncOnce = async (src: number): Promise<string | null> => {
   const phone =
     resolution.status === 'active'
       ? resolution.device
-      : { deviceId: await identityPhone(player.citizenid) };
+      : { deviceId: await identityPhone(player.citizenid, { loaded: true }) };
   if (!stillOn(src, player.citizenid)) return null;
 
   const resolved = await numberForPhone(phone, player.citizenid, preferred);

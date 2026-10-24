@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
-const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
+const { dbMock, bridgeMock, framework, handlers } = vi.hoisted(() => {
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
     name === 'mica_phone_item' ? 'phone' : fallback;
   // Every handler per event, not the last: `deviceItem.ts` and `Devices.ts` both listen for
@@ -32,8 +32,12 @@ const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
       countItem: vi.fn((_player: unknown, _item: string): number | null => 1),
       // `lib/shell.ts` also listens for `playerDropped`, and this suite fires every listener.
       forgetSource: vi.fn(),
-      rememberSource: vi.fn()
+      rememberSource: vi.fn(),
+      // MICA-440: who is on a source, and the owner table a phone's create asks after.
+      getSourceByCitizenId: vi.fn((_citizenid: string): number | null => null),
+      ownerTable: vi.fn(() => ({ table: 'players', column: 'citizenid' }))
     },
+    framework: { kind: 'qb' as string },
     handlers: captured
   };
 });
@@ -41,9 +45,10 @@ const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: bridgeMock,
-  detectFramework: () => 'qbx'
+  detectFramework: () => framework.kind
 }));
 
+import { __resetCreateVerdictForTests } from '../lib/orphanSweep';
 import {
   activeDeviceIdOf,
   activePhone,
@@ -155,6 +160,11 @@ beforeEach(() => {
   dbMock.single.mockResolvedValue(null);
   bridgeMock.getPlayer.mockImplementation((src: number) => (src === SRC_B ? playerB : player));
   bridgeMock.countItem.mockReturnValue(1);
+  // Both characters are loaded, so a create for either asks no owner table (MICA-440).
+  bridgeMock.getSourceByCitizenId.mockImplementation((citizenid: string) =>
+    citizenid === CID ? SRC : citizenid === CID_B ? SRC_B : null
+  );
+  framework.kind = 'qb';
   gate();
 });
 
@@ -840,5 +850,332 @@ describe('the device a source is on follows the item (MICA-264 review)', () => {
     await resolveDevice(SRC, 'tablet');
     expect(dbMock.insert).not.toHaveBeenCalled();
     expect(dbMock.query).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MICA-440: on ESX a citizenid is the identifier, and esx_multicharacter hands a deleted
+ * character's `char<slot>:<license>` to the next character created in the slot. The purge
+ * erases the old phone; these drive the real character-deleted hook in `lib/shell.ts` and hold
+ * this file's caches to it, so the new character, under the same citizenid, resolves to a phone
+ * of their own in the same process rather than the one the cache still names.
+ */
+describe('a deleted character (MICA-440)', () => {
+  const DELETED = 'mica:server:shell:characterDeleted';
+  const B_PHONE = 'b'.repeat(32);
+
+  /**
+   * `mica_devices` as rows the identity read and the purge's erase both see: the erase moves the
+   * named citizen's live rows to `erased`, and the read answers live rows only. Every other
+   * statement the purge sends moves nothing.
+   */
+  const table = (...rows: ReturnType<typeof device>[]) => {
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      const text = String(sql);
+      if (text.startsWith('UPDATE `mica_devices` SET `status` = ?')) {
+        let moved = 0;
+        for (const row of rows) {
+          if (row.citizenid === params[1] && row.status === 'active') {
+            row.status = 'erased';
+            moved += 1;
+          }
+        }
+        return { affectedRows: moved };
+      }
+      if (text.startsWith('SELECT') && text.includes('`mica_devices`')) {
+        return rows.filter(
+          (row) => row.citizenid === params[0] && row.kind === params[1] && row.status === 'active'
+        );
+      }
+      return text.startsWith('UPDATE') ? { affectedRows: 0 } : [];
+    });
+    return rows;
+  };
+
+  /** Each statement on `mica_devices`, in order: an identity `read` or the purge's `erase`. */
+  const deviceStatements = () =>
+    dbMock.query.mock.calls
+      .map(([sql]) => String(sql))
+      .filter((sql) => sql.includes('`mica_devices`'))
+      .map((sql) => (sql.startsWith('UPDATE') ? 'erase' : 'read'));
+
+  const purgeLogged = () =>
+    vi.waitFor(() =>
+      expect(
+        logged.mock.calls.some((c) =>
+          /erased \d+ row\(s\) for deleted character/.test(String(c[0]))
+        )
+      ).toBe(true)
+    );
+
+  let logged: MockInstance<typeof console.log>;
+  beforeEach(() => {
+    logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    logged.mockRestore();
+  });
+
+  it('gives the next character under the identifier a new phone, read after the erase', async () => {
+    const rows = table(device(CID, A_PHONE));
+    await expect(deviceForRequest(SRC, CID)).resolves.toBe(A_PHONE);
+    expect(activePhoneIdOf(SRC)).toBe(A_PHONE);
+
+    handlers.get(DELETED)![0](CID);
+    // At once, so neither LockState nor the battery keys the old phone meanwhile.
+    expect(activePhoneIdOf(SRC)).toBeNull();
+
+    // The new character asks straight away, while the purge is still running.
+    const fresh = await deviceForRequest(SRC, CID);
+
+    expect(fresh).toMatch(ID_SHAPE);
+    expect(fresh).not.toBe(A_PHONE);
+    expect(rows[0].status).toBe('erased');
+    expect(deviceInserts()).toEqual([
+      { citizenid: CID, device_id: fresh, kind: 'phone', setup_pending: 1 }
+    ]);
+    // The ask waited for the erase: a read before it would have found the old phone again.
+    expect(deviceStatements()).toEqual(['read', 'erase', 'read']);
+    expect(activePhoneIdOf(SRC)).toBe(fresh);
+    await purgeLogged();
+  });
+
+  it('caches nothing a read in flight at the delete found, and reads again after it', async () => {
+    const rows = table(device(CID, A_PHONE));
+    const live = dbMock.query.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    // The read is answered from the table as it is now, and lands only after the delete.
+    dbMock.query.mockImplementationOnce(async (sql: string, params: unknown[]) => {
+      const answer = await live(sql, params);
+      await held;
+      return answer;
+    });
+
+    const inFlight = identityPhone(CID);
+    handlers.get(DELETED)![0](CID);
+    release();
+
+    // Its own caller gets what it read; nobody after it does.
+    await expect(inFlight).resolves.toBe(A_PHONE);
+    await purgeLogged();
+    expect(rows[0].status).toBe('erased');
+    const next = await identityPhone(CID);
+    expect(next).toMatch(ID_SHAPE);
+    expect(next).not.toBe(A_PHONE);
+  });
+
+  it("leaves another character's cached phone and source alone (the positive twin)", async () => {
+    table(device(CID, A_PHONE), device(CID_B, B_PHONE));
+    await deviceForRequest(SRC, CID);
+    await deviceForRequest(SRC_B, CID_B);
+
+    handlers.get(DELETED)![0](CID);
+    await purgeLogged();
+
+    expect(activePhoneIdOf(SRC)).toBeNull();
+    expect(activePhoneIdOf(SRC_B)).toBe(B_PHONE);
+    const reads = () => deviceStatements().filter((statement) => statement === 'read').length;
+    const before = reads();
+    await expect(deviceForRequest(SRC_B, CID_B)).resolves.toBe(B_PHONE);
+    // Still cached: B's phone is answered without another read.
+    expect(reads()).toBe(before);
+  });
+});
+
+/**
+ * MICA-440 review: a write on behalf of a character who does not exist — an export still naming
+ * a deleted identifier — creates no phone for them. On ESX the next character created in the
+ * slot would inherit it, and on qb it was a junk phone until the next sweep. Asked only on a
+ * create, only for a citizen nobody vouched for and nobody has on a source, and never on
+ * standalone or before a framework answers. A read that fails creates, and says so once.
+ */
+describe('no phone for a character who does not exist (MICA-440)', () => {
+  const GONE = 'GONE0001';
+  const OTHER = 'LATE0002';
+
+  /** The owner-table reads a create made: the table it read, and whom it asked after. */
+  const ownerReads = () =>
+    dbMock.single.mock.calls
+      .filter(([sql]) => String(sql).startsWith('SELECT 1 AS `found` FROM'))
+      .map(([sql, params]) => [String(sql), params]);
+
+  /**
+   * A server the sweep would act on: a populated owner table on micaOS's collation, and one of
+   * micaOS's own owners in it (`resolveOwner`). `holds` says who else it has. `matched: 0` is an
+   * owner table that names none of micaOS's owners, which the sweep refuses.
+   */
+  const ownerTable = (holds: (citizenid: string) => boolean, { matched = 1 } = {}) => {
+    const previous = dbMock.query.getMockImplementation();
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
+      String(sql).startsWith('SELECT DISTINCT')
+        ? [{ owner: CID }]
+        : previous
+          ? previous(sql, params)
+          : []
+    );
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      const text = String(sql);
+      if (text.includes('AS total')) return { total: 3 };
+      if (text.includes('AS collation')) {
+        return { collation: 'utf8mb4_unicode_ci', charset: 'utf8mb4' };
+      }
+      if (text.includes('AS matched')) return { matched };
+      if (text.startsWith('SELECT 1 AS `found` FROM')) {
+        return holds(String(params[0])) ? { found: 1 } : null;
+      }
+      return null;
+    });
+  };
+  const nobody = () => false;
+
+  let errors: MockInstance<typeof console.error>;
+  beforeEach(() => {
+    rowsOf({});
+    __resetCreateVerdictForTests();
+    errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    errors.mockRestore();
+  });
+
+  it('refuses the create, writes nothing, and reads the owner table by a bound id', async () => {
+    ownerTable(nobody);
+
+    await expect(phoneForCitizen(GONE)).rejects.toThrow(/no character .* exists here/);
+
+    expect(deviceInserts()).toEqual([]);
+    expect(ownerReads()).toEqual([
+      ['SELECT 1 AS `found` FROM `players` WHERE `citizenid` = ? LIMIT 1', [GONE]]
+    ]);
+    // Refused, not failed: the line about a table it could not read is not said.
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it('creates for a character the owner table has, offline (the positive twin)', async () => {
+    ownerTable((citizenid) => citizenid === GONE);
+
+    const phone = await phoneForCitizen(GONE);
+
+    expect(phone).toMatch(ID_SHAPE);
+    expect(deviceInserts()).toEqual([
+      { citizenid: GONE, device_id: phone, kind: 'phone', setup_pending: 1 }
+    ]);
+  });
+
+  it('asks again after a refusal, so a character created later gets their phone', async () => {
+    let created = false;
+    ownerTable(() => created);
+    await expect(identityPhone(GONE)).rejects.toThrow(/no character/);
+    created = true;
+
+    await expect(identityPhone(GONE)).resolves.toMatch(ID_SHAPE);
+    expect(ownerReads()).toHaveLength(2);
+  });
+
+  it('asks nothing for a character the bridge has on a source', async () => {
+    ownerTable(nobody);
+    bridgeMock.getSourceByCitizenId.mockImplementation((citizenid: string) =>
+      citizenid === GONE ? 42 : null
+    );
+
+    await expect(phoneForCitizen(GONE)).resolves.toMatch(ID_SHAPE);
+    expect(ownerReads()).toEqual([]);
+  });
+
+  it('asks nothing for the player a request is from, whose row may not be written yet', async () => {
+    ownerTable(nobody);
+    const fresh = { citizenid: GONE, source: 9, setMeta: vi.fn(), rawPlayer: {} };
+    bridgeMock.getPlayer.mockImplementation((src: number) => (src === 9 ? fresh : player));
+
+    await expect(deviceForRequest(9, GONE)).resolves.toMatch(ID_SHAPE);
+    expect(ownerReads()).toEqual([]);
+  });
+
+  it('asks nothing on standalone, or before a framework has answered', async () => {
+    ownerTable(nobody);
+
+    for (const kind of ['standalone', 'unknown']) {
+      __resetDeviceState();
+      framework.kind = kind;
+      await expect(phoneForCitizen(GONE), kind).resolves.toMatch(ID_SHAPE);
+    }
+    expect(ownerReads()).toEqual([]);
+  });
+
+  it('creates when the owner table cannot be read, and says so once', async () => {
+    dbMock.single.mockRejectedValue(new Error('connection lost'));
+
+    await expect(phoneForCitizen(GONE)).resolves.toMatch(ID_SHAPE);
+    await expect(phoneForCitizen(OTHER)).resolves.toMatch(ID_SHAPE);
+
+    expect(deviceInserts()).toHaveLength(2);
+    const said = errors.mock.calls.filter((c) =>
+      /could not tell whether a character exists/.test(String(c[0]))
+    );
+    expect(said).toHaveLength(1);
+  });
+
+  /**
+   * Kix's second round: an override that names a real column, but one holding none of micaOS's
+   * owners, is a verdict the sweep refuses (`identity-mismatch`). Trusted here, it refused every
+   * offline create for a phoneless character while the sweep refused itself at every start.
+   */
+  it('creates under an override the sweep would not act on, says so once, and reads no row', async () => {
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_orphan_owner_table'
+        ? 'custom_characters.character_id'
+        : name === 'mica_phone_item'
+          ? 'phone'
+          : fallback;
+    // It verifies: the column is real.
+    dbMock.scalar.mockImplementation(async (sql: string) =>
+      String(sql) === 'SELECT DATABASE()' ? 'mica' : 1
+    );
+    ownerTable(nobody, { matched: 0 });
+    try {
+      await expect(phoneForCitizen(GONE)).resolves.toMatch(ID_SHAPE);
+      await expect(phoneForCitizen(OTHER)).resolves.toMatch(ID_SHAPE);
+    } finally {
+      dbMock.scalar.mockReset();
+    }
+
+    expect(ownerReads()).toEqual([]);
+    const said = errors.mock.calls.filter((c) =>
+      /could not tell whether a character exists/.test(String(c[0]))
+    );
+    expect(said).toHaveLength(1);
+    expect(String(said[0][1])).toMatch(/identity-mismatch/);
+  });
+
+  it('refuses the deleted character after the hook, where the cache had their phone', async () => {
+    // The table answers live rows only, and the purge's erase moves A's to `erased`.
+    const rows = [device(CID, A_PHONE)];
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      const text = String(sql);
+      if (text.startsWith('UPDATE `mica_devices` SET `status` = ?')) {
+        for (const row of rows) if (row.citizenid === params[1]) row.status = 'erased';
+        return { affectedRows: 1 };
+      }
+      if (text.startsWith('SELECT') && text.includes('`mica_devices`')) {
+        return rows.filter((row) => row.citizenid === params[0] && row.status === 'active');
+      }
+      return text.startsWith('UPDATE') ? { affectedRows: 0 } : [];
+    });
+    await expect(phoneForCitizen(CID)).resolves.toBe(A_PHONE);
+
+    // Deleted at character select: not on a source, and gone from the owner table.
+    bridgeMock.getSourceByCitizenId.mockReturnValue(null);
+    ownerTable(nobody);
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      handlers.get('mica:server:shell:characterDeleted')![0](CID);
+      // An export still naming them, at once: it waits for the erase, then is refused.
+      await expect(phoneForCitizen(CID)).rejects.toThrow(/no character/);
+    } finally {
+      logged.mockRestore();
+    }
+    expect(rows[0].status).toBe('erased');
+    expect(deviceInserts()).toEqual([]);
   });
 });

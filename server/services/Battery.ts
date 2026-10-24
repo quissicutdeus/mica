@@ -14,7 +14,12 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@mica/shared/types';
 import { isAdmin } from './Admin';
-import { forgetOnPlayerLoaded, onPlayerLoaded, notifyPlayer } from '../lib/shell';
+import {
+  forgetOnPlayerLoaded,
+  onCharacterDeleted,
+  onPlayerLoaded,
+  notifyPlayer
+} from '../lib/shell';
 import { batteryLevel, guardNetEvent, noInput } from '../lib/netGuard';
 import { s } from '@mica/shared/schema';
 import {
@@ -63,7 +68,9 @@ export const batteryApp = defineService<PhoneBattery>({
   indexes: [{ name: 'device_id_unique', columns: ['device_id'], unique: true }],
   // The save writes the phone's active row or creates one (`findAll` reads `active` only), so a
   // deleted row under the key would refuse every save for that phone. Nothing deletes a battery
-  // today; if anything ever does, the next save revives the row with the level it carries.
+  // today; if anything ever does, the next save revives the row with the level it carries. A
+  // deleted character's is erased with their phone (MICA-440), which no revive touches and
+  // nothing saves to again: a new character in the slot gets a new phone, and a row of its own.
   uniqueAfterDelete: 'revive',
   options: {
     disableGet: true,
@@ -842,6 +849,20 @@ const switchCharacter = (src: number): void => {
  * would then refuse for the rest of the session.
  */
 forgetOnPlayerLoaded('battery', switchCharacter, { atLogout: false });
+
+/**
+ * A deleted character's charge is forgotten on every source it was loaded for (MICA-440). Their
+ * battery row is erased with the phone, and a new ESX character in the slot loads with the same
+ * citizenid, which `loadedFor` reads as the same character announced again: they were handed
+ * the old phone's live charge, ticked and saved onto a device nobody resolves to. `lib/shell.ts`
+ * already runs `switchCharacter` for each source the shell saw the character load on; this also
+ * covers one loaded through `battery:load` since a restart, which the shell never saw.
+ */
+onCharacterDeleted('battery', (citizenid) => {
+  for (const [src, loaded] of loadedFor) {
+    if (loaded === citizenid) forgetSource(src);
+  }
+});
 
 /**
  * Seed the live value from the table when a character loads.

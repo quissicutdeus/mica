@@ -143,3 +143,47 @@ describe('the character-switch gate reads its own record, not the bridge registr
     expect(forgot).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * MICA-440: an ESX character deleted and created again in the slot loads with the same
+ * citizenid, which the gate reads as the same character picked again, so nothing is forgotten at
+ * that load. The character-deleted hook forgets for them instead: every forgetter, on each source
+ * the deleted character was the last to load on, at the delete.
+ */
+describe('a character deleted, and created again under the same citizenid', () => {
+  const deleteCharacter = async (citizenid: string) => {
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+    for (const handler of handlers.get('mica:server:shell:characterDeleted') ?? []) {
+      handler(citizenid);
+    }
+    // The purge it starts logs once it has finished, whatever it found.
+    await vi.waitFor(() =>
+      expect(logged.mock.calls.some((c) => /for deleted character/.test(String(c[0])))).toBe(true)
+    );
+  };
+
+  it('runs every forgetter for the source at the delete, and none again at the next load', async () => {
+    seat(SRC, 'CID_A');
+    announce(SRC);
+    // Logout to character select, where the character is deleted.
+    players.delete(SRC);
+
+    await deleteCharacter('CID_A');
+    expect(forgot).toHaveBeenCalledTimes(1);
+    expect(forgot).toHaveBeenCalledWith(SRC, 'CID_A');
+
+    // The new character in the slot: the same citizenid, which the gate reads as no switch.
+    seat(SRC, 'CID_A');
+    announce(SRC);
+    expect(forgot).toHaveBeenCalledTimes(1);
+  });
+
+  it('forgets nothing on a source another character loaded on last (the positive twin)', async () => {
+    seat(SRC, 'CID_B');
+    announce(SRC);
+
+    await deleteCharacter('CID_A');
+
+    expect(forgot).not.toHaveBeenCalled();
+  });
+});

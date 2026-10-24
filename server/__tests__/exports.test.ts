@@ -75,7 +75,7 @@ import { __resetBatteryState, currentCharge } from '../services/Battery';
 // Publishes `PostToDarkChat` beside its service (MICA-254); `darkchat.test.ts` drives it.
 import '../services/DarkchatMessages';
 import { __setDeviceResolvers } from '../lib/deviceIdentity';
-import { __resetDeviceState, resolvePhone } from '../services/Devices';
+import { __resetDeviceState, NoSuchCharacterError, resolvePhone } from '../services/Devices';
 import { PlayerFacingError } from '../lib/errors';
 import { installTestPhone, TEST_PHONE_ID, TEST_TABLET_ID } from './phoneStub';
 
@@ -476,6 +476,61 @@ describe('AddContact', () => {
 
   it('requires a citizenid', async () => {
     expect((await addContact({ firstname: 'Dispatch', phone: '555-0100' }, '')).ok).toBe(false);
+  });
+});
+
+/**
+ * MICA-440 review: no phone is created for a character who does not exist, and the two exports
+ * that write on a citizenid's behalf say so as `SendMessage` and `SendInvoice` do —
+ * `unknown_player` — rather than `internal_error` with a stack in the log for a caller's mistake.
+ */
+describe('AddMedia and AddContact for a character who does not exist', () => {
+  const GONE = 'GONE0001';
+  const UNKNOWN = {
+    ok: false,
+    reason: 'unknown_player',
+    message: 'No character with that citizenid.'
+  };
+  /** The phone resolver as `services/Devices.ts` answers a citizen with `refusal`. */
+  const refusing = (refusal: (citizenid: string) => Error) =>
+    __setDeviceResolvers({
+      forRequest: async () => TEST_PHONE_ID,
+      forCitizen: async (citizenid) => {
+        throw refusal(citizenid);
+      },
+      deviceInHand: () => undefined
+    });
+
+  let errors: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    installTestPhone();
+    errors.mockRestore();
+  });
+
+  it('answers unknown_player, writes nothing, and logs nothing', async () => {
+    refusing((citizenid) => new NoSuchCharacterError(citizenid, 'phone'));
+    const inserts = dbMock.insert.mock.calls.length;
+
+    expect(await addMedia({ kind: 'gif', url: 'https://x.test/a.gif' }, GONE)).toEqual(UNKNOWN);
+    expect(await addContact({ firstname: 'Dispatch', phone: '555-0100' }, GONE)).toEqual(UNKNOWN);
+
+    expect(dbMock.insert.mock.calls.length).toBe(inserts);
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it('still answers any other failure as internal_error (the positive twin)', async () => {
+    refusing(() => new Error('connection lost'));
+
+    expect((await addMedia({ kind: 'gif', url: 'https://x.test/a.gif' }, GONE)).reason).toBe(
+      'internal_error'
+    );
+    expect((await addContact({ firstname: 'Dispatch', phone: '555-0100' }, GONE)).reason).toBe(
+      'internal_error'
+    );
+    expect(errors).toHaveBeenCalled();
   });
 });
 

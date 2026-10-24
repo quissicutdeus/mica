@@ -203,7 +203,7 @@ export const retentionScenarios: Scenario[] = [
       ).map((row) => String(row.status));
       assert(
         number.length === 1 && number[0] === 'active',
-        `the device's number is ${JSON.stringify(number)}, not one live row: the phone may outlive its character`
+        `the deleted character's number is ${JSON.stringify(number)}, not one live row: it must stay held, so it is never issued again`
       );
       for (const [table, id, what] of [
         ['mica_reports', ownPending, 'their pending report'],

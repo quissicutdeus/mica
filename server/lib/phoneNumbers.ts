@@ -76,7 +76,8 @@ export interface PhoneNumberRow {
  * cleared on `playerDropped` or it eventually hands one player another's number; a
  * citizenid-keyed one cannot go wrong that way. They are therefore deliberately not cleared
  * on drop: the cost is one short string pair per distinct player since the last restart, and
- * the benefit is that a reconnecting player's number is right immediately.
+ * the benefit is that a reconnecting player's number is right immediately. A deleted
+ * character's entries are the one thing taken out (`forgetNumbersOf`, MICA-440).
  *
  * An entry here is "true as of the last sync" rather than true forever: a legacy number
  * attaches to the phone on its first sync, and before MICA-436 a number moved with a
@@ -111,7 +112,21 @@ export const rememberNumber = (citizenid: string, number: string): void => {
   holders.set(number, citizenid);
 };
 
-/** Test seam. Nothing in the resource clears these — see the note on the caches. */
+/**
+ * Drop what both caches say about a deleted character (MICA-440): they have no phone now, so
+ * `numberFor` must not answer one for them. Only qb and standalone fill these, and neither hands
+ * a deleted citizenid to anybody else, so this is tidiness there rather than a fix; ESX, which
+ * does reuse one, fills neither. The number row itself is kept and still names the deleted
+ * character, so a read of the table answers as it did, and the number is never issued again.
+ */
+export const forgetNumbersOf = (citizenid: string): void => {
+  assigned.delete(citizenid);
+  for (const [number, holder] of holders) {
+    if (holder === citizenid) holders.delete(number);
+  }
+};
+
+/** Test seam. Only a character's deletion clears an entry — see the note on the caches. */
 export const __resetAssignedNumbers = (): void => {
   assigned.clear();
   holders.clear();

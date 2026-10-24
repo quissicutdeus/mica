@@ -166,3 +166,6 @@ line here.
 - [A test-schema variant is one long scope](test-schema-variants-are-one-scope.md)
   — a new `const before` collides; `node --check` first; a create check needs a
   fresh citizen
+- [A deleted ESX citizenid comes back](deleted-citizenid-comes-back.md) — every
+  citizenid-keyed cache and the switch gate miss it; a cold create must ask
+  `characterExists` (MICA-440)
