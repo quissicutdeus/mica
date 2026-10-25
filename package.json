@@ -86,7 +86,7 @@
     "lint-staged": "^17.6.0",
     "markdownlint-cli2": "^0.23.3",
     "mysql2": "^3.24.6",
-    "oxlint": "^1.88.0",
+    "oxlint": "^1.89.0",
     "postcss-html": "^2.0.0",
     "prettier": "^3.9.10",
     "prettier-plugin-svelte": "^4.1.1",
