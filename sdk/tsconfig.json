@@ -7,7 +7,8 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "typeRoots": ["./node_modules/@types", "../node_modules/@types"],
+    // No `typeRoots`, on purpose — see `web/tsconfig.app.json`. `tsconfig.tsc.json` keeps
+    // one and drops `svelte` and `vite/client` from `types` instead, for the same reason.
     "types": ["node", "svelte", "vite/client"],
     "noEmit": true,
     "allowJs": true,

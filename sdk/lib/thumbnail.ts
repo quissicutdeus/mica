@@ -136,7 +136,7 @@ export const computeThumbnailSize = (
  */
 export const loadImage = (
   src: string,
-  { timeoutMs, crossOrigin }: { timeoutMs: number; crossOrigin?: string }
+  { timeoutMs, crossOrigin }: { timeoutMs: number; crossOrigin?: 'anonymous' | 'use-credentials' }
 ): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
     const img = new Image();

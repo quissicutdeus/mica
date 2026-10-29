@@ -7,7 +7,9 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "typeRoots": ["./node_modules/@types", "../node_modules/@types"],
+    // No `typeRoots`, on purpose. With one set, TypeScript 7 resolves each `types` entry
+    // against it alone and fails TS2688 on `svelte` and `vite/client`, which are not
+    // `@types/*` packages; TS 6 finds all three without it. Re-adding it breaks the 7.1 move.
     "types": ["node", "svelte", "vite/client"],
     "noEmit": true,
     "allowJs": true,

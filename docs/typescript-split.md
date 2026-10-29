@@ -43,8 +43,18 @@ they get the native compiler now and `web/` waits.
 
 ## What unblocks the upgrade
 
-**The trigger is `svelte-check`, not TypeScript.** Its `peerDependencies`
-currently cap at `^6.0.0`, so a TS 7 bump fails to install before it fails to
-compile. Watch for a release accepting `^7`; TS `latest` is 7.0.2 and 7.1 is
-nightly-only. Then bump `svelte-check`, move `web/` **and** `sdk/` together —
-neither can go first — and delete this file along with AGENTS.md §3.
+**The trigger is `svelte-check`, not TypeScript.** 7.1's bare `typescript`
+import returns only a version string — its API lives under `typescript/sync`,
+`typescript/async` and friends — while `svelte-check`, `svelte2tsx` and
+`typescript-eslint` still load the 6.0 API and cap their peers there. Watch for
+a `svelte-check` release built on the 7.1 API; then bump it, move `web/` **and**
+`sdk/` together — neither can go first — and delete this file along with
+AGENTS.md §3.
+
+Tried against 7.1.0-beta with `svelte-check` 4.7.7 on 2026-10-28, and not ready:
+`--tsgo-experimental-api` crashes on start
+(`Invalid filesystem callback 'directoryExists'`), and `--tsgo` runs but never
+loads a `.svelte` file outside the package, so every `@mica/sdk` component
+`web/` renders is checked through the ambient shim and its props go unchecked.
+Both still need 6.x installed beside 7. The two tree fixes that run surfaced
+(`typeRoots` in `web/` and `sdk/`, `loadImage`'s `crossOrigin`) are already in.

@@ -287,7 +287,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             try {
               const img = await loadImage(asDataUri(base64Data), {
                 timeoutMs: 3000,
-                crossOrigin: 'Anonymous'
+                crossOrigin: 'anonymous'
               });
 
               const cropped = cropViewportToCanvas(
