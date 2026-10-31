@@ -690,7 +690,12 @@ run_mode() {
     fi
     # `--userns=keep-id`: this account's uid is the same number inside the container, so
     # FXServer runs as the owner of the staged server-data and can write its cache there.
+    # `--log-driver k8s-file`: everything below reads the console with `podman logs`, and under
+    # the default journald driver a system account's container logs land in the system journal,
+    # which the account cannot read back -- `podman logs` comes back empty, and mica is never
+    # seen to start.
     podman run -d -i --name "$fx" --network "$net" --userns=keep-id --user "$owner" \
+        --log-driver k8s-file \
         -w /opt/fivem/server-data \
         "${mounts[@]}" \
         "$FX_IMAGE" +exec server.cfg >/dev/null
