@@ -57,11 +57,8 @@ jobs:
       # or skipped as the zip lists -- naming the mode, `[standalone mode]`, `[qbx mode]` or
       # `[esx mode]`.
       # RUN_CHECKED_REQUIRE adds what an exit status cannot say: that the log holds a pass line
-      # for each mode, so a wrapper edited to leave one out and reinstalled is red here.
-      # It also fails when the wrapper hoth ran is not this checkout's copy:
-      # `run-checked.sh` holds the session's output to the wrapper's identity line, so a
-      # reinstall nobody did is a red step naming the command to run, not an old suite
-      # quietly judging a new tree. scripts/deploy/README.md has the server side.
+      # for each mode, so a wrapper edited to leave one out is red here. The wrapper hoth runs
+      # is the one the last dev deploy installed; scripts/deploy/README.md has the server side.
       - name: Run the integration suite on the FiveM box (standalone, qbx, then esx)
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -84,7 +81,7 @@ jobs:
           chmod 600 ~/.ssh/smoke_key
           echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           echo "running the integration suite on the FiveM box"
-          sh scripts/deploy/run-checked.sh mica-smoke-release.sh \
+          sh scripts/deploy/run-checked.sh \
             ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
             -o ServerAliveInterval=30 \
-            gphone@"$DEPLOY_HOST" < dist/integration/mica-integration-run.zip
+            fivem@"$DEPLOY_HOST" < dist/integration/mica-integration-run.zip

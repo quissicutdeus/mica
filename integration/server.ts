@@ -72,8 +72,8 @@ const readMode = (): { mode: Mode } | { problem: string } => {
   return {
     problem:
       `mica_integration_mode is '${raw}', not one of ${MODES.join(' or ')}. The wrapper on the ` +
-      'box predates MICA-304 and does not say which run this is; reinstall ' +
-      'scripts/deploy/mica-smoke-release.sh as scripts/deploy/README.md says.'
+      'box predates MICA-304 and does not say which run this is: it is the copy the last dev ' +
+      'deploy installed (scripts/deploy/README.md).'
   };
 };
 

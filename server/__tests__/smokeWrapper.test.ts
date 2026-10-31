@@ -24,37 +24,29 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { ESX_SEED } from '../../integration/lib/esxSeed';
 import { QBX_SEED } from '../../integration/lib/qbxSeed';
-import {
-  PROBE,
-  canRun,
-  fakeRootMissing,
-  holdLock,
-  holderLine,
-  lockHeld,
-  trialMissing
-} from './wrapperHarness';
+import { PROBE, canRun, holdLock, holderLine, lockHeld, trialMissing } from './wrapperHarness';
 
 /**
- * The root wrapper (MICA-302), against a stand-in `docker` whose console is whatever each
+ * The smoke wrapper (MICA-302), against a stand-in `podman` whose console is whatever each
  * case says it is.
  *
- * `scripts/deploy/mica-smoke-release.sh` runs as root on the game server, and the only other
- * time it executes is a release on `main`. Two things are held here on every push.
+ * `scripts/deploy/mica-smoke-release.sh` runs on the game server as the account that runs its
+ * containers, and the only other time it executes is a release on `main` or an integration run
+ * by hand. Two things are held here on every push.
  *
  * The verdict: a verdict that stays quiet when the suite did not finish reads as a pass, so
  * each way a run can go wrong is a case -- a FAIL line, a missing done line (stopped or
  * hung), a done line that disagrees with the lines it summarises, a scenario dropped from the
  * suite, a suite that ran nothing, a resource that broke.
  *
- * The trust: the run directory belongs to an account that runs pushed code, so any name in
- * it can be a symlink. Root must not write through one, mount from one, or read one into the
- * container, and must write nothing into that directory at all. What this cannot show is a
- * real FXServer printing real lines, or the effect of a real root-versus-gphone ownership
- * split; those are the keyed run on the box.
+ * The trust: the run directory holds what a pushed zip unpacked to, so any name in it can be a
+ * symlink. The wrapper must not mount from one or read one into the container, and must write
+ * nothing into that directory at all. What this cannot show is a real FXServer printing real
+ * lines, or real rootless containers; those are the keyed run on the box.
  *
- * Skipped where the wrapper cannot run as a trial (it ignores its trust-root overrides as
- * root, and needs GNU userland, `flock` and /proc), with the reason printed -- and on GitHub's
- * CI a failure instead, since a skip there would read as a pass.
+ * Skipped where the wrapper cannot run as a trial (it needs GNU userland, `flock` and /proc),
+ * with the reason printed -- and on GitHub's CI a failure instead, since a skip there would read
+ * as a pass.
  */
 
 const ROOT = resolve(__dirname, '../..');
@@ -71,10 +63,10 @@ const trial = canRun(trialMissing(), 'the smoke wrapper tests');
  * and the keyring it built. Everything sent to a database on stdin (the imports, the seeds) is
  * kept, in order, in $FAKE_CALLS.stdin.
  */
-const FAKE_DOCKER = `#!/bin/sh
+const FAKE_PODMAN = `#!/bin/sh
 echo "$*" >>"$FAKE_CALLS"
 ${PROBE}
-# A call the case wants to fail, the way docker does: a message on stderr and exit 1.
+# A call the case wants to fail, the way podman does: a message on stderr and exit 1.
 if [ -n "$FAKE_FAIL" ]; then
     case "$*" in
         *"$FAKE_FAIL"*)
@@ -94,8 +86,8 @@ if [ -n "$FAKE_HANG" ]; then
 fi
 case "$1" in
     network)
-        # The first thing the wrapper does after its checks: the window in which the deploy
-        # account, which owns the run directory, swaps names for symlinks to the victim.
+        # The first thing the wrapper does after its checks: the window in which pushed code,
+        # running as the account that owns the run directory, swaps names for symlinks.
         if [ -n "$FAKE_SWAP_RUN" ] && [ "$2" = create ]; then
             mkdir -p "$FAKE_SWAP_RUN/server-data/resources/mica-keys"
             ln -s "$FAKE_VICTIM" "$FAKE_SWAP_RUN/server-data/server.cfg"
@@ -277,8 +269,8 @@ beforeAll(() => {
   writeFileSync(esxSql, `${ESX_SQL_MARKER}\n`);
   hostResources = [oxmysql, oxLib, qbxCore, qbxVehicles, oxInventory, esxCore, esxLib];
   writeFileSync(envFile, settingsText([]));
-  writeFileSync(join(bin, 'docker'), FAKE_DOCKER);
-  chmodSync(join(bin, 'docker'), 0o755);
+  writeFileSync(join(bin, 'podman'), FAKE_PODMAN);
+  chmodSync(join(bin, 'podman'), 0o755);
   writeFileSync(victim, VICTIM_TEXT);
   mkdirSync(victimDir);
   chmodSync(victim, 0o644);
@@ -366,13 +358,13 @@ interface WrapOptions {
   /** The settings file. Default: one naming the stand-in oxmysql, with the rest beside it. */
   env?: string;
   /**
-   * What each probe of the database wait meets, in order (see FAKE_DOCKER): "temp", "gap" or "up".
+   * What each probe of the database wait meets, in order (see FAKE_PODMAN): "temp", "gap" or "up".
    * Default: the real server from the first probe.
    */
   dbTimeline?: string[];
-  /** A docker call to fail: any call whose arguments contain this text. */
+  /** A podman call to fail: any call whose arguments contain this text. */
   fail?: string;
-  /** A docker call to hang on for thirty seconds, so a signal can reach the wrapper mid-run. */
+  /** A podman call to hang on for thirty seconds, so a signal can reach the wrapper mid-run. */
   hang?: string;
   /** Seconds to wait for hoth's lock before giving up. Default: far longer than any case runs. */
   lockTimeout?: number;
@@ -725,25 +717,6 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       // could end a few milliseconds in, and did, under load. 1s is what it guarantees.
       expect(Date.now() - started).toBeGreaterThanOrEqual(1000);
     });
-
-    it.skipIf(fakeRootMissing() !== null)(
-      'as root, refuses a test clock loudly instead of obeying or ignoring it',
-      () => {
-        const run = makeRun('manifest');
-        const { env, calls } = prepare(run, suite(['integration: PASS a']), { running: 'true' });
-        const r = spawnSync('unshare', ['-Ur', 'bash', WRAPPER, run], {
-          encoding: 'utf8',
-          env,
-          timeout: 60_000
-        });
-
-        expect(env.MICA_SMOKE_FAKE_CLOCK).toBe('1');
-        expect(r.status).not.toBe(0);
-        expect(`${r.stdout}${r.stderr}`).toContain('MICA_SMOKE_FAKE_CLOCK is set');
-        // Refused before it touched docker at all.
-        expect(existsSync(calls) ? readFileSync(calls, 'utf8') : '').toBe('');
-      }
-    );
 
     it('fails when the done line disagrees with the lines it summarises', () => {
       const r = wrap(
@@ -1538,7 +1511,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
     });
   });
 
-  describe('a run directory the deploy account has booby-trapped', () => {
+  describe('a run directory a pushed zip has booby-trapped', () => {
     const refused = (r: ReturnType<typeof wrap>) => {
       expect(r.status).not.toBe(0);
       expect(r.out).toContain('REFUSED');
@@ -1581,14 +1554,14 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       refused(wrap(fifo, suite(PASS_A)));
     });
 
-    it('refuses a hardlinked file, which a copy into staging would otherwise read as root', () => {
+    it('refuses a hardlinked file, which a copy into staging would otherwise hand the container', () => {
       // `cp --no-preserve=all` drops the link, so this is only catchable on the source tree.
       const hard = makeRun('manifest');
       linkSync(victim, join(hard, 'resources/mica/hardlinked.txt'));
       refused(wrap(hard, suite(PASS_A)));
     });
 
-    it('survives names swapped for symlinks after its checks, which is when root used to write through them', () => {
+    it('survives names swapped for symlinks after its checks, and mounts only from its own copy', () => {
       const run = makeRun('manifest');
       const r = wrap(run, suite(PASS_A), { swap: true });
 
@@ -1602,7 +1575,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       }
     });
 
-    it('never writes through the names root used to write into, pre-placed as symlinks', () => {
+    it('never writes through names in the run directory, pre-placed as symlinks', () => {
       const run = makeRun('manifest');
       mkdirSync(join(run, 'server-data/resources/mica-keys'), { recursive: true });
       for (const name of ['server.cfg', 'resources/mica-keys/fxmanifest.lua']) {
@@ -1670,7 +1643,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
   });
 
   /**
-   * Release runs 39293409481 and 39294099614 died at the database wait 5.7s after `docker run`,
+   * Release runs 39293409481 and 39294099614 died at the database wait 5.7s after the database container started,
    * which a loop of ninety one-second tries cannot do. The image's first boot starts a temporary
    * server on the socket alone, gives root its password on it, stops it, and only then starts the
    * real one. A probe over the socket passed against the first, and the second probe the script
@@ -1733,15 +1706,15 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
   /**
    * MICA-315. An integration run dispatched while a deploy rebuilt the image ended at
    * "smoke: starting mariadb:noble" with exit 1 and no line saying why: `set -e` killed the
-   * wrapper at a failing docker call. A run that fails must say what failed.
+   * wrapper at a failing container call. A run that fails must say what failed.
    */
   describe('a failing step says what failed', () => {
     const NAME = 'mica-smoke-release.sh';
 
     it.each([
-      ['the network', 'network create', 'docker network create'],
-      ['the database container', 'run -d --name', 'docker run -d --name "$db"'],
-      ['the FXServer container', 'run -d -i', 'docker run -d -i --name "$fx"']
+      ['the network', 'network create', 'podman network create'],
+      ['the database container', 'run -d --name', 'podman run -d --name "$db"'],
+      ['the FXServer container', 'run -d -i', 'podman run -d -i --name "$fx"']
     ])('names the command, the line and the status when %s cannot start', (_what, fail, shown) => {
       const r = wrap(makeRun('manifest'), suite(PASS_A), { fail });
 
@@ -1750,7 +1723,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
         new RegExp(`${NAME} FAILED at line \\d+: ${shown.replace(/\$/g, '\\$')}`)
       );
       expect(r.out).toContain('(exit status 1)');
-      // docker's own words are kept, and the last line is the verdict.
+      // podman's own words are kept, and the last line is the verdict.
       expect(r.out).toContain('Error response from daemon: stand-in failure for');
       expect(r.out.trimEnd().split('\n').pop()).toBe(
         `mica-wrapper: ${NAME} FAILED: exit status 1; the line above says why`
@@ -1759,28 +1732,21 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(r.staged).toEqual([]);
     });
 
-    it('keeps the identity line first, and ends a good run with its own line', () => {
+    it('ends a good run with its own line', () => {
       const ok = wrap(makeRun('manifest'), suite(PASS_A));
 
       expect(ok.status, ok.out).toBe(0);
-      expect(ok.stdout.split('\n')[0]).toMatch(
-        new RegExp(`^mica-wrapper: ${NAME} sha256 [0-9a-f]{64}$`)
-      );
       expect(ok.stdout.trimEnd().split('\n').pop()).toBe(`mica-wrapper: ${NAME} finished ok`);
-
-      const bad = wrap(makeRun('manifest'), suite(PASS_A), { fail: 'network create' });
-
-      expect(bad.stdout.split('\n')[0]).toMatch(/^mica-wrapper: mica-smoke-release\.sh sha256 /);
     });
 
     it('names a failure inside a function and inside a command substitution, once', () => {
-      // `count(*)` runs in `tables=$(docker exec ...)`: the substitution's shell stays quiet and
+      // `count(*)` runs in `tables=$(podman exec ...)`: the substitution's shell stays quiet and
       // the shell that ran it names the assignment.
       const r = wrap(makeRun('manifest'), suite(PASS_A), { fail: 'count(*)' });
 
       expect(r.status).toBe(1);
       expect([...r.out.matchAll(/FAILED at line/g)]).toHaveLength(1);
-      expect(r.out).toContain('tables=$(docker exec');
+      expect(r.out).toContain('tables=$(podman exec');
     });
 
     it('says so when a deliberate refusal ends the run, and when it is the last word', () => {
@@ -1851,7 +1817,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
 
       expect(r.status, r.out).toBe(0);
       expect(r.out).not.toContain('waiting for hoth');
-      // Every docker call, the teardown's included, ran with the lock held.
+      // Every podman call, the teardown's included, ran with the lock held.
       expect(r.probes.length).toBeGreaterThan(5);
       expect(r.probes.filter((p) => p.endsWith(':free'))).toEqual([]);
       expect(r.probes.some((p) => p === 'rm:held')).toBe(true);
@@ -1864,7 +1830,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       const r = wrap(run, suite(PASS_A), { fail: 'run -d -i' });
 
       expect(r.status).toBe(1);
-      // What a waiting job would have read, as the stand-in docker read it mid-run.
+      // What a waiting job would have read, as the stand-in podman read it mid-run.
       const named = readFileSync(`${run}.probe.holder`, 'utf8').split('\n').filter(Boolean);
       expect(named.length).toBeGreaterThan(0);
       for (const line of named) {
@@ -1878,11 +1844,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
 
     it('waits when it is held, says why and on whom, and starts nothing after the timeout', () => {
       const lock = join(dir, `held${++counter}`);
-      const holder = holdLock(
-        lock,
-        30,
-        'mica-deploy-dev-compose.sh pid 4242 (dev@abc123) since now'
-      );
+      const holder = holdLock(lock, 30, 'mica-deploy.sh dev pid 4242 since now');
       try {
         const started = Date.now();
         const r = wrap(makeRun('manifest'), suite(PASS_A), { lock, lockTimeout: 2 });
@@ -1890,15 +1852,13 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
         expect(r.status).toBe(1);
         expect(Date.now() - started).toBeGreaterThanOrEqual(1900);
         expect(r.out).toContain("mica-smoke-release.sh is waiting for hoth's lock");
-        expect(r.out).toContain(
-          'held by: mica-deploy-dev-compose.sh pid 4242 (dev@abc123) since now'
-        );
+        expect(r.out).toContain('held by: mica-deploy.sh dev pid 4242 since now');
         expect(r.out).toContain('waiting up to 2s');
         expect(r.out).toContain("REFUSED: gave up after 2s waiting for hoth's lock");
-        expect(r.out).toContain('still held by: mica-deploy-dev-compose.sh pid 4242');
+        expect(r.out).toContain('still held by: mica-deploy.sh dev pid 4242');
         expect(r.out).toContain('Nothing was started');
         expect(r.out.trimEnd().split('\n').pop()).toContain('FAILED: exit status 1');
-        // Not one docker call: the image check waits behind the lock too.
+        // Not one podman call: the image check waits behind the lock too.
         expect(r.calls).toBe('');
         // And it did not clear the name of a holder that is still running.
         expect(holderLine(lock)).toContain('pid 4242');
@@ -1922,7 +1882,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       }
     });
 
-    it('refuses a lock file the deploy account could write, and one that is a link', () => {
+    it('refuses a lock file another account could write, and one that is a link', () => {
       const open = join(dir, `open${++counter}`);
       writeFileSync(open, '');
       chmodSync(open, 0o666);

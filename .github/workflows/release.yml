@@ -180,16 +180,12 @@ jobs:
           pnpm dlx publint dist/release/mica-sdk-*.tgz
           pnpm dlx publint dist/release/mica-shared-*.tgz
 
-      # The root wrapper on hoth is installed by hand, so it can be a version behind the repo
-      # with nothing to say so (scripts/deploy/README.md), and the two steps below that reach it
-      # fail when the line it prints is not the hash of the copy this run expects. Which copy:
-      # the one at the commit the WORKFLOW runs from (`github.sha`), not the one in the tag
-      # being released. For a push to main they are the same. For a dispatched older tag they
-      # are not, and the tag's own `scripts/deploy` is older than the wrapper hoth now runs (and
-      # may predate the check altogether), so comparing against it would fail a release that
-      # is fine, or have no script to run. A separate directory, sparse, so the tag's tree --
-      # what is built and released -- is untouched.
-      - name: Check out the wrapper this workflow expects
+      # `run-checked.sh` from the commit the WORKFLOW runs from (`github.sha`), not from the tag
+      # being released. For a push to main they are the same. For a dispatched older tag they are
+      # not, and the tag's own copy may predate the one the steps below call, or not exist. A
+      # separate directory, sparse, so the tag's tree -- what is built and released -- is
+      # untouched.
+      - name: Check out the run-checked.sh this workflow expects
         if: steps.tag.outputs.skip == ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -211,7 +207,8 @@ jobs:
       # qbx_core and ox_inventory, then against es_extended and ox_inventory. Any failing fails
       # this step and names its mode in the log (`[standalone mode]`, `[qbx mode]`,
       # `[esx mode]`), and RUN_CHECKED_REQUIRE makes a pass line for each mode part of the
-      # verdict, so a wrapper edited to leave one out is red here too.
+      # verdict, so a wrapper edited to leave one out is red here too. The wrapper hoth runs is
+      # the one the last dev deploy installed (scripts/deploy/README.md).
       #
       # It runs for a dispatched tag too: a tag left behind by an earlier failure is exactly
       # the one that must not be released without it. A tag cut before this suite existed
@@ -244,14 +241,14 @@ jobs:
           chmod 600 ~/.ssh/smoke_key
           echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           echo "running the integration suite on the FiveM box"
-          sh .wrapper-check/scripts/deploy/run-checked.sh mica-smoke-release.sh \
+          sh .wrapper-check/scripts/deploy/run-checked.sh \
             ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
             -o ServerAliveInterval=30 \
-            gphone@"$DEPLOY_HOST" < dist/integration/mica-integration-run.zip
+            fivem@"$DEPLOY_HOST" < dist/integration/mica-integration-run.zip
 
       # The zip has to start as a resource before it is released as one. It is piped over
       # SSH to the game server deploy.yml already reaches, where a forced command unpacks
-      # it and a root-owned wrapper starts a throwaway FXServer with it, against a throwaway
+      # it and the smoke wrapper starts a throwaway FXServer with it, against a throwaway
       # MariaDB that has just imported the zip's own mica.esx.sql. The console has to say
       # `mica started!` and stay clean; anything else is a non-zero exit here and no
       # release. scripts/deploy/README.md has the server side, and why it is a third key
@@ -281,9 +278,9 @@ jobs:
           chmod 600 ~/.ssh/smoke_key
           echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           echo "smoke-testing $zip on the FiveM box"
-          sh .wrapper-check/scripts/deploy/run-checked.sh mica-smoke-release.sh \
+          sh .wrapper-check/scripts/deploy/run-checked.sh \
             ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
-            gphone@"$DEPLOY_HOST" < "$zip"
+            fivem@"$DEPLOY_HOST" < "$zip"
 
       # A checksum file beside the assets, and a signed provenance attestation over them
       # (`gh attestation verify <file> --repo <owner>/<repo>` checks it). Both cover the

@@ -9,3 +9,5 @@ lane needs goes to `lane-protocol` instead.
   on 1.63.x until the floor Chromium is 105 or newer
 - [mariadb init server answers the socket](mariadb-image-init-server-answers-the-socket.md)
   — probe DB readiness over TCP; the socket passes ~35 ms, then a 1–2 s gap
+- [A plain-string Quadlet HealthCmd needs a shell](podman-healthcmd-string-needs-a-shell.md)
+  — the scratch demo image never turns healthy; use the JSON exec form

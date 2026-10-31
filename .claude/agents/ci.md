@@ -95,10 +95,12 @@ already do.
 - **A green run can be all skips.** A re-run of `release.yml` once reported
   success after skipping every step past tagging. Read the step conclusions, not
   the run's.
-- **A `compose.yaml` change needs the box's root scripts reinstalled.** The
-  `/usr/local/sbin/mica-deploy-*-compose.sh` wrappers pin its hash and never
-  update themselves (`scripts/deploy/README.md`); a missed reinstall after
-  MICA-234 stopped every deploy until 2026-09-29.
+- **What hoth runs comes from a deploy, not from a hand install.** The fivem
+  account there runs every container rootless; `deploy.sh` reinstalls itself,
+  and the dev deploy the smoke scripts, from the checkout it reset, taking
+  effect on the next run (`scripts/deploy/README.md`). So a change to the smoke
+  wrapper reaches the box with the next dev deploy, and an integration run
+  dispatched before that deploy finishes runs the old one.
 
 ## Verifying
 

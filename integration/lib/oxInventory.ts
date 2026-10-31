@@ -38,8 +38,8 @@ export const phoneItem = (): string => {
     throw new Error(
       "mica_phone_item is not set, so micaOS registered no usable item. The qbx and esx runs' " +
         'wrapper sets it to the item ox_inventory ships ("phone"); the wrapper on the box ' +
-        'predates MICA-304 (reinstall scripts/deploy/mica-smoke-release.sh as ' +
-        'scripts/deploy/README.md says).'
+        'predates MICA-304 (it is the copy the last dev deploy installed; ' +
+        'scripts/deploy/README.md has how it gets there).'
     );
   }
   return item;

@@ -8,48 +8,28 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
- * What the three root-wrapper suites share: running a wrapper as a trial and holding hoth's lock
- * from outside it (MICA-315). Not a test file; vitest only collects `*.test.ts`.
+ * What the smoke wrapper's suite needs around it: running the wrapper as a trial and holding hoth's
+ * lock from outside it (MICA-315). Not a test file; vitest only collects `*.test.ts`.
  */
 
 export const ROOT = resolve(__dirname, '../..');
 export const DEPLOY = resolve(ROOT, 'scripts/deploy');
 
 /**
- * Why the wrappers cannot be run as a trial here, or null when they can. They need GNU userland,
- * `flock` and /proc, and ignore their trial overrides as root.
+ * Why the wrapper cannot be run as a trial here, or null when it can. It needs GNU userland,
+ * `flock` and /proc, and refuses a run directory owned by anyone but the account running it, which
+ * as root it would be handed by nothing here.
  */
 export const trialMissing = (): string | null => {
   if (process.platform !== 'linux') return `the platform is ${process.platform}, not linux`;
-  if (process.getuid?.() === 0) {
-    return 'the tests are running as root, and the wrappers ignore their trial overrides as root';
-  }
   if (spawnSync('sh', ['-c', 'command -v flock']).status !== 0) return '`flock` is not installed';
   if (spawnSync('bash', ['--version']).status !== 0) return '`bash` is not installed';
   return null;
 };
 
 /**
- * Why a command cannot be run as uid 0 without being root, or null when it can. In a user
- * namespace bash's $EUID is 0 though nothing privileged is reachable, which is how a wrapper's
- * root branch is exercised.
- */
-export const fakeRootMissing = (): string | null => {
-  const missing = trialMissing();
-  if (missing) return missing;
-  if (spawnSync('unshare', ['-Ur', 'sh', '-c', 'test "$(id -u)" = 0']).status !== 0) {
-    return (
-      '`unshare -Ur` is refused or absent: unprivileged user namespaces are off ' +
-      '(kernel.unprivileged_userns_clone=0, or kernel.apparmor_restrict_unprivileged_userns=1 ' +
-      'as on GitHub-hosted Ubuntu runners, 24.04 and later)'
-    );
-  }
-  return null;
-};
-
-/**
  * On GitHub's own CI a skipped wrapper test is a failure, because a skip reads as a pass and
- * these tests are the only thing holding the wrappers' behaviour. Anywhere else (a developer's
+ * these tests are the only thing holding the wrapper's behaviour. Anywhere else (a developer's
  * machine, the Forgejo mirror whose job containers run as root) it stays a skip, and says why.
  */
 const strictSkips = !!process.env.CI && process.env.GITHUB_SERVER_URL === 'https://github.com';
@@ -122,7 +102,7 @@ export const holdLock = (file: string, seconds: number, holder: string): Holder 
   return { child, release: () => void child.kill() };
 };
 
-/** Every docker call the wrapper makes is answered, and the lock is probed on each (see probes). */
+/** Every podman call the wrapper makes is answered, and the lock is probed on each (see probes). */
 export const PROBE = `
 # Is the wrapper's lock still held at this call? Asked from a new open of the file, so only a
 # lock held by another open file description (the wrapper's) answers yes.

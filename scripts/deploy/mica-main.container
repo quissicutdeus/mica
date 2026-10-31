@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 quissicutdeus
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The main demo site, mica.gg: the image deploy.sh builds from the main checkout, as a
+# rootless Podman Quadlet unit of the fivem account on hoth. deploy.sh installs this file into
+# ~/.config/containers/systemd/ and restarts it on every main deploy, so a change here lands
+# with the deploy that carries it. Caddy proxies the site to the published loopback port.
+[Unit]
+Description=micaOS demo site, main
+
+[Container]
+Image=localhost/mica-main:local
+ContainerName=mica-main
+# Loopback only: the reverse proxy is on the same host, and nothing else should reach this.
+PublishPort=127.0.0.1:8675:8080
+Environment=TZ=America/Los_Angeles
+# The image is one static binary and one directory of static files. It never writes, never
+# execs and needs no capability, so all of these are free to assert.
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+# Stated here because an OCI image built by Podman carries no HEALTHCHECK. The image has no
+# shell and no curl; the probe is a mode of the server binary. JSON, the exec form: a plain
+# string is run through /bin/sh (CMD-SHELL), which this image does not have, so the check would
+# never pass and the restart below would wait on it forever.
+HealthCmd=["/mica-serve","-health"]
+HealthInterval=30s
+HealthTimeout=3s
+HealthStartPeriod=2s
+HealthRetries=3
+# `systemctl --user restart` waits for the probe to pass, and fails when it never does.
+Notify=healthy
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

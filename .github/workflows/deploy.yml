@@ -21,10 +21,10 @@ on:
 #
 # Belt to the `event == 'push'` braces below. That condition removes the known cause of a
 # double fire; this removes the consequence of any cause, including one nobody has thought
-# of yet -- and the consequence is bad enough to be worth both. `deploy-dev.sh` git-resets,
-# reinstalls and rebuilds a single working tree on the box, with no lock of its own, so two
-# runs at once means two `git reset --hard` in one checkout and two `pnpm install` writing
-# one `node_modules`.
+# of yet -- and the consequence is bad enough to be worth both. `deploy.sh` git-resets,
+# reinstalls and rebuilds a single working tree on the box, so two runs at once would mean two
+# `git reset --hard` in one checkout and two `pnpm install` writing one `node_modules`; the
+# script's own lock on hoth is the other belt.
 #
 # `cancel-in-progress: false` deliberately: a half-finished deploy is a server left between
 # two commits with a partial `node_modules`, which is worse than making the next one wait.
@@ -102,35 +102,21 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      # The root wrapper this deploy ends in is installed on the box by hand, so it is the one
-      # half of the deploy that can silently be a version behind the repo (see
-      # `scripts/deploy/README.md`). Check out the commit being deployed -- not the default
-      # branch, which is what a `workflow_run` would otherwise get -- and only its
-      # `scripts/deploy`, which is all the check below needs: that commit's copy of
-      # `mica-deploy-dev-compose.sh`, and the script that compares it with what hoth reports.
-      - name: Check out the wrapper this commit expects
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          sparse-checkout: scripts/deploy
-          persist-credentials: false
-
-      # `run-checked.sh` is the SSH session plus the check, and the step fails if either
-      # does. The check runs AFTER the deploy and cannot run before it: the wrapper is the
-      # thing that reports its own hash, and it is reached only at the end of the deploy,
-      # behind a forced command that takes no arguments from here. So a stale wrapper has
-      # already deployed by the time it is found. That deploy is not undone and not hidden:
-      # this step goes red, the run and the commit with it, and the failure mails whoever
-      # pushed, naming the file to reinstall and the exact command. A green deploy needs a
-      # current wrapper, and there is no setting that makes a mismatch pass.
+      # The forced command on hoth's end does the whole deploy (scripts/deploy/deploy.sh):
+      # the key selects the target, and the session sends nothing. The step's status is ssh's,
+      # which is the script's: a failed build, a demo container that never turns healthy or a
+      # resource reload FXServer did not confirm reddens this step, the run and the commit.
+      # No checkout: there is nothing of this repo's the step needs.
+      #
+      # -T because the key carries no-pty: without it ssh may ask for a tty, sshd refuses, and
+      # the failure reads like a network problem.
       - name: Deploy dev.mica.gg + FiveM resource
         run: |
           mkdir -p ~/.ssh
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          sh scripts/deploy/run-checked.sh mica-deploy-dev-compose.sh \
-            ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts gphone@"$DEPLOY_HOST"
+          ssh -T -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts fivem@"$DEPLOY_HOST"
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY_DEV }}
@@ -167,25 +153,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      # Same check as `deploy-dev`, with this stack's wrapper, and its own copy for the same
-      # reason as the gate above: an added deploy job that lacks it goes back to trusting a
-      # root-owned file nobody can see is current. See the dev job for why it runs after.
-      - name: Check out the wrapper this commit expects
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          sparse-checkout: scripts/deploy
-          persist-credentials: false
-
-      # `run-checked.sh`: the SSH session, then the check, failing if either does.
+      # The same session as `deploy-dev`, with this target's key.
       - name: Deploy mica.gg
         run: |
           mkdir -p ~/.ssh
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          sh scripts/deploy/run-checked.sh mica-deploy-main-compose.sh \
-            ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts gphone@"$DEPLOY_HOST"
+          ssh -T -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts fivem@"$DEPLOY_HOST"
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY_MAIN }}

@@ -124,12 +124,9 @@ ARG VITE_MICA_DEFAULT_CONTACTS=
 # by path, so the `/demo` prefix below only has to agree with where the files
 # actually land, not with this value.
 #
-# Derived from GIT_BRANCH, which compose already passes, rather than added as
-# build args of its own: `scripts/deploy/mica-deploy-*-compose.sh` pin a
-# sha256 of compose.yaml and refuse to deploy when it changes, and those wrappers
-# are root-owned on the box and deliberately do not self-update. A new build arg
-# would therefore stop both deploys until someone edited EXPECTED_SHA as root.
-# This keeps compose.yaml byte-identical.
+# Derived from GIT_BRANCH, which compose and scripts/deploy/deploy.sh already
+# pass, rather than added as build args of its own: one value decides both, so
+# the demo's add-on path cannot disagree with the branch it was built from.
 #
 # MICA-311: this is the one web build that switches the dev add-on path on
 # (`?addonDev=<loopback URL>` loads an add-on from the author's own machine), so that

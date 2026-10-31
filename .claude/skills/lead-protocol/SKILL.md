@@ -211,9 +211,10 @@ message reads as something to answer instead of something to execute.
   migration with no CHANGELOG entry yet) refuses a push of verified commits.
   Push once that work is in, rather than routing the push elsewhere; a push from
   the worktree by refspec was refused by the bash guard as a force-push.
-- **A root wrapper in `scripts/deploy/` is pinned by its sha on hoth.** Changing
-  one means the owner reinstalls it as root, and every integration and release
-  run fails until they do. Weigh that before letting a lane edit one.
+- **`scripts/deploy/` runs on hoth as the fivem account.** The deploy and the
+  smoke scripts install themselves from the checkout on a deploy, so a change
+  there is live on the box after the next dev deploy, with no review on the way.
+  Weigh that before letting a lane edit one.
 - **A lane's denied permission is not the lead's to use.** When the auto-mode
   classifier refuses a lane's edit, do not make the edit yourself: surface it to
   the owner, who approves or does it.
