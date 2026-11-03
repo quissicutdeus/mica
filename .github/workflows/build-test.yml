@@ -357,21 +357,15 @@ jobs:
       - name: Lint the Go server and the Dockerfile
         run: node scripts/lint-container.js --require
 
-      # On GitHub the steps run on the VM, next to its daemon. On a Forgejo runner they run
-      # in a container inside a docker-in-docker daemon that listens, plaintext, on the
-      # gateway of the job's own network and nowhere the steps could find by themselves.
-      # `ip` is not in the job image, so the gateway is read from the routing table.
-      # `docker version` is the check that the address is right: a wrong one fails here,
-      # with the daemon named, not three steps later inside Buildx.
+      # On GitHub the steps run on the VM, next to its daemon. On the Forgejo runner they run
+      # in a container, and the runner mounts its own daemon's socket into it: rootless
+      # Podman's Docker-compatible API, as the runner's own account on tatooine, at the
+      # path the docker CLI looks for first. `docker version` is the check that it is
+      # there: a job that lands on a runner without one fails here, with that said, not
+      # three steps later inside Buildx.
       - name: Reach the runner's Docker daemon
         if: github.server_url != 'https://github.com'
-        run: |
-          gw=$(awk '$2 == "00000000" { print $3; exit }' /proc/net/route)
-          host=$(printf '%d.%d.%d.%d' \
-            "0x$(echo "$gw" | cut -c7-8)" "0x$(echo "$gw" | cut -c5-6)" \
-            "0x$(echo "$gw" | cut -c3-4)" "0x$(echo "$gw" | cut -c1-2)")
-          echo "DOCKER_HOST=tcp://$host:2375" >> "$GITHUB_ENV"
-          DOCKER_HOST="tcp://$host:2375" docker version --format 'daemon {{.Server.Version}}'
+        run: docker version --format 'daemon {{.Server.Version}}'
 
       # A container-driver builder. `cache-to` needs one: the default `docker` driver
       # cannot export a build cache at all, so without this the next step would warn and
@@ -413,10 +407,14 @@ jobs:
           source: .
           files: compose.yaml
           targets: demo
-          load: true
           # `set` is a list of `target.name=value` overrides and nothing else -- a `#`
           # line inside it is parsed as one and fails with "invalid override", so the
           # note about MICA_CALVER below lives out here.
+          #
+          # The output is `load`, spelled out so it can say oci-mediatypes=false: Podman,
+          # which runs the Forgejo runner's jobs, reads no HEALTHCHECK from an image with
+          # OCI media types, and `Wait for healthy` below would wait on a container that
+          # has no health to report. Docker reads it either way.
           #
           # It is passed so the add-on catalog is actually generated in this job
           # (MICA-191). The Dockerfile skips the catalog when the stamp is empty,
@@ -427,6 +425,7 @@ jobs:
           set: |
             demo.cache-from=type=gha
             demo.cache-to=type=gha,mode=max
+            demo.output=type=docker,oci-mediatypes=false
             demo.args.GIT_BRANCH=${{ github.ref_name }}
             demo.args.GIT_SHA=${{ github.sha }}
             demo.args.MICA_CALVER=0.0.0-ci.${{ github.run_number }}
@@ -452,8 +451,9 @@ jobs:
         if: github.server_url == 'https://github.com'
         run: node scripts/smoke-image.js
 
-      # compose.yaml publishes the port on 127.0.0.1 of the daemon's host, which on a
-      # Forgejo runner is the docker-in-docker container, not the one running these steps.
+      # compose.yaml publishes the port on 127.0.0.1 of the daemon's host, which on the
+      # Forgejo runner is the runner account's own Podman, not the container running these
+      # steps.
       # Rather than publish it wider, the job container joins the demo's network for the
       # length of the test and reaches the server by its service name. The disconnect
       # matters: `docker compose down` cannot remove a network that still has a member.
