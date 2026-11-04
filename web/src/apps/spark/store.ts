@@ -183,7 +183,3 @@ export const inbox = derived([matches, threads], ([list, rows]): InboxRow[] =>
     })
     .sort((a, b) => stamp(b) - stamp(a))
 );
-
-export const unreadTotal = derived(threads, (rows) =>
-  rows.reduce((total, row) => total + row.unread, 0)
-);
