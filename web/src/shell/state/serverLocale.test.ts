@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 
 /** Fresh module graph per test, the transport stubbed the way `ownerConfig.test.ts` does. */
@@ -28,6 +28,19 @@ const load = async (replies: Record<string, unknown>) => {
 };
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
+
+/**
+ * Pay the cold import once, outside any test's budget, as `services/admin.test.ts` does.
+ *
+ * `load` re-imports this graph per test, and the first import in a fresh worker transforms
+ * all of it. On the GitHub runner that took the first test 20,007ms in run 41685479182, a
+ * pass, and 20,025ms in run 41803622761, a timeout that took the second test down with it
+ * ("host facet 'persisted' is not loaded"). Through `load` rather than a bare import:
+ * `locale.ts` asks for catalogs as it loads, and only `load`'s transport answers.
+ */
+beforeAll(async () => {
+  await load({});
+}, 60_000);
 
 describe('server-provided languages (MICA-235)', () => {
   beforeEach(() => vi.restoreAllMocks());
