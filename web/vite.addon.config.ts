@@ -16,7 +16,7 @@ import {
   sdkImportNames,
   shortfallMessage,
   type PermissionTable
-} from '../sdk/lib/permissionScan';
+} from '../sdk/lib/permissionScan.ts';
 
 const here = import.meta.dirname;
 const repoRoot = path.resolve(here, '..');

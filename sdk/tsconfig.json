@@ -11,6 +11,10 @@
     // one and drops `svelte` and `vite/client` from `types` instead, for the same reason.
     "types": ["node", "svelte", "vite/client"],
     "noEmit": true,
+    // `addonDefines.test.ts` imports `web/vite.addon.config.ts`, which names
+    // `permissionScan.ts` with its extension because Vite's native config loader
+    // needs it, so this program has to accept one. Nothing here is emitted.
+    "allowImportingTsExtensions": true,
     "allowJs": true,
     "checkJs": true,
     "noUnusedLocals": true,
