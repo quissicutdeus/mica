@@ -129,6 +129,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   resetDevAddOnForTest();
   closeAllApps();
   vi.unstubAllGlobals();
@@ -265,12 +266,16 @@ describe('dev add-on loader: a load', () => {
   });
 
   it('persists nothing: no storage key, no server save, no home-grid cell', async () => {
+    // Faked before the load, so a write it queues lands on this clock: `usePersisted`'s server
+    // save waits out a 400 ms `setTimeout` in `host/settingsSync.ts`. Only the timeout pair, so
+    // nothing else the load touches runs on a different clock than it does everywhere else.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const before = snapshotStorage();
     const gridBefore = get(homeGridItems);
     await loadDevAddOn(BASE);
     expect(registered()).toBe(true);
-    // Past `usePersisted`'s debounce, so a queued server save would have fired.
-    await new Promise((r) => setTimeout(r, 1200));
+    // Every pending timer, the debounce among them, so a queued server save has fired.
+    await vi.runAllTimersAsync();
     expect(snapshotStorage()).toEqual(before);
     expect(serviceMock.saveSetting).not.toHaveBeenCalled();
     expect(get(homeGridItems)).toEqual(gridBefore);
