@@ -565,7 +565,17 @@ const victimUntouched = () => {
   expect(statSync(victim).mode & 0o777).toBe(0o644);
 };
 
-describe.skipIf(!trial)('mica-smoke-release.sh', () => {
+/**
+ * Every case runs the wrapper, nearly all through `spawnSync`, which blocks: Vitest cannot stop
+ * one mid-run, only fail it afterwards for having taken too long, so the hang guard is `wrap`'s
+ * own 60s spawn `timeout`, and Vitest's 5s default only ever failed a run that was slow and
+ * fine. A run takes about 0.3s locally and 0.8-1.2s on the GitHub runner, but the third to
+ * eighth cases come early in the unit step, while both Vitest projects start at once, and took
+ * 3-5.5s there in every log looked at. "mounts only from its own staging copy" took 5100ms in
+ * run 41685479182 and failed for it; "a keyring is fresh each run" had been given 20s on its
+ * own for the same slowdown. The whole file gets that 20s, the web project's figure.
+ */
+describe.skipIf(!trial)('mica-smoke-release.sh', { timeout: 20_000 }, () => {
   describe('integration mode', () => {
     it('passes a suite whose every scenario passed, and prints the verdict lines', () => {
       const run = makeRun('manifest');
@@ -664,10 +674,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(failed.staged).toEqual([]);
     });
 
-    // Two real wrapper runs in one test. On the 24.04 runner this took 3.1s under the full
-    // parallel suite and on 26.04 5.7s -- a measured slowdown, not a hang (every sibling that
-    // spawns the wrapper took 0.5-3s) -- so it gets headroom over vitest's 5s default.
-    it('a keyring is fresh each run', { timeout: 20_000 }, () => {
+    it('a keyring is fresh each run', () => {
       const a = wrap(makeRun('manifest'), suite(PASS_A));
       const b = wrap(makeRun('manifest'), suite(PASS_A));
 
