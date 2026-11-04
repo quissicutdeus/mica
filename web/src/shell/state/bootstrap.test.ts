@@ -37,6 +37,26 @@ describe('bootstrapStores', () => {
     resetBootstrapState();
   });
 
+  /**
+   * A forced run, to the end, on a fake clock. Its app preloads wait out the fly-in first
+   * (`APP_PRELOAD_DELAY_MS`, MICA-364), half a second of real waiting per run otherwise. The
+   * tests that use this ask which preloads ran, not when; the MICA-364 block below has the when.
+   *
+   * Faked before the run, which schedules that timeout as it starts. Only the timeout pair, so
+   * an interval anything in the run starts stays on the real clock, rather than handing
+   * `runAllTimersAsync` a timer that never runs out.
+   */
+  const forcedRun = async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const done = bootstrapStores(true);
+      await vi.runAllTimersAsync();
+      await done;
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
   it('preloads all primary stores in parallel', async () => {
     const spyBalance = vi.spyOn(accountModule, 'fetchBalance').mockResolvedValue();
     const spyContacts = vi.spyOn(contacts, 'load').mockResolvedValue();
@@ -45,7 +65,7 @@ describe('bootstrapStores', () => {
     const spyMail = vi.spyOn(mailStore, 'load').mockResolvedValue();
     const spyNotes = vi.spyOn(notes, 'load').mockResolvedValue();
 
-    await bootstrapStores(true);
+    await forcedRun();
 
     expect(spyBalance).toHaveBeenCalledOnce();
     expect(spyContacts).toHaveBeenCalledOnce();
@@ -83,7 +103,7 @@ describe('bootstrapStores', () => {
       spyContacts.mockClear();
       spyNotes.mockClear();
 
-      await bootstrapStores(true);
+      await forcedRun();
 
       expect(spyNotes).not.toHaveBeenCalled();
       // Proof this is a targeted skip, not every preload going quiet.
@@ -113,7 +133,7 @@ describe('bootstrapStores', () => {
         spy.mockClear();
       }
 
-      await bootstrapStores(true);
+      await forcedRun();
 
       expect(spyContacts).not.toHaveBeenCalled();
       expect(spyMessages).not.toHaveBeenCalled();
@@ -126,7 +146,7 @@ describe('bootstrapStores', () => {
       // And the phone, after a switch back, preloads its apps again.
       setActiveDevice('phone');
       resetBootstrapState();
-      await bootstrapStores(true);
+      await forcedRun();
       expect(spyContacts).toHaveBeenCalledOnce();
     });
   });
