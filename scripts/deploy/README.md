@@ -38,11 +38,19 @@ deploy has finished runs the previous one.
 
 ## Setting up hoth
 
-Once, as `fivem` (`runuser -u fivem` from root).
+The `fivem` account is the ansible repo's: this repo's and the fivem repo's
+deploys share it, and its entry in `deploy_accounts` in that repo's
+`host_vars/hoth.yml` makes it, with its subordinate ids, lingering and the two
+checkouts' directories. That entry also names every key the account accepts,
+these three and the fivem repo's two, and the command each is pinned to;
+`rootless.yml` holds the lines to it on every run, and fails on a key it does
+not name or one with no forced command. The rest is once, by hand, as `fivem`
+(`runuser -u fivem` from root).
 
 The forced commands, in `~/.ssh/authorized_keys`, with the three CI keys whose
 private halves are the repository secrets `DEPLOY_KEY_DEV`, `DEPLOY_KEY_MAIN`
-and `DEPLOY_KEY_SMOKE` (`DEPLOY_HOST` and `DEPLOY_KNOWN_HOSTS` complete them):
+and `DEPLOY_KEY_SMOKE` (`DEPLOY_HOST` and `DEPLOY_KNOWN_HOSTS` complete them).
+Add each with its line already pinned, so it never runs anything else:
 
 ```text
 command="/home/fivem/bin/mica-deploy.sh dev",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... mica-ci-deploy-dev
@@ -79,7 +87,10 @@ install -m 755 scripts/deploy/deploy.sh ~/bin/mica-deploy.sh
 install -m 755 scripts/deploy/smoke-release.sh scripts/deploy/mica-smoke-release.sh ~/bin/
 ```
 
-And the smoke test's settings, below.
+Then, from the ansible repo,
+`ansible-playbook rootless.yml --limit hoth -e accounts=fivem`: it stops while a
+script a key is pinned to is not there, or a key it names is missing. And the
+smoke test's settings, below.
 
 ## The deploy
 
@@ -181,13 +192,15 @@ line it prints.
 
 **The esx run's framework.** The live servers run no ESX, so the esx run reads
 it from `/opt/mica-smoke/vendor/`, root-owned and read-only, and refuses to
-start, naming the path, when it is missing. Install one esx_core release
-(`esx-framework/esx_core` tag `1.15.2`) there as `es_extended/` (from
+start, naming the path, when it is missing. The ansible repo's `hoth.yml`
+installs it from one esx_core release (`esx-framework/esx_core` tag `1.15.2`,
+pinned by the tag's commit and the archive's checksum) as `es_extended/` (from
 `[core]/es_extended`), `esx_lib/` (from `[core]/esx_lib`, which es_extended's
-manifest loads) and `legacy.sql` (from `[SQL]/legacy.sql`). The wrapper imports
-`legacy.sql`, not `es_extended.sql`: that one creates a database of its own and
-lacks the `firstname`, `lastname` and `phone_number` columns of `users` and the
-`licenses` table ox_inventory's esx bridge writes to.
+manifest loads) and `legacy.sql` (from `[SQL]/legacy.sql`), and puts it back as
+the release has it on every run; a newer ESX is a change there, not here. The
+wrapper imports `legacy.sql`, not `es_extended.sql`: that one creates a database
+of its own and lacks the `firstname`, `lastname` and `phone_number` columns of
+`users` and the `licenses` table ox_inventory's esx bridge writes to.
 
 ### The integration suite (MICA-302)
 
