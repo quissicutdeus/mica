@@ -57,6 +57,8 @@ export default tseslint.config(
       globals: { ...globals.browser, ...globals.node },
       parserOptions: {
         projectService: true,
+        // Identical to the `.svelte` block below, on purpose: see the note there.
+        extraFileExtensions: ['.svelte'],
         tsconfigRootDir: import.meta.dirname
       }
     },
@@ -136,6 +138,12 @@ export default tseslint.config(
       globals: { ...globals.browser },
       parserOptions: {
         projectService: true,
+        // Also set, identically, on the `**/*.ts` block above — keep the two in step.
+        // The project service holds ONE extra-extensions list, and typescript-eslint
+        // resets it (rebuilding the whole project) every time the next file's value
+        // differs from the last. ESLint walks files alphabetically, so `.ts` and `.svelte`
+        // alternate and a cold run paid that rebuild ~100 times, 5-15s each: ~470s,
+        // against ~35s once both blocks agree. Same findings, nothing dropped.
         extraFileExtensions: ['.svelte'],
         parser: tseslint.parser,
         svelteConfig
