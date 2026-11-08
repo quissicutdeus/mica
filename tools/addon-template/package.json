@@ -22,7 +22,7 @@
     "postcss": "^8.5.26",
     "postcss-html": "^2.0.0",
     "postcss-preset-env": "^11.4.0",
-    "stylelint": "^17.16.0",
+    "stylelint": "^18.0.0",
     "stylelint-no-unsupported-browser-features": "^8.1.2",
     "svelte": "^5.56.10",
     "svelte-check": "^4.7.6",
