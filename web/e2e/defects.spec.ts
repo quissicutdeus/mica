@@ -235,9 +235,15 @@ test.describe('Notes and Contacts persist in the browser mock', () => {
   // deleted contact came back — while media and mail behaved correctly.
   test('a deleted contact stays deleted across a re-entry', async ({ page }) => {
     await openApp(page, 'Contacts');
-    const before = await page.locator('[role="button"]').count();
+    // Name the contact, don't count rows: the list is windowed (MICA-446), so the number of
+    // rendered `[role="button"]` rows is capped and does not fall when one is deleted.
+    const firstRow = page.locator('[role="button"]').first();
+    const name = ((await firstRow.locator('span.truncate').first().innerText()) ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    expect(name).not.toBe('');
 
-    await page.locator('[role="button"]').first().click();
+    await firstRow.click();
     // Exact, not a substring match: MICA-75-wiring added a "Recently Deleted" header
     // button, which a loose /delete/i regex also matches — after the real delete button
     // closes with the detail view, that locator would fall through to the header button
@@ -255,6 +261,8 @@ test.describe('Notes and Contacts persist in the browser mock', () => {
 
     await goHome(page);
     await openApp(page, 'Contacts');
-    expect(await page.locator('[role="button"]').count()).toBeLessThan(before);
+    // The list has rendered again (not an empty or still-loading one) before absence means anything.
+    await expect(page.locator('[role="button"]').first()).toBeVisible();
+    await expect(page.locator('span.truncate', { hasText: name })).toHaveCount(0);
   });
 });

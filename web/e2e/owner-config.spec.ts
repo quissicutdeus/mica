@@ -203,7 +203,12 @@ test('a configured default contact appears in Contacts, alongside the shipped on
   await page.locator('button', { hasText: 'Contacts' }).first().click();
   await expect(page.locator('h1', { hasText: 'Contacts' })).toBeVisible();
 
+  // Quartermaster sorts last, and the list is windowed (MICA-446): its row is not rendered
+  // until scrolled near. Find it by searching rather than by scrolling.
+  await page.getByRole('button', { name: 'Search contacts' }).click();
+  await page.getByPlaceholder('Search contacts...').fill('Quartermaster');
   await expect(page.getByRole('button', { name: /Quartermaster/ })).toBeVisible();
+  await page.getByPlaceholder('Search contacts...').fill('Trevor');
   // 'Trevor' is one of the browser mock's shipped contacts (`nui/mocks/data.ts`,
   // `home-search.spec.ts` also reaches for it) — proof the default is additive, not a
   // replacement for the phone's own seed data.

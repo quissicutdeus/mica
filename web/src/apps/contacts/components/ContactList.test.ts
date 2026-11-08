@@ -8,7 +8,7 @@
  */
 import '../../../host/registerFacets';
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 import { registerMessages } from '@mica/sdk';
 import type { Contact } from '@mica/shared/types';
 import ContactList from './ContactList.svelte';
@@ -45,5 +45,36 @@ describe('ContactList avatar (MICA-417)', () => {
     const { container, getByText } = renderList([contact({ avatar: PHOTO })]);
     expect(container.querySelector('img')?.getAttribute('alt')).toBe('');
     expect(getByText('Ada')).toBeTruthy();
+  });
+});
+
+describe('ContactList windowing (MICA-446)', () => {
+  const many = Array.from({ length: 100 }, (_, i) =>
+    contact({ id: i + 1, firstname: `Person${i + 1}`, phone: `555-${1000 + i}` })
+  );
+
+  it('renders only the rows near the viewport, not the whole list', () => {
+    const { queryByText, container } = renderList(many);
+    expect(queryByText('Person1')).toBeTruthy();
+    expect(queryByText('Person100')).toBeNull();
+    expect(container.querySelectorAll('[role="button"]').length).toBeLessThan(many.length / 2);
+  });
+
+  it('holds the whole list in its spacers, so the scroll height is the full list', () => {
+    const { container } = renderList(many);
+    const rows = container.querySelectorAll('[data-contact-rows] > *').length;
+    const group = container.querySelector('[data-contact-rows]')!;
+    const below = group.nextElementSibling as HTMLElement;
+    // jsdom lays nothing out, so the fallback pitch stands: 73px a row.
+    expect(below.style.height).toBe(`${(many.length - rows) * 73}px`);
+  });
+
+  it('renders the end of the list once it is scrolled there', async () => {
+    const { container, queryByText } = renderList(many);
+    const scroller = container.querySelector('.overflow-y-auto') as HTMLElement;
+    scroller.scrollTop = many.length * 73;
+    await fireEvent.scroll(scroller);
+    expect(queryByText('Person100')).toBeTruthy();
+    expect(queryByText('Person1')).toBeNull();
   });
 });

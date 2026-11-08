@@ -32,6 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     type AppProps
   } from '@mica/sdk';
+  import { freshRead } from './freshness';
   import en from './locales/en.json';
   import de from './locales/de.json';
 
@@ -174,7 +175,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // for that contact are already showing so a back-out doesn't immediately re-open them.
   useDeepLink('contacts', () => {
     if (initialContact && selectedContact?.id !== initialContact.id) {
-      selectedContact = initialContact;
+      selectContact(initialContact);
       return true;
     }
     return false;
@@ -342,9 +343,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     );
   };
 
+  /**
+   * Conversations are read here for one thing: the "recent messages" on a contact's details
+   * screen (`matchingConv` above). They used to be read on every foreground, list showing or
+   * not, and `loadConversations` also drops every cached thread but the active one, so each
+   * Contacts open threw away what Messages had loaded (MICA-446). Now they are read when a
+   * contact's details open, skipped if this app read them under a minute ago
+   * (`freshness.ts`). Between reads, a text from another player or from the `SendMessage`
+   * export reaches the store by push (`addReceivedMessage` in `services/conversations.ts`).
+   */
+  const refreshConversations = freshRead('conversations', conversationsStore, () =>
+    conversationsStore.loadConversations()
+  );
+
+  const selectContact = (contact: Contact) => {
+    selectedContact = contact;
+    void refreshConversations();
+  };
+
+  // Contacts are read on every foreground: the `AddContact` export writes a player's contacts
+  // on the server with no push, so a read is the only way such a contact reaches the list.
   onAppForeground('contacts', () => {
     void contactsStore.load();
-    void conversationsStore.loadConversations();
+    if (selectedContact) void refreshConversations();
   });
 
   useScrollDetect((v) => (isScrolled = v));
@@ -413,7 +434,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     {#if showSearch}
       <div
-        class="animate-in slide-in-from-top border-outline-variant bg-surface duration-medium ease-emphasized sticky top-0 z-20 border-b p-3 backdrop-blur-md"
+        class="animate-in slide-in-from-top border-outline-variant bg-surface duration-medium ease-emphasized sticky top-0 z-20 border-b p-3"
       >
         <SearchBar
           bind:value={searchQuery}
@@ -429,7 +450,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       total={filteredContacts.length}
       loaded={$contactsLoaded}
       query={searchQuery}
-      onselect={(contact: Contact) => (selectedContact = contact)}
+      onselect={selectContact}
     />
   {:else}
     <ContactDetails

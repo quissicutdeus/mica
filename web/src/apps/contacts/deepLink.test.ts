@@ -16,6 +16,7 @@ import type { Contact } from '@mica/shared/types';
 
 const mocks = vi.hoisted(() => ({
   openApp: vi.fn(),
+  loadConversations: vi.fn(async () => {}),
   // Inside the hoisted block, not above it: `vi.mock`'s factory runs before this file's
   // own top-level statements, so a plain `const` here would be in its TDZ when the mock
   // reaches for it.
@@ -42,7 +43,13 @@ vi.mock('@mica/sdk', async (importOriginal) => {
     ...original,
     useNavigation: () => ({ openApp: mocks.openApp }),
     useCall: () => ({ callStore: { startCall: vi.fn() } }),
-    useMessages: () => ({ conversationsStore: store([]) }),
+    useMessages: () => ({
+      conversationsStore: Object.assign(store([]), {
+        messages: store({}),
+        loadConversations: mocks.loadConversations,
+        loadMessages: vi.fn(async () => {})
+      })
+    }),
     useContacts: () => ({ contactsStore }),
     useMedia: () => ({ media: store([]) }),
     usePhoneNotification: () => ({ toast: vi.fn() }),
@@ -59,6 +66,9 @@ describe('Contacts deep link', () => {
     // The screen title, not the phone number — the list renders numbers too, so asserting
     // on one would pass whether or not the deep link did anything.
     expect(await screen.findByText('Contact Details')).toBeTruthy();
+    // The details screen shows the contact's recent messages, so opening it is what reads
+    // the conversations (MICA-446) — not every foreground of the list.
+    expect(mocks.loadConversations).toHaveBeenCalled();
   });
 
   it('opens to the list when handed no contact', () => {

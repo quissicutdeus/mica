@@ -111,3 +111,6 @@ its one-line summary.
 - [A new core call needs the facet](new-core-call-needs-the-facet.md) — app
   can't reach `services/`; sdk facet type, host facet and iframe twin all
   change; ask for them
+- [`content-visibility` still builds the nodes](content-visibility-does-not-skip-node-creation.md)
+  — node creation dominated Contacts; window the rows instead; no `bind:` sizes
+  (jsdom), read `scrollTop` on `focusin`
