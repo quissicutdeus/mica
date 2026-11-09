@@ -124,5 +124,6 @@
   "showToggle": "Show {name}",
   "hideToggleShort": "Hide",
   "showToggleShort": "Show",
-  "callViaLine": "{name} · via {label}"
+  "callViaLine": "{name} · via {label}",
+  "callFailed": "Couldn't call that number"
 }

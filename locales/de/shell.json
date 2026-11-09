@@ -124,5 +124,6 @@
   "showToggle": "{name} einblenden",
   "hideToggleShort": "Aus",
   "showToggleShort": "Ein",
-  "callViaLine": "{name} · über {label}"
+  "callViaLine": "{name} · über {label}",
+  "callFailed": "Diese Nummer kann nicht angerufen werden"
 }

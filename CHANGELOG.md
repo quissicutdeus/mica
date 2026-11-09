@@ -1633,6 +1633,10 @@ and the player's toast says which field was wrong, never the table. Clearing a
 nullable field still works. Nothing to do on the server; an add-on or a script
 of your own that sends the wrong type will now see the refusal.
 
+**A call that cannot start returns to the keypad with a message (MICA-473).** A
+number the server would refuse used to leave the call screen on "dialing" with
+nobody on the line.
+
 **On ESX, a new character in a deleted character's slot gets a phone of its own
 (MICA-440).** esx_multicharacter gives the next character in a slot the deleted
 one's identifier, `char<slot>:<license>`, and micaOS kept a deleted character's

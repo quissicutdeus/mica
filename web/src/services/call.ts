@@ -6,6 +6,8 @@ import { get, writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import { call } from '../nui/call';
 import { phoneContract } from '@mica/shared/contracts/phone';
+import { t } from '../../../sdk/i18n';
+import { toast } from '../shell/state/toast';
 import type { CallState, CallStatus } from '../../../sdk/vocabulary/call';
 
 /** `CallState['line']`: only the shell sets it, only on a ring; idle drops it (MICA-307). */
@@ -25,10 +27,23 @@ function createCallStore() {
   const { subscribe, set, update } = store;
 
   let durationInterval: NodeJS.Timeout | null = null;
+  /** Bumped by every dial, so a late refusal can tell whether its dial is still on screen. */
+  let dialSeq = 0;
 
   return {
     subscribe,
+    /**
+     * Dial. The server's push (`callStatus`) moves the call on from `dialing`; the NUI reply
+     * only says whether a dial went out at all.
+     *
+     * A refused dial goes back to idle with a toast (MICA-473). The client answers `{ error }`
+     * for a number the server's `phoneNumber` rule would refuse (MICA-466), and a failed round
+     * trip throws the same way; either way nobody is on the line, and staying on `dialing`
+     * left the player looking at a call that was never placed. Only this dial is undone: a
+     * ring or a second dial that arrived meanwhile is left alone.
+     */
     startCall: async (number: string, name?: string) => {
+      const seq = ++dialSeq;
       update((state) => ({
         ...state,
         status: 'dialing',
@@ -40,11 +55,14 @@ function createCallStore() {
 
       try {
         await fetchNui('startCall', { number });
-        // In a real app, we might wait for a 'callConnected' event or similar
-        // But here we rely on the backend/mock to send events or updates.
-        // If using the registry, the mock can simulate the delay and return.
       } catch (e) {
         console.error('Failed to start call', e);
+        if (seq !== dialSeq || get(store).status !== 'dialing') return;
+        stopTimer();
+        set(initialState);
+        // The shell's catalog, not Phone's: Contacts, Jobs, Marketplace and the lock screen dial
+        // too, often before Phone has mounted and registered its own strings.
+        toast.show({ type: 'error', app: 'phone', message: get(t)('shell.callFailed') });
       }
     },
     endCall: async () => {

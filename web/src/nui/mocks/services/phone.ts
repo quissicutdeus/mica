@@ -88,7 +88,11 @@ export const mocks: Record<string, MockHandler> = {
    * would have written.
    */
   startCall: (payload?: { number?: string }) => {
-    const number = typeof payload?.number === 'string' ? payload.number : 'Unknown';
+    // The client's own refusal (`dialedNumber`, `client/services/Call.ts`, MICA-466): text,
+    // 1 to 32 characters once trimmed, or nothing is dialed and a call in flight is left alone.
+    const raw: unknown = payload?.number;
+    const number = typeof raw === 'string' ? raw.trim() : '';
+    if (number.length < 1 || number.length > 32) return { status: 'idle', error: 'Invalid number' };
     if (ringTimer) clearTimeout(ringTimer);
     activeCall = { kind: 'outgoing', number, connectedAt: null };
 

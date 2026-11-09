@@ -2,10 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Stands in for the shell: `toast` reaches `audio.ts`, which reads the `persisted` facet at load.
+import '../host/registerFacets';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { callStore } from './call';
 import { get } from 'svelte/store';
 import * as fetchNuiModule from '../nui/fetchNui';
+import { toast } from '../shell/state/toast';
 
 describe('callStore', () => {
   beforeEach(() => {
@@ -51,6 +54,69 @@ describe('callStore', () => {
     expect(state.status).toBe('idle');
     expect(state.number).toBe('');
     expect(state.duration).toBe(0);
+  });
+
+  /**
+   * MICA-473: since MICA-466 the client answers `{ error }` for a number the server would
+   * refuse, and `fetchNui` throws on it. The store used to only log, so the call screen sat on
+   * "Dialing..." with nobody on the line.
+   */
+  describe('a refused dial', () => {
+    beforeEach(() => {
+      callStore.setStatus('idle');
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    it('goes back to idle and says so in a toast', async () => {
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockRejectedValue(new Error('Invalid number'));
+      const shown = vi.spyOn(toast, 'show').mockImplementation(() => 'toast');
+
+      await callStore.startCall('   ', 'Nobody');
+
+      expect(get(callStore)).toEqual(expect.objectContaining({ status: 'idle', number: '' }));
+      expect(get(callStore).name).toBeUndefined();
+      // The English text, not the key: Phone's catalog must be there even if Phone never mounted.
+      expect(shown).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'error', message: "Couldn't call that number" })
+      );
+    });
+
+    it('leaves a ring that arrived meanwhile alone', async () => {
+      let refuse!: (e: Error) => void;
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockReturnValue(
+        new Promise((_, reject) => (refuse = reject))
+      );
+      const shown = vi.spyOn(toast, 'show').mockImplementation(() => 'toast');
+
+      const dial = callStore.startCall('555-0100');
+      callStore.setIncoming('555-0199', 'Jane Smith');
+      refuse(new Error('timeout'));
+      await dial;
+
+      expect(get(callStore)).toEqual(
+        expect.objectContaining({ status: 'incoming', number: '555-0199' })
+      );
+      expect(shown).not.toHaveBeenCalled();
+      callStore.setStatus('idle');
+    });
+
+    it('leaves a second dial alone when the first is refused late', async () => {
+      const replies: Array<(e: Error) => void> = [];
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(
+        () => new Promise((_, reject) => replies.push(reject))
+      );
+      vi.spyOn(toast, 'show').mockImplementation(() => 'toast');
+
+      const first = callStore.startCall('555-0100');
+      void callStore.startCall('555-0142');
+      replies[0](new Error('timeout'));
+      await first;
+
+      expect(get(callStore)).toEqual(
+        expect.objectContaining({ status: 'dialing', number: '555-0142' })
+      );
+      callStore.setStatus('idle');
+    });
   });
 
   describe('speaker (MICA-246)', () => {
