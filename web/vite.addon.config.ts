@@ -6,7 +6,7 @@ import path from 'path';
 import { pathToFileURL } from 'node:url';
 // MICA-190: one discovery, shared with `scripts/build-addons.mjs`, that strips comments
 // before reading `core`. The old copy here grepped raw text, which a doc comment can fool.
-import { addOnIds } from './scripts/addon-ids.js';
+import { addOnIds, withoutComments } from './scripts/addon-ids.js';
 // MICA-205: the one derivation of "what does this code need declared", shared with
 // `sdk/permissions.test.ts` and with the out-of-tree template's own copy of this build.
 // It imports nothing itself, which is what lets both this config and the template's load it.
@@ -41,7 +41,44 @@ const TABLET_ROOT_NOTE =
   `${TABLET_ROOT_READS} is read for you when the app ships a tablet.svelte: bootAddOn uses ` +
   `it to decide which root to mount, so a tablet root needs its permission declared.`;
 
-/** One virtual entry per add-on: manifest + component → bootAddOn. */
+/**
+ * An add-on's id, read from its manifest's comment-stripped text — never by importing it.
+ *
+ * Required to equal the directory name, because that is what names the bundle
+ * (`lib.fileName` below) and the phone fetches `addons/<id>.js`: an id that differs would
+ * build cleanly and announce itself as an app the phone never asked for. Single-quoted
+ * lower_snake_case, as the template reads it; anything else is refused rather than guessed.
+ */
+const manifestIdOf = (app: string): string => {
+  const file = path.join(appsDir, app, 'manifest.ts');
+  const id = /^\s*id:\s*'([a-z][a-z0-9_]*)'/m.exec(
+    withoutComments(fs.readFileSync(file, 'utf8'))
+  )?.[1];
+  if (id !== app) {
+    throw new Error(
+      `[micaOS] ${path.relative(repoRoot, file)}: ` +
+        (id === undefined
+          ? `could not read \`id: '...'\` as a single-quoted lower_snake_case literal. `
+          : `declares id '${id}' in a directory named '${app}'. `) +
+        `The frame entry reads the id as text, and the bundle is named for the directory.`
+    );
+  }
+  return id;
+};
+
+/**
+ * One virtual entry per add-on: component → `bootAddOn`, with the manifest's id.
+ *
+ * **The manifest module is not imported (MICA-449).** `bootAddOn` reads one field of it,
+ * `id`, and the rest is the shell's business: the badge, `preload`, the icon. Importing it
+ * anyway put every manifest property's code in the frame, and a `badgeStore` written as the
+ * SDK documents it — `lazyBadge(async () => (await import('@mica/sdk')).useX())` — is a
+ * dynamic import of the barrel. With `codeSplitting: false` below, rolldown emits that as the
+ * barrel's whole namespace object, so every SDK export stays live in that bundle: Blabber,
+ * Glimpse and Spark each carried ~200 KB of SDK they never call, `marked` and DOMPurify
+ * included, evaluated at boot. No spelling of the import avoids it; not importing the
+ * manifest does. `manifestIdOf()` reads the id as text, the way discovery reads `core`.
+ */
 function addOnEntries(): Plugin {
   return {
     name: 'mica-addon-entries',
@@ -69,16 +106,16 @@ function addOnEntries(): Plugin {
         ...(hasWidget ? ['widget: Widget'] : []),
         ...(tablet ? ['tablet: Tablet'] : [])
       ];
+      const manifest = `{ id: ${JSON.stringify(manifestIdOf(app))} }`;
       return [
         `import '${path.resolve(here, '../sdk/app.css')}';`,
-        `import manifest from '${path.join(appsDir, app, 'manifest.ts')}';`,
         `import App from '${path.join(appsDir, app, 'index.svelte')}';`,
         ...(hasWidget ? [`import Widget from '${widget}';`] : []),
         ...(tablet ? [`import Tablet from '${tablet}';`] : []),
         `import { bootAddOn } from '@mica/sdk';`,
         roots.length > 0
-          ? `void bootAddOn(manifest, App, { ${roots.join(', ')} });`
-          : `void bootAddOn(manifest, App);`
+          ? `void bootAddOn(${manifest}, App, { ${roots.join(', ')} });`
+          : `void bootAddOn(${manifest}, App);`
       ].join('\n');
     }
   };
@@ -226,8 +263,14 @@ function refuseDevEntry(): Plugin {
  * platform separator, a virtual id shape nobody expected — every app would come back with an
  * empty import set, every manifest would "cover" it, and this plugin would report success on
  * a bundle it never looked at. That is the shape AGENTS.md §9 names, so the count is checked:
- * the virtual entry imports each app's `manifest.ts` and `index.svelte`, so an app that
- * contributed no scanned file at all is a broken check, not a small app.
+ * the virtual entry imports each app's `index.svelte`, so an app that contributed no scanned
+ * file at all is a broken check, not a small app. One file — `index.svelte` alone, or with
+ * the app's own modules behind it — is a scanned app.
+ *
+ * `manifest.ts` is not on that list (MICA-449): the entry no longer imports it, so it is read
+ * here as text, for what it declares, and never scanned for what it imports. Nothing is lost
+ * by that. What it imports runs in the shell, which evaluates every manifest itself — the
+ * badge factory, `preload` — and none of it reaches the frame this scan is about.
  */
 function requireDeclaredPermissions(): Plugin {
   /** `@mica/sdk` names imported by each app's own files, and how many of those were seen. */
@@ -298,8 +341,8 @@ function requireDeclaredPermissions(): Plugin {
             this.error(
               `[micaOS] the permission scan saw no source file belonging to '${app}', so it ` +
                 `checked nothing. That is this plugin being broken, not the add-on: every ` +
-                `bundle's entry imports its own manifest.ts and index.svelte. Fix the path ` +
-                `matching in mica-addon-permissions rather than removing this check.`
+                `bundle's entry imports its own index.svelte. Fix the path matching in ` +
+                `mica-addon-permissions rather than removing this check.`
             );
           }
 

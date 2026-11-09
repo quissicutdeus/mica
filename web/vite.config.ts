@@ -125,6 +125,31 @@ function getCalVer() {
   }
 }
 
+/**
+ * `renderMarkdown` and the two libraries behind it, which load only with code that renders
+ * markdown (MICA-449).
+ *
+ * They used to ride in the modulepreloaded `vendor` chunk, evaluated at every boot, and
+ * nothing at boot calls them. The one caller in this build is a dead copy of Notes: an
+ * add-on, run from its own bundle in a frame, but `shell/state/registry.ts` lazily globs
+ * every app's `index.svelte` and `tablet.svelte`, so its chunks are emitted anyway.
+ *
+ * Two settings, and each is useless without the other:
+ *
+ * - **A `markdown` chunk of their own**, so they leave `vendor` and load as a static import
+ *   of whichever lazy chunk calls `renderMarkdown` — a core app that starts rendering
+ *   markdown gets them when it opens, still not at boot.
+ * - **No module side effects.** Neither package declares `sideEffects: false`, and the
+ *   barrel re-exports `renderMarkdown` statically, so without this the entry kept a bare
+ *   `import "./markdown-*.js"` for ordering and the chunk was modulepreloaded at startup
+ *   all the same. All three modules are pure on import.
+ *
+ * `vite.addon.config.ts` and the add-on template carry the library half of the rule: an
+ * add-on is one inlined chunk, so there is no chunk to place `markdown.ts` in.
+ * `scripts/check-markdown-chunks.js` reads the build for what this is meant to produce.
+ */
+const MARKDOWN_MODULES = /node_modules\/(marked|dompurify)\/|\/sdk\/lib\/markdown\.ts$/;
+
 const gitInfo = getGitInfo();
 const version = getCalVer();
 const buildInfo = `v${version} (${gitInfo.branch}@${gitInfo.commit})`;
@@ -167,8 +192,14 @@ export default defineConfig({
         if (warning.code === 'INEFFECTIVE_DYNAMIC_IMPORT') return;
         warn(warning);
       },
+      // MICA-449: pure on import, so the barrel's static re-export does not pin them to
+      // startup. `MARKDOWN_MODULES` above has the rest.
+      treeshake: {
+        moduleSideEffects: (id: string) => !MARKDOWN_MODULES.test(id)
+      },
       output: {
         manualChunks(id) {
+          if (MARKDOWN_MODULES.test(id)) return 'markdown';
           if (id.includes('node_modules')) {
             return 'vendor';
           }

@@ -157,7 +157,18 @@ const SHARED_DECISIONS: [name: string, pattern: RegExp][] = [
    * phone root.
    */
   ['a tablet.svelte is passed to bootAddOn as the tablet root', /'tablet: Tablet'/],
-  ['a tablet root is counted as a useDisplay read', /TABLET_ROOT_READS = 'useDisplay'/]
+  ['a tablet root is counted as a useDisplay read', /TABLET_ROOT_READS = 'useDisplay'/],
+  /**
+   * MICA-449. The frame entry hands `bootAddOn` the id, read from the manifest's text, and
+   * never imports the manifest module. A `badgeStore` that dynamic-imports `@mica/sdk` — the
+   * documented way — otherwise keeps every SDK export in a single-chunk bundle: ~200 KB per
+   * add-on, a Markdown parser and a sanitiser included, evaluated at boot in an app that
+   * never renders either.
+   */
+  [
+    'the frame entry passes bootAddOn the id, not the manifest',
+    /const manifest = `\{ id: \$\{JSON\.stringify\(/
+  ]
 ];
 
 describe('the out-of-tree add-on template', () => {

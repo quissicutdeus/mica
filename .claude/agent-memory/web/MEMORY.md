@@ -50,3 +50,5 @@ why.
 - [A thread open is not the scroll write](thread-open-cost-is-not-the-scroll-write.md)
 - [Many Vite builds: one warm process](many-vite-builds-one-process.md)
 - [vmThreads puts a realm boundary in jsdom files](vmthreads-realm-boundary.md)
+- [An inlined dynamic import keeps every export](inlined-dynamic-import-keeps-whole-namespace.md)
+- [An add-on's components ship in the shell build](addon-components-ship-in-the-shell.md)

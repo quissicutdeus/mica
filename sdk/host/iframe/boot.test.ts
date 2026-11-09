@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, vi, afterEach } from 'vitest';
 import { flushSync } from 'svelte';
 import { bootAddOn } from './boot';
 import { resetHostsForTest } from '../current';
@@ -80,6 +80,57 @@ describe('bootAddOn', () => {
     sent.length = 0;
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA' }));
     expect(sent[0]).toMatchObject({ kind: 'key', key: 'a', code: 'KeyA' });
+  });
+
+  it('boots from the manifest id alone, and says hello with it (MICA-449)', async () => {
+    // The add-on build's entry hands over `{ id }` and nothing else, so a manifest's badge
+    // factory never lands in the frame's bundle. Everything else the frame needs arrives
+    // in hydrate, so an id-only call has to boot and mount exactly as a whole manifest did.
+    const { sent, parent } = stubParent();
+    const target = document.createElement('div');
+    target.id = 'app';
+    document.body.appendChild(target);
+
+    const bootDone = bootAddOn({ id: 'uses_contacts' }, UsesContacts);
+
+    expect(sent[0]).toEqual({ kind: 'hello', appId: 'uses_contacts' });
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { kind: 'hydrate', payload },
+        source: parent as unknown as Window
+      })
+    );
+    await bootDone;
+
+    expect(document.body.textContent).toContain('uses contacts');
+  });
+
+  it('types the manifest as its id, and still takes a whole one (MICA-449)', () => {
+    // What makes a read of any other manifest field inside boot.ts a compile error rather
+    // than a runtime `undefined` in every add-on built from the id-only entry.
+    expectTypeOf<Parameters<typeof bootAddOn>[0]>().toEqualTypeOf<Pick<AppManifest, 'id'>>();
+
+    // A caller still passing a whole manifest compiles, as a variable and written inline;
+    // a plain `Pick` parameter would reject each extra field of the inline literal.
+    // The calls sit in arrows that never run: this test is for the checker.
+    expectTypeOf(() => bootAddOn(manifest, UsesContacts)).toBeFunction();
+    expectTypeOf(() =>
+      bootAddOn(
+        {
+          id: 'inline',
+          name: 'Inline',
+          tile: { bg: 'bg-indigo-600' },
+          icon: null,
+          core: false,
+          permissions: ['contacts']
+        },
+        UsesContacts
+      )
+    ).toBeFunction();
+
+    // @ts-expect-error - the id is what `hello` sends, so it stays required.
+    expectTypeOf(() => bootAddOn({}, UsesContacts)).toBeFunction();
   });
 
   it('reports an unhandled rejection inside the frame as an error message', async () => {

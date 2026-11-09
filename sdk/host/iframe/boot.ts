@@ -175,8 +175,26 @@ function mountByDevice(
   });
 }
 
-export async function bootAddOn(
-  manifest: AppManifest,
+/**
+ * Say `hello`, wait for hydrate, then mount `App` (or a root from `roots`).
+ *
+ * **The frame is handed the manifest's `id` and nothing else (MICA-449).** The add-on
+ * build's generated entry used to import the app's `manifest.ts` to pass here, and a
+ * manifest's `lazyBadge(async () => { await import('@mica/sdk') })` was inlined by the
+ * single-file build as the whole barrel, `renderMarkdown` with marked and DOMPurify behind
+ * it. The badge factory runs in the shell, never in the frame, and `hello` is the only
+ * read of the manifest here; everything else the frame knows about its app, permissions
+ * included, comes from the shell's hydrate payload. So reading any other manifest field in
+ * this body is a compile error, rather than a runtime `undefined` in every add-on.
+ *
+ * Generic rather than a plain `Pick<AppManifest, 'id'>` parameter so an entry that writes
+ * its whole manifest inline at the call site still compiles: a plain `Pick` turns each
+ * extra field of that literal into an excess-property error, where a constrained type
+ * parameter infers the literal and accepts it. A manifest variable or a spread compiles
+ * either way.
+ */
+export async function bootAddOn<M extends Pick<AppManifest, 'id'>>(
+  manifest: M,
   App: AppComponent,
   roots: BootRoots = {}
 ): Promise<void> {

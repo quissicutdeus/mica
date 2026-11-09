@@ -151,11 +151,20 @@ const DEV_MOCK = '\0mica-addon-dev-mock';
  * from), and `bootAddOn`, which installs the `postMessage` transport and the iframe facet
  * set before it mounts. Generating it keeps those out of the part of the project you edit.
  *
+ * **Your manifest module is not imported here.** `bootAddOn` needs one field of it, `id`,
+ * which `readManifest()` above has already read as text; the rest — the badge, `preload`,
+ * the icon — is evaluated by the phone, never in the frame. Importing it anyway put all of
+ * that code in your bundle, and a `badgeStore` written the documented way, with
+ * `await import('@mica/sdk')` inside `lazyBadge`, made the bundler keep every export of the
+ * SDK: in a single-chunk build a dynamic import is the module's whole namespace. micaOS's own
+ * add-ons lost ~200 KB each to that before their build stopped importing the manifest too.
+ *
  * **In development mode only** (`pnpm dev`), one more import comes first: a module that
  * installs `src/mock.ts` as your service, inside the frame. First, so the mock is in place
  * before any of your own modules run — a store that calls `useService` at module scope gets
- * the mock too. A production build never generates that import, and `refuseDevEntry()` below
- * refuses `@mica/sdk/dev` there however it is reached.
+ * the mock too. That module does import your manifest, for the mock's checks, so a dev bundle
+ * is the bigger one. A production build never generates that import, and `refuseDevEntry()`
+ * below refuses `@mica/sdk/dev` there however it is reached.
  */
 function addonEntry(): Plugin {
   let development = false;
@@ -207,17 +216,17 @@ function addonEntry(): Plugin {
             `no FiveM server behind it. Write a mock with defineAddonMock from @mica/sdk/dev.`
         );
       }
+      const manifest = `{ id: ${JSON.stringify(readManifest().id)} }`;
       return [
         ...(mocked ? [`import 'mica-addon-dev-mock';`] : []),
         `import '@mica/sdk/app.css';`,
-        `import manifest from ${JSON.stringify(MANIFEST)};`,
         `import App from ${JSON.stringify(COMPONENT)};`,
         ...(hasWidget ? [`import Widget from ${JSON.stringify(WIDGET)};`] : []),
         ...(hasTablet ? [`import Tablet from ${JSON.stringify(TABLET)};`] : []),
         `import { bootAddOn } from '@mica/sdk';`,
         roots.length > 0
-          ? `void bootAddOn(manifest, App, { ${roots.join(', ')} });`
-          : `void bootAddOn(manifest, App);`
+          ? `void bootAddOn(${manifest}, App, { ${roots.join(', ')} });`
+          : `void bootAddOn(${manifest}, App);`
       ].join('\n');
     }
   };
@@ -551,8 +560,9 @@ function requireDeclaredPermissions(): Plugin {
         if (scanned === 0) {
           // The failure mode of a scanner is silence: if nothing matched, every manifest
           // "covers" an empty import list and this reports success on a bundle it never
-          // looked at. Your entry imports src/manifest.ts and src/index.svelte, so zero
-          // files means the matching is broken, not that your app is small.
+          // looked at. Your entry imports src/index.svelte, so zero files means the
+          // matching is broken, not that your app is small. src/manifest.ts is read as text
+          // below for what it declares; the frame never imports it.
           this.error(
             `[mica-addon] the permission scan saw none of your source files, so it checked ` +
               `nothing. Refusing to report a pass it did not earn.`

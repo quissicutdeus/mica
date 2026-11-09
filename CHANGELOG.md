@@ -2022,6 +2022,19 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**An add-on's frame no longer runs its manifest (MICA-449).** The template's
+generated entry used to import `src/manifest.ts` into the frame, and a badge
+written the way the SDK documents it, with `await import('@mica/sdk')` inside
+`lazyBadge`, then kept the whole SDK in the bundle: about 200 KB, a Markdown
+parser and sanitiser included, evaluated every time the add-on opened. The entry
+now hands `bootAddOn` only the manifest's `id`, which the template already read
+from the file as text. The manifest still runs in the phone itself, where its
+badge, `preload` and icon always ran. Rebuild with this release's template to
+get the smaller bundle; a bundle built with the old one keeps working.
+`bootAddOn`'s first parameter is now anything with an `id`, so every call that
+compiled before still does, and the contract version stays `1`. A development
+build (`pnpm dev`) still imports the manifest for the mock's checks.
+
 **A contact's number can no longer be used as a filter (MICA-432).** It is
 sealed now, and the server looks it up through a keyed index, so `phone` is no
 longer a filter a `contacts` read accepts. Fetch the contacts and match on the
