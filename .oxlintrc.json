@@ -66,5 +66,11 @@
   // for another reason, or turn the rule off above with a sentence if it keeps firing on
   // patterns that are fine.
   //
-  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "mica.sql", "fxmanifest.lua"]
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "mica.sql",
+    "fxmanifest.lua",
+    "web/e2e/fixtures/frozen-addon/frozenprobe.js"
+  ]
 }

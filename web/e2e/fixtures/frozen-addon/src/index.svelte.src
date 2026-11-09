@@ -1,0 +1,116 @@
+<script lang="ts">
+  import {
+    Screen,
+    useContacts,
+    useNotifications,
+    usePhoneNotification,
+    onAppForeground,
+    type AppProps
+  } from '@mica/sdk';
+
+  let { onback }: AppProps = $props();
+
+  const notifications = useNotifications('frozenprobe');
+  const phone = usePhoneNotification('frozenprobe');
+  const unread = notifications.unreadCount;
+
+  let loaded = $state('not yet');
+  let sent = $state('not yet');
+  let contactsAnswer = $state('not asked');
+  let rawAnswer = $state('not asked');
+
+  // The wire as an author's SDK of this contract version put it: a `call` message posted to
+  // the parent, answered by a `reply` carrying the same id. Built by hand so the shell, and
+  // not this bundle's own hook guard, is what decides. The id is far above any the SDK's own
+  // transport counts up to, so its replies cannot be mistaken for these.
+  const RAW_ID = 900001;
+  window.addEventListener('message', (event: MessageEvent) => {
+    const msg = event.data as {
+      kind?: string;
+      id?: number;
+      ok?: boolean;
+      error?: { name?: string; permission?: string; hookName?: string };
+    };
+    if (event.source !== window.parent || msg?.kind !== 'reply' || msg.id !== RAW_ID) return;
+    rawAnswer = [msg.kind, msg.ok, msg.error?.name, msg.error?.permission, msg.error?.hookName].join(
+      ' | '
+    );
+  });
+  const askRaw = () => {
+    window.parent.postMessage(
+      {
+        kind: 'call',
+        id: RAW_ID,
+        facet: 'contacts',
+        factoryArgs: [],
+        member: 'getDeletedContacts',
+        args: []
+      },
+      '*'
+    );
+  };
+
+  onAppForeground('frozenprobe', () => {
+    notifications.load().then(
+      () => (loaded = 'loaded'),
+      (e: unknown) => (loaded = `failed: ${(e as Error).message}`)
+    );
+  });
+
+  // Every call below is awaited inside a handler that catches, so a refusal is an answer
+  // this page prints and never an uncaught error.
+  const notify = async () => {
+    try {
+      await phone.sendNotification({ title: 'Frozen Probe', message: 'sent from a frozen bundle' });
+      sent = 'sent';
+    } catch (e) {
+      sent = `failed: ${(e as Error).message}`;
+    }
+  };
+
+  const askForContacts = async () => {
+    try {
+      // Asked for here and not at the top: the hook itself is what refuses, and a refusal
+      // during component setup would be uncaught.
+      await useContacts().getDeletedContacts();
+      contactsAnswer = 'allowed';
+    } catch (e) {
+      contactsAnswer = `refused: ${(e as Error).name}`;
+    }
+  };
+</script>
+
+<Screen title="Frozen Probe" {onback}>
+  <div class="min-h-0 flex-1 overflow-y-auto p-4">
+    <p data-testid="booted" class="text-body-large text-on-surface">booted</p>
+    <p data-testid="loaded" class="text-body-medium text-on-surface">{loaded}</p>
+    <p data-testid="unread" class="text-body-medium text-on-surface">unread: {$unread}</p>
+    <button
+      type="button"
+      data-testid="notify"
+      class="bg-primary text-on-primary rounded-full px-4 py-2"
+      onclick={notify}
+    >
+      Notify
+    </button>
+    <p data-testid="sent" class="text-body-medium text-on-surface">{sent}</p>
+    <button
+      type="button"
+      data-testid="contacts"
+      class="bg-primary text-on-primary rounded-full px-4 py-2"
+      onclick={askForContacts}
+    >
+      Ask for contacts
+    </button>
+    <p data-testid="contacts-answer" class="text-body-medium text-on-surface">{contactsAnswer}</p>
+    <button
+      type="button"
+      data-testid="raw"
+      class="bg-primary text-on-primary rounded-full px-4 py-2"
+      onclick={askRaw}
+    >
+      Ask for contacts on the wire
+    </button>
+    <p data-testid="raw-answer" class="text-body-medium text-on-surface">{rawAnswer}</p>
+  </div>
+</Screen>

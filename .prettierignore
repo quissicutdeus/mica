@@ -30,3 +30,7 @@ web/docs
 # Claude Security scan reports. Each holds its own .gitignore of `*`, so it never
 # reaches a commit, but Prettier does not read .gitignore, same reason as above.
 CLAUDE-SECURITY-*
+
+# The frozen add-on bundle (MICA-462): minified output, committed as bytes and never rebuilt.
+# Reformatting it would change the hash the pin test holds.
+web/e2e/fixtures/frozen-addon/frozenprobe.js

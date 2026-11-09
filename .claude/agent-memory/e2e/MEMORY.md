@@ -27,3 +27,4 @@ its one-line summary.
   page not three
 - [A document-count spec must never enter an add-on frame](mica-451-never-enter-an-addon-frame.md)
 - [MICA-469 crash-leak spec](mica-469-crash-leak-spec.md)
+- [A frozen add-on's own guard refuses first; the shell's refusal needs a raw call](mica-462-frozen-addon.md)

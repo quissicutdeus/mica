@@ -1,0 +1,11 @@
+{
+  "id": "frozenprobe",
+  "name": "Frozen Probe",
+  "version": "1.0.0",
+  "description": "A bundle frozen against SDK contract version 1.",
+  "bundleUrl": "frozenprobe.js",
+  "sha256": "cd1f4a28d2332c4cc2700cb4cd8db133e35d2b15b57d268d84082b3c62b5113e",
+  "color": "bg-yellow-400",
+  "permissions": ["notifications"],
+  "sdkContract": "1"
+}

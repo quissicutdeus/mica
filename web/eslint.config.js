@@ -24,7 +24,9 @@ export default tseslint.config(
       'test-results/**',
       'blob-report/**',
       // Built add-on bundles, gitignored — minified output, not source.
-      'public/addons/**'
+      'public/addons/**',
+      // The frozen add-on (MICA-462): minified bytes committed on purpose, never rebuilt.
+      'e2e/fixtures/frozen-addon/frozenprobe.js'
     ]
   },
 
