@@ -97,7 +97,7 @@ completed=0
 # 5 to 10 (90s for the database, 180s to start and 300s for the suite, at most), and a release
 # makes two runs back to back. 1500s outlasts two of the longest, so a job queued behind a run and
 # another job still goes, and it is far short of hanging a CI job on a holder that is stuck.
-# A trial by hand or by server/__tests__/smokeWrapper.test.ts may point the lock elsewhere and
+# A trial by hand or by the smokeWrapper*.test.ts suites may point the lock elsewhere and
 # shorten the wait; a CI session cannot, since sshd passes a forced command no environment.
 HOTH_LOCK_FILE=${MICA_HOTH_LOCK:-${XDG_RUNTIME_DIR:-/run/user/$EUID}/mica-hoth.lock}
 HOTH_LOCK_TIMEOUT=${MICA_HOTH_LOCK_TIMEOUT:-1500}
@@ -212,7 +212,7 @@ SETTLE_SECONDS=20
 # server/__tests__/integrationRunner.test.ts reads this line, as written, against the suite's own
 # budget.
 INTEGRATION_TIMEOUT=300
-# So server/__tests__/smokeWrapper.test.ts can reach the timeout paths in seconds.
+# So the server/__tests__/smokeWrapper*.test.ts suites can reach the timeout paths in seconds.
 SETTLE_SECONDS=${MICA_SMOKE_SETTLE:-$SETTLE_SECONDS}
 INTEGRATION_TIMEOUT=${MICA_SMOKE_INTEGRATION_TIMEOUT:-$INTEGRATION_TIMEOUT}
 # The staging directories each run is built in, outside the run directory, which is the point.
@@ -222,7 +222,7 @@ KEY_NAME=mica-content.key
 
 # A test-only clock. With MICA_SMOKE_FAKE_CLOCK=1 every wait and deadline below (the database
 # wait, the start wait, the suite wait and the settle) runs on a counter that nap() advances
-# instead of on real time, so server/__tests__/smokeWrapper.test.ts reaches a timeout path
+# instead of on real time, so the smokeWrapper*.test.ts suites reach a timeout path
 # without waiting for it. The lock wait keeps real time. A CI session cannot set it: sshd passes
 # the forced command no environment.
 fake_clock=0
@@ -434,7 +434,7 @@ report() {
 # it (the framework's own table, never created by micaOS), so it holds qbx_core's own schema
 # before FXServer starts, imported from the resource's own file, and one character for the suite
 # to look up offline. integration/lib/qbxSeed.ts names the same character, and
-# server/__tests__/smokeWrapper.test.ts holds the two to each other. No micaOS table: the run is
+# server/__tests__/smokeWrapperQbx.test.ts holds the two to each other. No micaOS table: the run is
 # only a pass if micaOS creates its schema itself, against this `players`.
 read -r -d '' QBX_SEED_SQL <<'SQL' || true
 INSERT INTO players (citizenid, cid, license, name, money, charinfo, job, position, metadata)
@@ -472,7 +472,7 @@ seed_qbx() {
 # for the suite to look up offline. That file's `users` carries the `ssn` es_extended's own
 # migrations expect (NOT NULL, unique), and the firstname, lastname and phone_number micaOS's
 # offline lookups read. integration/lib/esxSeed.ts names the same character, and
-# server/__tests__/smokeWrapper.test.ts holds the two to each other. No micaOS table: the run is
+# server/__tests__/smokeWrapperEsx.test.ts holds the two to each other. No micaOS table: the run is
 # only a pass if micaOS creates its schema itself, beside this `users`.
 read -r -d '' ESX_SEED_SQL <<'SQL' || true
 INSERT INTO users (identifier, ssn, accounts, `group`, inventory, job, job_grade, loadout, metadata, `position`, firstname, lastname, dateofbirth, sex, height, phone_number)

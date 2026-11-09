@@ -6,8 +6,8 @@
  * The one character the box's wrapper puts into es_extended's `users` table before the esx run's
  * FXServer starts (MICA-304), so a scenario has an offline ESX character to look up without a
  * player ever connecting. The wrapper writes these same values as SQL, and
- * `server/__tests__/smokeWrapper.test.ts` holds the two to each other: change one and that test
- * fails until the other follows.
+ * `server/__tests__/smokeWrapperEsx.test.ts` holds the two to each other: change one and that
+ * test fails until the other follows.
  *
  * `phone` is in `users.phone_number` only, the column ESX Legacy's own `legacy.sql` ships and
  * the second of the three spellings micaOS's offline lookup probes for. micaOS has issued this

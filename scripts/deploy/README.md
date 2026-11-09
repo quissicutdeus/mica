@@ -234,15 +234,15 @@ micaOS must create its own schema on first start in every run (MICA-306); the
 release smoke test is the only run that imports micaOS's SQL. The seeded
 characters are in the wrapper (`seed_qbx`, `seed_esx`) and in
 `integration/lib/qbxSeed.ts` and `esxSeed.ts`, and
-`server/__tests__/smokeWrapper.test.ts` holds each pair equal.
-`pack:integration` writes `mica-integration/expected-scenarios.txt`, one
-`<mode> pass|skip <id>` line per scenario per run, and each run's PASS lines
-must be exactly its scenarios and its SKIP lines exactly the others', so a
-dropped scenario is a difference, not a smaller count. A failing run ends the
-invocation, and its messages are tagged `[standalone mode]`, `[qbx mode]` or
-`[esx mode]`. The workflows also require, through `run-checked.sh`'s
-`RUN_CHECKED_REQUIRE`, a pass line from every mode in the output, so a wrapper
-edited to leave one out is red even though it exits 0.
+`server/__tests__/smokeWrapperQbx.test.ts` and `smokeWrapperEsx.test.ts` hold
+each pair equal. `pack:integration` writes
+`mica-integration/expected-scenarios.txt`, one `<mode> pass|skip <id>` line per
+scenario per run, and each run's PASS lines must be exactly its scenarios and
+its SKIP lines exactly the others', so a dropped scenario is a difference, not a
+smaller count. A failing run ends the invocation, and its messages are tagged
+`[standalone mode]`, `[qbx mode]` or `[esx mode]`. The workflows also require,
+through `run-checked.sh`'s `RUN_CHECKED_REQUIRE`, a pass line from every mode in
+the output, so a wrapper edited to leave one out is red even though it exits 0.
 
 ### Trying it by hand
 

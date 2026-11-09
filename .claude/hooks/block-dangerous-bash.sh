@@ -28,7 +28,7 @@
 # So the parser is now something the repo already requires (Node 26), and the
 # two ways this can fail are blocks rather than fall-throughs. A guard that
 # cannot read its input must refuse, not wave the call through.
-# `server/__tests__/bashGuard.test.ts` runs this file against both shapes so it
+# The `server/__tests__/bashGuard*.test.ts` suites run this file against both shapes so it
 # cannot quietly go inert again.
 
 if ! command -v node >/dev/null 2>&1; then

@@ -126,3 +126,6 @@ its one-line summary.
 - [Many Vite builds: one warm process](many-vite-builds-one-process.md) — a warm
   build is 0.8 CPU-s vs 2.1 cold; mirror the CLI via `createBuilder`; reset cwd
   and `NODE_ENV`; one svelte-check over fixtures with a canary
+- [vmThreads puts a realm boundary in jsdom files](vmthreads-realm-boundary.md)
+  — Node-realm `structuredClone`, `postMessage` deaf to fake timers, no
+  `crypto.subtle`; rerun one file with `--pool=forks` to tell
