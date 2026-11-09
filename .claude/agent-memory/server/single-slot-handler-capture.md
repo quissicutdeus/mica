@@ -13,3 +13,8 @@ disconnect test failed for a reason that had nothing to do with the mutation.
 Capture every handler per event as well (`everyHandler` in `battery.test.ts`)
 and have a drop helper run them all. The suite's bridge mock then needs
 `forgetSource`, because `shell.ts`'s handler calls it.
+
+MICA-474 hit it again in `phone.test.ts`: a red proof that removed the one read
+of `DeviceEnabledState` from `Phone.ts` elided its import, and seven drop tests
+failed beside the intended ones. Scope a red proof with `-t`, or read which
+cases failed, before calling the whole count the mutation's.

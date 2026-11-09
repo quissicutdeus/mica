@@ -123,6 +123,7 @@ import { registerNumber, releaseResource, type CallVerdict } from '../lib/number
 import { __setVoiceBackend } from '../lib/speakerphone';
 import { __setDeviceResolvers } from '../lib/deviceIdentity';
 import { PlayerFacingError } from '../lib/errors';
+import { __resetDeviceEnabledState, recordDeviceEnabled } from '../lib/DeviceEnabledState';
 import { installTestPhone, TEST_PHONE_ID } from './phoneStub';
 
 const START = 'mica:server:phone:start';
@@ -133,6 +134,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   __resetRateLimits();
   __resetCalls();
+  // What `SetPhoneEnabled` last confiscated (MICA-474): nothing, unless a case says so.
+  __resetDeviceEnabledState();
   adminState.isAdmin = true;
   bridge.framework = 'esx';
   numberSync.run.mockImplementation(async () => null);
@@ -518,7 +521,7 @@ describe('injectIncomingCall / endActiveCallFor — micacall support', () => {
 
     const callId = injectIncomingCall(2, '555-9999');
 
-    expect(callId).toBeNull();
+    expect(callId).toBe('busy');
     expect(emitCalls()).toHaveLength(0);
   });
 
@@ -1011,6 +1014,28 @@ describe('start: the emergency number is exempt without needing a line (MICA-226
     await fire(START, 1, '911');
 
     expect(dbMock.scalar).not.toHaveBeenCalled();
+  });
+
+  it('exempts a line on the emergency number forwarding to a dispatcher who blocked the caller (MICA-474)', async () => {
+    dbMock.scalar.mockResolvedValue(1); // 2 has blocked the caller
+    registerNumber('911', { onCall: () => ({ action: 'forward', source: 2 }) as const }, 'taxi');
+
+    await expect(placeCall(1, '911')).resolves.toBe('placed');
+
+    expect(incomingCalls().map(([, dest]) => dest)).toEqual([2]);
+    expect(dbMock.scalar).not.toHaveBeenCalled();
+
+    // The twin: the same forward from an ordinary line is refused by 2's block.
+    await fire(END, 1);
+    (globalThis as any).emitNet.mockClear();
+    registerNumber(
+      '5559999',
+      { onCall: () => ({ action: 'forward', source: 2 }) as const },
+      'taxi'
+    );
+
+    await expect(placeCall(1, '5559999')).resolves.toBe('unreachable');
+    expect(incomingCalls()).toEqual([]);
   });
 });
 
@@ -1967,6 +1992,54 @@ describe('group ring (MICA-307)', () => {
     }
   });
 
+  it('skips a candidate whose phone SetPhoneEnabled took, and rings them once returned (MICA-474)', async () => {
+    recordDeviceEnabled(5, 'phone', false);
+    // The tablet's says nothing about the phone.
+    recordDeviceEnabled(6, 'tablet', false);
+    ringLine([5, 6]);
+
+    await placeCall(1, LINE);
+    expect(incomingPayloads().map(([dest]) => dest)).toEqual([6]);
+    expect(isInCall(5)).toBe(false);
+
+    await fire(END, 1);
+    (globalThis as any).emitNet.mockClear();
+    recordDeviceEnabled(5, 'phone', true);
+
+    await placeCall(1, LINE);
+    expect(incomingPayloads().map(([dest]) => dest)).toEqual([5, 6]);
+  });
+
+  it('fails as unreachable, as for nobody free, when every candidate is confiscated (MICA-474)', async () => {
+    const outcome = async () => {
+      const result = await placeCall(1, LINE);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // A copy: the mock's own list keeps growing as later cases emit.
+      return { result, sent: [...emitCalls()], rows: createCalls() };
+    };
+    ringLine([5, 6]);
+    await fire(START, 3, '555-0005');
+    await fire(START, 2, '555-0006');
+    (globalThis as any).emitNet.mockClear();
+    dbMock.insert.mockClear();
+    const allBusy = await outcome();
+
+    await fire(END, 3);
+    await fire(END, 2);
+    (globalThis as any).emitNet.mockClear();
+    dbMock.insert.mockClear();
+    recordDeviceEnabled(5, 'phone', false);
+    recordDeviceEnabled(6, 'phone', false);
+    const allConfiscated = await outcome();
+
+    expect(allBusy.result).toBe('unreachable');
+    expect(allBusy.sent.map(([event, dest]) => [event, dest])).toEqual([
+      ['mica:client:shell:notify', 1],
+      ['mica:client:phone:failed', 1]
+    ]);
+    expect(allConfiscated).toEqual(allBusy);
+  });
+
   it('fails as unreachable, in MICA-64 shape, when nobody is left to ring', async () => {
     await fire(START, 3, '555-0005'); // 5 busy
     (globalThis as any).emitNet.mockClear();
@@ -2166,6 +2239,318 @@ describe('a call needs a phone, and shows its own number (MICA-339)', () => {
     targetHolds = true;
     await fire(ANSWER, 2);
     expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(2);
+  });
+});
+
+/**
+ * MICA-474: the server decides whether a call may ring a phone, at every place one rings. A
+ * target with no phone in hand, or whose phone `SetPhoneEnabled` confiscated, was rung anyway;
+ * the client would not raise it (MICA-467), and the caller heard it ring until they gave up. Now
+ * it fails as an unreachable number does (MICA-64), and each refusal below is held equal to a
+ * block, whole, so "has no phone" cannot show as another message, another row, or other work.
+ */
+describe('a ring needs a phone the target may use (MICA-474)', () => {
+  const NOT_HELD = () => new PlayerFacingError('You are not holding a phone.');
+  /** Everyone holds a phone but the citizen named. */
+  const holdsNone = (citizenid: string) => () =>
+    __setDeviceResolvers({
+      forRequest: async () => TEST_PHONE_ID,
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: (player) => {
+        if (player.citizenid === citizenid) throw NOT_HELD();
+      }
+    });
+
+  afterEach(() => {
+    installTestPhone();
+  });
+
+  /**
+   * One dial from 1, from a clean slate once `setup` has run: what `placeCall` answered,
+   * everything sent, every row written, and how often the blocklist was asked — the one await
+   * on the way, so the same count is the same work.
+   */
+  const dial = async (number: string, setup: () => unknown = () => {}) => {
+    __resetCalls();
+    __resetDeviceEnabledState();
+    installTestPhone();
+    dbMock.scalar.mockResolvedValue(null);
+    await setup();
+    (globalThis as any).emitNet.mockClear();
+    dbMock.insert.mockClear();
+    dbMock.scalar.mockClear();
+    const result = await placeCall(1, number, true);
+    // `logCall` is fire-and-forget; let its insert land.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return {
+      result,
+      // A copy: the mock's own list keeps growing as later dials emit.
+      sent: [...emitCalls()],
+      rows: createCalls(),
+      asked: dbMock.scalar.mock.calls.length
+    };
+  };
+  const blocked = () => dial('555-0002', () => dbMock.scalar.mockResolvedValue(1));
+
+  it('rings a target who holds their phone: the positive twin of every case below', async () => {
+    const held = await dial('555-0002');
+
+    expect(held.result).toBe('placed');
+    expect(held.sent).toEqual([
+      ['mica:client:phone:incoming', 2, { from: '555-0001', callId: expect.any(Number) }]
+    ]);
+  });
+
+  it('fails a target holding no phone exactly as a block, and as a number nobody holds', async () => {
+    const block = await blocked();
+    const nowhere = await dial('555-0009');
+    const noPhone = await dial('555-0002', holdsNone('CID_TARGET'));
+
+    // The block is the MICA-64 shape, so the equality below is not two empty lists.
+    expect(block.result).toBe('unreachable');
+    expect(block.sent).toEqual([
+      [
+        'mica:client:shell:notify',
+        1,
+        { type: 'error', message: 'Number unavailable', key: 'server.phone.numberUnavailable' }
+      ],
+      ['mica:client:phone:failed', 1]
+    ]);
+    expect(block.rows).toHaveLength(1);
+    expect(block.rows[0][1]).toEqual(
+      expect.arrayContaining(['CID_CALLER', 'outgoing', '555-0002', 0])
+    );
+    expect(block.asked).toBe(1);
+
+    expect(noPhone).toEqual(block);
+    // A number nobody holds differs only in the number its row records.
+    expect({ ...noPhone, rows: undefined }).toEqual({ ...nowhere, rows: undefined });
+    expect(nowhere.rows).toHaveLength(1);
+  });
+
+  it('fails a target whose phone SetPhoneEnabled took exactly as a block, until it is returned', async () => {
+    const block = await blocked();
+
+    const confiscated = await dial('555-0002', () => recordDeviceEnabled(2, 'phone', false));
+    expect(isInCall(2)).toBe(false);
+    const returned = await dial('555-0002', () => {
+      recordDeviceEnabled(2, 'phone', false);
+      recordDeviceEnabled(2, 'phone', true);
+    });
+    const tabletOnly = await dial('555-0002', () => recordDeviceEnabled(2, 'tablet', false));
+
+    expect(confiscated).toEqual(block);
+    expect(returned.result).toBe('placed');
+    expect(tabletOnly.result).toBe('placed');
+  });
+
+  it('says unreachable, not "Line busy", for a target with no phone who is on a call', async () => {
+    const block = await blocked();
+    const busyNoPhone = await dial('555-0002', async () => {
+      await placeCall(3, '555-0002');
+      expect(isInCall(2)).toBe(true);
+      holdsNone('CID_TARGET')();
+    });
+    const busyConfiscated = await dial('555-0002', async () => {
+      await placeCall(3, '555-0002');
+      recordDeviceEnabled(2, 'phone', false);
+    });
+
+    expect(busyNoPhone).toEqual(block);
+    expect(busyConfiscated).toEqual(block);
+  });
+
+  /**
+   * A line's forward has three refusals the caller must not tell apart (MICA-64): the forward
+   * target holds no phone, blocked the caller, or had it confiscated. Before MICA-474 the first
+   * failed early on the line's number and the other two in the re-dial on the target's own, so
+   * the caller's Recents told them apart and named the number behind the line.
+   */
+  describe("a line's forward", () => {
+    const FORWARDING = '5558888';
+
+    beforeEach(() => {
+      registerNumber(
+        FORWARDING,
+        { onCall: () => ({ action: 'forward', source: 2 }) as CallVerdict },
+        'forwarder'
+      );
+    });
+
+    afterEach(() => {
+      releaseResource('forwarder');
+    });
+
+    /** Nothing the caller is sent or has written carries the forward target's own number. */
+    const neverNames2 = (outcome: { sent: unknown[]; rows: unknown[] }) =>
+      expect(JSON.stringify([outcome.sent, outcome.rows])).not.toContain('555-0002');
+
+    it('fails a target with no phone, a block and a confiscation as one, on the line number', async () => {
+      // The re-dial asks the blocklist about 2, so this is the target having blocked the caller.
+      const blockedBy2 = await dial(FORWARDING, () => dbMock.scalar.mockResolvedValue(1));
+      const confiscated = await dial(FORWARDING, () => recordDeviceEnabled(2, 'phone', false));
+      // As production refuses it: the resolver, asked for 2's number, finds no phone in hand.
+      const noPhone = await dial(FORWARDING, () =>
+        __setDeviceResolvers({
+          forRequest: async (src) => {
+            if (src === 2) throw NOT_HELD();
+            return TEST_PHONE_ID;
+          },
+          forCitizen: async () => TEST_PHONE_ID,
+          deviceInHand: () => undefined
+        })
+      );
+
+      expect(blockedBy2.result).toBe('unreachable');
+      expect(blockedBy2.sent).toEqual([
+        [
+          'mica:client:shell:notify',
+          1,
+          { type: 'error', message: 'Number unavailable', key: 'server.phone.numberUnavailable' }
+        ],
+        ['mica:client:phone:failed', 1]
+      ]);
+      expect(blockedBy2.rows.map(([, params]) => params)).toEqual([
+        expect.arrayContaining(['CID_CALLER', 'outgoing', FORWARDING, 0])
+      ]);
+      // The line's dial and the re-dial each ask once, whichever refused.
+      expect(blockedBy2.asked).toBe(2);
+      neverNames2(blockedBy2);
+
+      expect(confiscated).toEqual(blockedBy2);
+      expect(noPhone).toEqual(blockedBy2);
+    });
+
+    it('fails a busy target, or the caller themselves, as the other forward failures do', async () => {
+      const blockedBy2 = await dial(FORWARDING, () => dbMock.scalar.mockResolvedValue(1));
+      const busy = await dial(FORWARDING, async () => {
+        await placeCall(3, '555-0002');
+        expect(isInCall(2)).toBe(true);
+      });
+
+      // Not "Line busy", which would tell any caller the staff behind the line are on duty.
+      expect(busy).toEqual(blockedBy2);
+
+      // A line forwarding its caller to themselves: not "Busy" either.
+      const SELF = '5558889';
+      registerNumber(
+        SELF,
+        { onCall: () => ({ action: 'forward', source: 1 }) as CallVerdict },
+        'forwarder'
+      );
+      const self = await dial(SELF);
+      expect({ ...self, rows: undefined }).toEqual({ ...blockedBy2, rows: undefined });
+      expect(self.rows.map(([, params]) => params)).toEqual([
+        expect.arrayContaining(['CID_CALLER', 'outgoing', SELF, 0])
+      ]);
+    });
+
+    it("rings the target, and logs the line for the caller, never the target's number", async () => {
+      const forwarded = await dial(FORWARDING);
+      expect(forwarded.result).toBe('placed');
+      expect(forwarded.sent).toEqual([
+        ['mica:client:phone:incoming', 2, { from: '555-0001', callId: expect.any(Number) }]
+      ]);
+
+      (globalThis as any).emitNet.mockClear();
+      await fire(END, 1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const rows = createCalls().map(([, params]) => params);
+
+      expect(rows).toHaveLength(2);
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          expect.arrayContaining(['CID_CALLER', 'outgoing', FORWARDING, 0]),
+          expect.arrayContaining(['CID_TARGET', 'missed', '555-0001', 0])
+        ])
+      );
+      const callerSide = rows.filter((params) => params.includes('CID_CALLER'));
+      neverNames2({ sent: emitCalls().filter(([, dest]) => dest === 1), rows: callerSide });
+    });
+  });
+
+  it('refuses a confiscated caller exactly as one holding no phone, and dials nobody', async () => {
+    // As production refuses it: the resolver finds no phone in 1's hand.
+    const noPhone = await dial('555-0002', () =>
+      __setDeviceResolvers({
+        forRequest: async (src) => {
+          if (src === 1) {
+            throw new PlayerFacingError('You are not holding a phone.', {
+              key: 'server.phone.notHeld'
+            });
+          }
+          return TEST_PHONE_ID;
+        },
+        forCitizen: async () => TEST_PHONE_ID,
+        deviceInHand: () => undefined
+      })
+    );
+    const confiscated = await dial('555-0002', () => recordDeviceEnabled(1, 'phone', false));
+    expect(isInCall(2)).toBe(false);
+    const returned = await dial('555-0002', () => {
+      recordDeviceEnabled(1, 'phone', false);
+      recordDeviceEnabled(1, 'phone', true);
+    });
+
+    expect(noPhone.result).toBe('caller_has_no_phone');
+    expect(noPhone.sent).toEqual([
+      [
+        'mica:client:shell:notify',
+        1,
+        { type: 'error', message: 'You are not holding a phone.', key: 'server.phone.notHeld' }
+      ],
+      ['mica:client:phone:failed', 1]
+    ]);
+    expect(noPhone.rows).toEqual([]);
+    expect(confiscated).toEqual(noPhone);
+    expect(returned.result).toBe('placed');
+  });
+
+  it('ignores an answer from a target whose phone was taken while it rang', async () => {
+    await fire(START, 1, '555-0002');
+    recordDeviceEnabled(2, 'phone', false);
+
+    await fire(ANSWER, 2);
+    expect(emitCalls().some(([event]) => event === 'mica:client:phone:accepted')).toBe(false);
+
+    recordDeviceEnabled(2, 'phone', true);
+    await fire(ANSWER, 2);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(2);
+  });
+
+  it('injects no call onto a target with no phone, or a confiscated one, and sends nothing', async () => {
+    holdsNone('CID_TARGET')();
+    expect(injectIncomingCall(2, '555-9999')).toBe('unreachable');
+    installTestPhone();
+    recordDeviceEnabled(2, 'phone', false);
+    expect(injectIncomingCall(2, '555-9999')).toBe('unreachable');
+
+    // Nothing at all, and above all nothing to the console's -1, which is every client.
+    expect(emitCalls()).toEqual([]);
+    expect(isInCall(2)).toBe(false);
+
+    recordDeviceEnabled(2, 'phone', true);
+    expect(injectIncomingCall(2, '555-9999')).toEqual(expect.any(Number));
+    expect(incomingCalls().map(([, dest]) => dest)).toEqual([2]);
+  });
+
+  it('micacall tells an admin with no phone why nothing rang, and rings nobody', async () => {
+    recordDeviceEnabled(1, 'phone', false);
+
+    await runCommand('micacall', 1);
+
+    expect(incomingCalls()).toEqual([]);
+    expect(emitCalls()).toEqual([
+      [
+        'mica:client:shell:notify',
+        1,
+        expect.objectContaining({
+          type: 'error',
+          title: 'micacall',
+          message: 'Your phone cannot ring: none in hand, or it is confiscated.'
+        })
+      ]
+    ]);
   });
 });
 
@@ -2440,7 +2825,7 @@ describe('a phone with no number row never calls as the main phone (MICA-346)', 
     }
   });
 
-  it("forwards to the target's burner number, and refuses one with no number", async () => {
+  it("forwards to the target's burner number, logs the line for the caller, and refuses one with no number", async () => {
     rows.set(BURNER_ID, '555-0777');
     registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 2 }) as const }, 'taxi');
 
@@ -2451,9 +2836,19 @@ describe('a phone with no number row never calls as the main phone (MICA-346)', 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(JSON.stringify(createCalls())).not.toContain('555-0002');
 
-    // The twin: their phone has a number, so it rings there, and the caller's row records it.
+    // The twin: their phone has a number, so it rings there. The caller's row records the line
+    // they dialled, never the number behind it (MICA-474); the target's is filed on the phone
+    // that rang, found by its number, rather than on whatever phone the citizen falls back to.
     rows.set(TARGET_PHONE_ID, '555-0888');
     bridge.held.set('555-0888', 2);
+    const byDevice = dbMock.single.getMockImplementation()!;
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (/WHERE `number` = \?/.test(sql)) {
+        const device = [...rows].find(([, number]) => number === params[0])?.[0];
+        return device ? { device_id: device } : null;
+      }
+      return byDevice(sql, params);
+    });
     (globalThis as any).emitNet.mockClear();
     dbMock.insert.mockClear();
 
@@ -2462,9 +2857,18 @@ describe('a phone with no number row never calls as the main phone (MICA-346)', 
     expect(from()).toEqual(['555-0777']);
     await fire(END, 1);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(createCalls().map(([, params]) => params)).toEqual(
-      expect.arrayContaining([expect.arrayContaining(['CID_CALLER', 'outgoing', '555-0888'])])
+    const written = createCalls().map(([, params]) => params);
+    expect(written).toHaveLength(2);
+    expect(written).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(['CID_CALLER', BURNER_ID, 'outgoing', LINE]),
+        expect.arrayContaining(['CID_TARGET', TARGET_PHONE_ID, 'missed', '555-0777'])
+      ])
     );
+    expect(JSON.stringify(written.filter((params) => params.includes('CID_CALLER')))).not.toContain(
+      '555-0888'
+    );
+    expect(JSON.stringify(emitCalls().filter(([, dest]) => dest === 1))).not.toContain('555-0888');
   });
 
   it('forwards nobody for a caller who hung up while the target was being synced', async () => {

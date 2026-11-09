@@ -71,6 +71,7 @@ import { __resetCalls, endActiveCallFor } from '../services/Phone';
 import { callAsResource } from './invokingResource';
 import { __resetLockState, isDeviceLocked } from '../lib/LockState';
 import { __resetOpenState } from '../lib/PhoneOpenState';
+import { __resetDeviceEnabledState, isDeviceConfiscated } from '../lib/DeviceEnabledState';
 import { __resetBatteryState, currentCharge } from '../services/Battery';
 // Publishes `PostToDarkChat` beside its service (MICA-254); `darkchat.test.ts` drives it.
 import '../services/DarkchatMessages';
@@ -117,6 +118,8 @@ beforeEach(() => {
   // unhook the `onLineReleased` handler `Phone.ts` installs at import.
   __resetCalls();
   releaseResource('test-resource');
+  // `SetPhoneEnabled(SRC, false)` below would otherwise leave SRC unringable (MICA-474).
+  __resetDeviceEnabledState();
   (globalThis as any).emitNet = vi.fn();
   registerPublicApi();
 });
@@ -610,6 +613,23 @@ describe('phone-state exports', () => {
     expect(globalThis.emitNet).toHaveBeenCalledWith('mica:client:shell:setEnabled', SRC, false);
   });
 
+  it('SetPhoneEnabled keeps what it said on the server, which a call reads (MICA-474)', () => {
+    publishedExport('SetPhoneEnabled')!(SRC, false);
+    expect(isDeviceConfiscated(SRC, 'phone')).toBe(true);
+    // Anything but `true` confiscates, as the push reads it.
+    publishedExport('SetPhoneEnabled')!(SRC, true);
+    expect(isDeviceConfiscated(SRC, 'phone')).toBe(false);
+    publishedExport('SetPhoneEnabled')!(SRC, 'yes');
+    expect(isDeviceConfiscated(SRC, 'phone')).toBe(true);
+
+    // A refused call keeps nothing: not connected, or not a device.
+    publishedExport('SetPhoneEnabled')!(SRC, true, 'phnoe');
+    expect(isDeviceConfiscated(SRC, 'phone')).toBe(true);
+    bridgeMock.getPlayer.mockReturnValue(undefined);
+    publishedExport('SetPhoneEnabled')!(SRC, true);
+    expect(isDeviceConfiscated(SRC, 'phone')).toBe(true);
+  });
+
   it('IsPhoneLocked defaults to unlocked for a source never heard from', () => {
     const result = publishedExport('IsPhoneLocked')!(SRC) as any;
     expect(result).toMatchObject({ ok: true, value: false });
@@ -921,6 +941,26 @@ describe('line exports (MICA-226)', () => {
       ok: false,
       reason: 'unknown_player'
     });
+  });
+
+  it('CreateCall refuses a caller whose phone SetPhoneEnabled took, as one with no phone (MICA-474)', async () => {
+    const onCall = vi.fn(() => ({ action: 'accept' }) as const);
+    (publishedExport('RegisterNumber')! as Function)('5559997', { onCall });
+    const createCall = publishedExport('CreateCall')!;
+    publishedExport('SetPhoneEnabled')!(SRC, false);
+
+    await expect(createCall(SRC, '5559997')).resolves.toMatchObject({
+      ok: false,
+      reason: 'unknown_player',
+      message: 'That player has no phone number.'
+    });
+    // Refused before anything was dialled: the line was never asked.
+    expect(onCall).not.toHaveBeenCalled();
+
+    // The twin: returned, the same call reaches the line.
+    publishedExport('SetPhoneEnabled')!(SRC, true);
+    await expect(createCall(SRC, '5559997')).resolves.toMatchObject({ ok: true });
+    expect(onCall).toHaveBeenCalledTimes(1);
   });
 
   it('CreateCall reports ok once a line accepted the call', async () => {

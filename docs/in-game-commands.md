@@ -221,9 +221,10 @@ on demand.
 It refuses `source` 0 with "Run this in game as the player you want to ring."
 The command rings _you_, so there has to be a you. With no argument it uses
 `5550100`; with a seeded character's first name it rings from that character's
-number, mirroring `micaseed text <firstname>`.
-[`docs/testing-voip.md`](testing-voip.md) maps how far this gets you without a
-second connected player, and where it honestly stops.
+number, mirroring `micaseed text <firstname>`. If your own phone is not in hand
+or has been disabled with `SetPhoneEnabled`, nothing rings and the command says
+so (MICA-474). [`docs/testing-voip.md`](testing-voip.md) maps how far this gets
+you without a second connected player, and where it honestly stops.
 
 ## Why `micaseed` writes real `players` rows
 

@@ -1484,8 +1484,9 @@ by this list until someone re-weighs it.
     player's shell still boots and loads its badges. Other writes still run for
     a phone-less player: following and reacting on Blabber, a Blabber ear,
     sharing a contact or a live location, marking a listing sold or removing it,
-    and declining an invoice. `SetPhoneEnabled(false)` is still enforced by the
-    player's own client only.
+    and declining an invoice. `SetPhoneEnabled(false)` is enforced by the server
+    for calls (ringing, placing and answering, MICA-474) and by the player's own
+    client for everything else.
   - **A stolen phone keeps receiving its owner's new rows, and nobody but the
     owner can read them.** Notifications, line texts and dropped photos for a
     character are filed on their one phone (`phoneForCitizen` in

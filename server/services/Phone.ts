@@ -41,6 +41,7 @@ import {
 import { traceOf } from '../lib/sqlErrors';
 import { who } from '../lib/who';
 import { withoutOwnerKeys } from '../lib/replyShape';
+import { isDeviceConfiscated } from '../lib/DeviceEnabledState';
 
 const EMERGENCY_NUMBER_CONVAR = 'mica_emergency_number';
 const DEFAULT_EMERGENCY_NUMBER = '911';
@@ -99,8 +100,16 @@ interface ActiveCall {
    */
   target: number | null;
   callerPhone: string;
-  /** The number the caller dialled: for a group call, the line's own number. */
+  /**
+   * The number the caller dialled: for a group call, and for a call a line forwarded, the line's
+   * own number. The caller's row records it, so it is the only number of the far end they see.
+   */
   targetPhone: string;
+  /**
+   * The target's own number, when it is not `targetPhone`: a forwarded call's (MICA-474). It only
+   * picks the phone the target's row is filed on, and never reaches the caller.
+   */
+  ringPhone?: string;
   startTime: number;
   /** Set by the `answer` handler. Null means the call never connected. */
   answeredAt: number | null;
@@ -418,8 +427,9 @@ function logCallEnd(call: ActiveCall, switched?: SwitchedSide): void {
   if (targetCitizenid) {
     void logCall(
       targetCitizenid,
-      // The winner of a group ring was rung on their own number, not the line's.
-      call.group?.answererPhone ?? call.targetPhone,
+      // The winner of a group ring, and a forward's target, were rung on their own number, not
+      // the line's.
+      call.group?.answererPhone ?? call.ringPhone ?? call.targetPhone,
       answered ? 'incoming' : 'missed',
       call.callerPhone,
       durationSec
@@ -567,9 +577,18 @@ const allocateLineSource = (): number => nextLineSource--;
  * pma-voice join on answer — with only the peer faked. `logCallEnd` already skips writing
  * a caller-side row for a source with no citizenid behind it, so ending this call logs
  * correctly on the target's side alone.
+ *
+ * Answers the call id, or why nothing rang: `'busy'` for a target already on a call, and
+ * `'unreachable'` for one with no phone they may use (`phoneUsable`, MICA-474). Never through
+ * `failUnreachable`: the caller here is `CONSOLE_CALLER_SOURCE`, and its toast and `failed` push
+ * would go to every client (MICA-277). The admin ringing themselves is told by `micacall`.
  */
-export function injectIncomingCall(targetSrc: number, callerPhone: string): number | null {
-  if (playerCalls[targetSrc]) return null;
+export function injectIncomingCall(
+  targetSrc: number,
+  callerPhone: string
+): number | 'busy' | 'unreachable' {
+  if (playerCalls[targetSrc]) return 'busy';
+  if (!phoneUsable(targetSrc)) return 'unreachable';
 
   const callId = freshCallId();
   const call: ActiveCall = {
@@ -705,13 +724,21 @@ export type PlaceCallResult =
   'placed' | 'unreachable' | 'busy' | 'caller_has_no_phone' | 'invalid_target';
 
 /**
- * Whether `src` holds a phone item, where this server requires one to (MICA-339): the count
- * `ServiceEndpoint` holds a request to, and open wherever that is — no item gate, standalone,
- * an inventory that cannot count. Any copy is the holder's own phone (MICA-438). Synchronous,
- * so the `answer` handler can ask it without giving up the ordering that keeps two answers from
- * both winning a group call.
+ * Whether `src` has a phone they may use: one in hand, where this server requires an item
+ * (MICA-339), and not confiscated by the server's `SetPhoneEnabled` (MICA-474). The count is
+ * the one `ServiceEndpoint` holds a request to, and open wherever that is — no item gate,
+ * standalone, an inventory that cannot count. Any copy is the holder's own phone (MICA-438).
+ *
+ * Asked of the target of every ring (`placeCall`, `ringGroup`, `injectIncomingCall`) and of
+ * whoever answers. A ring fails like an unreachable number; it used to go out, and the client
+ * refused to raise the phone (MICA-467) while the caller heard it ring on.
+ *
+ * Synchronous, so a ring site asks it after its last await, with nothing between the answer and
+ * the ring, and the `answer` handler asks it without giving up the ordering that keeps two
+ * answers from both winning a group call.
  */
-const holdsPhone = (src: number): boolean => {
+const phoneUsable = (src: number): boolean => {
+  if (isDeviceConfiscated(src, 'phone')) return false;
   const player = FrameworkBridge.getPlayer(src);
   if (!player) return false;
   try {
@@ -733,12 +760,18 @@ type NumberInHand =
   | { kind: 'number'; number: string; citizenid: string }
   /** A phone in hand with no number of its own (MICA-346). */
   | { kind: 'noNumber' }
-  /** No phone in hand: the resolver's own refusal, which is the phone's `notHeld`. */
+  /**
+   * No phone in hand: the resolver's own refusal, which is the phone's `notHeld`. A phone
+   * `SetPhoneEnabled` confiscated is refused the same way (MICA-474).
+   */
   | { kind: 'notHeld'; message: string }
   /** A resolve or a read that threw, and is in the log. */
   | { kind: 'failed' }
   /** Nobody to answer for: no character, or a different one by the time it was read. */
   | { kind: 'switched' };
+
+/** `services/Devices.ts`'s refusal for a player holding no phone, word for word. */
+const PHONE_NOT_HELD = 'You are not holding a phone.';
 
 /**
  * The number of the phone in `src`'s hand (MICA-339, MICA-346). It is what a call from them
@@ -778,6 +811,10 @@ async function numberInHandOf(src: number): Promise<NumberInHand> {
     return { kind: 'failed' };
   }
   if (FrameworkBridge.getPlayer(src)?.citizenid !== player.citizenid) return { kind: 'switched' };
+  // Confiscated by `SetPhoneEnabled` (MICA-474): refused as a phone not in hand is, in the same
+  // words. Asked after the reads, not before them, so a forward to a confiscated player costs
+  // what one to a player who blocked the caller does.
+  if (isDeviceConfiscated(src, 'phone')) return { kind: 'notHeld', message: PHONE_NOT_HELD };
   return number ? { kind: 'number', number, citizenid: player.citizenid } : { kind: 'noNumber' };
 }
 
@@ -827,6 +864,37 @@ export async function placeCall(
   // reaching somebody else's lookup.
   const targetPhone = phoneNumberFrom(rawTarget);
   if (!targetPhone) return 'invalid_target';
+  return placeCallTo(src, { number: targetPhone }, dialled);
+}
+
+/**
+ * Who a call is for: a number the caller dialled, or the player a line forwarded it to
+ * (MICA-474). A forward rings the forward target's own number, or nobody when they have no
+ * phone to ring on (`null`), and shows the caller only `forwardedFrom`, the line's number.
+ */
+type CallTarget = { number: string } | { number: string | null; forwardedFrom: string };
+
+/**
+ * `placeCall` past its input check, and a line's forward, which re-enters here (MICA-474).
+ *
+ * `targetPhone` is what the caller dialled, and the only number of the far end they are ever
+ * told: in a refusal, in their row, and as the call's own `targetPhone`. For a forward it is the
+ * line's, whether the forward target has no phone, blocked the caller, or had it confiscated —
+ * three refusals the caller must not tell apart (MICA-64), and a number of the forward target's
+ * that is theirs, not the caller's to learn. A forward with nobody to ring still takes every
+ * await below. Only the read of the forward target's own number, before this, can differ: a
+ * player holding no phone is refused by the item count, without the number read the others make.
+ */
+async function placeCallTo(
+  src: number,
+  target: CallTarget,
+  dialled: boolean
+): Promise<PlaceCallResult> {
+  const forwardedFrom = 'forwardedFrom' in target ? target.forwardedFrom : undefined;
+  const forwarded = forwardedFrom !== undefined;
+  const ringPhone = target.number;
+  // A dialled number is always a number; only a forward can have nobody to ring.
+  const targetPhone = forwardedFrom ?? ringPhone ?? '';
 
   const caller = await numberInHandOf(src);
   if (caller.kind !== 'number') {
@@ -837,12 +905,13 @@ export async function placeCall(
 
   // A character always wins over a registered line, so a number the framework later
   // issues to a real player stops reaching the script rather than intercepting them.
-  const targetPlayer = FrameworkBridge.getPlayerByPhone(targetPhone);
+  const targetPlayer = ringPhone ? FrameworkBridge.getPlayerByPhone(ringPhone) : null;
   const targetSrc = targetPlayer?.source || null;
   // A number nobody answers for may be a job line the owner has just `set` (MICA-307): look
   // at the convar once more before the lookup, so the first call after the change reaches it.
-  if (!targetSrc && !lookupLine(targetPhone)) refreshJobLines();
-  const line = targetSrc ? undefined : lookupLine(targetPhone);
+  // A forward is never a line's: it was one, and this is where it sent the call.
+  if (!forwarded && !targetSrc && !lookupLine(targetPhone)) refreshJobLines();
+  const line = forwarded || targetSrc ? undefined : lookupLine(targetPhone);
 
   /**
    * A blocked call fails exactly like an unreachable one (MICA-64) — same message, same
@@ -874,7 +943,11 @@ export async function placeCall(
    * signal has never refused one on this file's own evidence — so "connects regardless of
    * them" already holds for every call, unblockable or not.
    */
-  const unblockable = targetPhone === emergencyNumber();
+  // The number rung, or the number the caller dialled: a line on the emergency number that
+  // forwards to a dispatcher is still the emergency number to its caller, and a dispatcher who
+  // blocked them must not refuse the call (MICA-474, the ruling above).
+  const emergency = emergencyNumber();
+  const unblockable = ringPhone === emergency || forwardedFrom === emergency;
 
   const blocked = !unblockable && (await isBlocked(targetPlayer?.citizenid ?? '', callerPhone));
 
@@ -894,7 +967,21 @@ export async function placeCall(
   // One word for both, deliberately — see `PlaceCallResult`. The `isBlocked` await above
   // has already happened on every path, so the return value adds no timing to what the
   // caller's phone was told.
-  if (!targetSrc || blocked) {
+  //
+  // A target with no phone they may use is the third (MICA-474): none in hand, or confiscated.
+  // Asked here, after the last await, so nothing runs between the answer and the ring; and
+  // before the busy checks, so "Line busy" never tells a caller that somebody holds the number.
+  // The emergency number is not exempt: its answer would be refused (`phoneUsable`) anyway.
+  if (!targetSrc || blocked || !phoneUsable(targetSrc)) {
+    failUnreachable(src, callerPhone, targetPhone);
+    return 'unreachable';
+  }
+
+  // A forward's target already on a call, or the caller themselves, fails as every other forward
+  // failure does (MICA-474). "Line busy" would tell any caller whether the staff behind a line
+  // are on duty, which `ringGroup` declines to say for the same reason. A number dialled
+  // directly still says busy: its caller already knows whose number it is.
+  if (forwarded && (targetSrc === src || playerCalls[targetSrc] || playerCalls[src])) {
     failUnreachable(src, callerPhone, targetPhone);
     return 'unreachable';
   }
@@ -918,6 +1005,8 @@ export async function placeCall(
     target: targetSrc,
     callerPhone,
     targetPhone,
+    // Rung by it, so a forward's own number is here; the caller's row records `targetPhone`.
+    ...(forwarded && ringPhone ? { ringPhone } : {}),
     startTime: Date.now(),
     answeredAt: null
   };
@@ -984,33 +1073,41 @@ async function connectLineCall(
     return 'unreachable';
   }
 
-  // A forward re-dials by the target's own number, which cannot land back here: a number a
+  // A forward re-dials the target by their own number, which cannot land back here: a number a
   // character holds is refused at registration and loses to the player lookup on every call,
-  // so `placeCall` resolves it down the player path.
+  // so `placeCallTo` resolves it down the player path.
   //
-  // Several things make that re-dial reach nothing, and none is hypothetical: a `source`
+  // Several things leave that re-dial nobody to ring, and none is hypothetical: a `source`
   // nobody is connected on; a connected player whose `phone` is null, which is an ordinary ESX
-  // shape rather than a broken one; and a player holding no phone, or a phone with no number
-  // of its own (MICA-346). Each arrives as a number `phoneNumberFrom` refuses, and
-  // `placeCall`'s refusals for a bad number are silent by design. So its answer is checked
-  // rather than discarded: a silent refusal means nothing was emitted, and the caller — whose
-  // reservation is already released — would otherwise sit on the dialling screen with no
-  // toast and no call-log row until they hung up themselves. The re-dial's own refusals
-  // (`'unreachable'`, `'busy'`) have already told the caller and pass through.
+  // shape rather than a broken one; a player holding no phone, or a confiscated one (MICA-474);
+  // and a phone with no number of its own (MICA-346). Each re-dials nobody, and fails there as a
+  // block or a confiscation does (MICA-474): after the same awaits, with the line's number in the
+  // caller's row and never the forward target's. Before MICA-474 it failed here, early and on the
+  // line's number, while a block failed in the re-dial on the target's own number — so the
+  // caller's Recents told the cases apart, and named the number behind the line.
   if (verdict.action === 'forward') {
-    // The number of the phone in their hand, which is what the caller's log records as the
-    // number called. The framework's number named their main phone for a player who had just
-    // picked up a burner (MICA-346).
+    // The number of the phone in their hand, which is the phone the forward rings and their row
+    // is filed on. The framework's number named their main phone for a player who had just
+    // picked up a burner (MICA-346). It never reaches the caller.
     const forwardTo = await numberInHandOf(verdict.source);
     // The caller hung up, dropped or switched character while that was read: a switch releases
     // the call too (MICA-336). Either way there is nobody left to forward.
     if (playerCalls[src] !== callId) return 'placed';
     const dialler = FrameworkBridge.getPlayer(src)?.citizenid;
-    // Released before re-entering, or `placeCall`'s own busy check would refuse the caller
+    // Released before re-entering, or `placeCallTo`'s own busy check would refuse the caller
     // the call this line just asked for.
     delete playerCalls[src];
-    const redial = await placeCall(src, forwardTo.kind === 'number' ? forwardTo.number : '');
-    if (redial === 'invalid_target' || redial === 'caller_has_no_phone') {
+    const redial = await placeCallTo(
+      src,
+      {
+        number: forwardTo.kind === 'number' ? forwardTo.number : null,
+        forwardedFrom: targetPhone
+      },
+      false
+    );
+    // The caller's own phone went from under the re-dial; it is told nothing there (`dialled`
+    // is false), so it is told here.
+    if (redial === 'caller_has_no_phone') {
       // Switched out during the re-dial: the next character on the source gets no toast and
       // no call-log row for a call that was not theirs, only the reset its phone still needs.
       if (FrameworkBridge.getPlayer(src)?.citizenid !== dialler) {
@@ -1069,10 +1166,11 @@ async function connectLineCall(
  * still `callId`. Candidates are judged here, after the await, rather than by the handler: one
  * who started a call of their own inside the handler's window is already in `playerCalls` and
  * is skipped like any other busy player. The caller is never their own candidate, and a source
- * with no phone number cannot be rung. Only then is the list cut to `max` (never more than
- * `RING_MAX`), in the order given, so free staff are never hidden behind busy ones. Nobody left
- * fails exactly like an unreachable number (MICA-64's shape), with no new word for "everybody
- * was busy" — a "Line busy" here would tell any caller whether staff are on duty.
+ * with no phone number, or no phone they may use (`phoneUsable`), cannot be rung. Only then is
+ * the list cut to `max` (never more than `RING_MAX`), in the order given, so free staff are never
+ * hidden behind busy ones. Nobody left fails exactly like an unreachable number (MICA-64's
+ * shape), with no new word for "everybody was busy" — a "Line busy" here would tell any caller
+ * whether staff are on duty.
  *
  * The caller is told nothing until somebody answers, as when ringing one player.
  */
@@ -1095,7 +1193,7 @@ function ringGroup(
     // picks the phone the winner's incoming row is filed on. The caller's own row records
     // the line's number (MICA-346). An await here would split this check from the claim below.
     const phone = FrameworkBridge.getPlayerPhone(candidate);
-    if (!phone || !holdsPhone(candidate)) continue;
+    if (!phone || !phoneUsable(candidate)) continue;
     ringing.set(candidate, phone);
   }
 
@@ -1178,9 +1276,10 @@ onNet('mica:server:phone:answer', (...args: unknown[]) => {
   const src = source;
   const call = activeCalls[playerCalls[src]];
   if (!call) return;
-  // A call needs a phone at both ends (MICA-339). Ignored, like any answer that is not theirs
-  // to give: the call rings on until the caller or the timeout ends it.
-  if (!holdsPhone(src)) return;
+  // A call needs a phone at both ends (MICA-339), and not a confiscated one (MICA-474). Ignored,
+  // like any answer that is not theirs to give: the call rings on until the caller or the
+  // timeout ends it.
+  if (!phoneUsable(src)) return;
 
   if (isRinging(call)) {
     if (!call.group.ringing.has(src)) return;
@@ -1335,8 +1434,13 @@ RegisterCommand(
       : (phoneNumberFrom(arg || DEFAULT_TEST_NUMBER) ?? DEFAULT_TEST_NUMBER);
 
     const callId = injectIncomingCall(source, callerPhone);
-    if (callId === null) {
+    if (callId === 'busy') {
       respondCall(source, "You're already on a call.", 'error');
+      return;
+    }
+    if (callId === 'unreachable') {
+      // The admin is the target, so naming the reason tells nobody anything (MICA-64).
+      respondCall(source, 'Your phone cannot ring: none in hand, or it is confiscated.', 'error');
       return;
     }
     // log-identity-ok: a dev command's seeded test number, echoed to its admin

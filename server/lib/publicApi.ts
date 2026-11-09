@@ -27,6 +27,7 @@ import { isAppDisabled } from './ownerConfig';
 import * as PlayerDirectory from './PlayerDirectory';
 import { isDeviceOpen } from './PhoneOpenState';
 import { isDeviceLocked, setDeviceLocked } from './LockState';
+import { recordDeviceEnabled } from './DeviceEnabledState';
 import { DEFAULT_DEVICE, DEVICES, isDeviceId, type DeviceId } from '@mica/shared/devices';
 import { currentEmergencyNumber, endLineCall, isInCall, placeCall } from '../services/Phone';
 import { DEVICE_CONVARS, holdsPhoneItem, isDeviceEnabled } from './deviceItem';
@@ -841,6 +842,9 @@ export function registerPublicApi(): void {
    * Disabling while it is open force-closes it — see `client/services/Shell.ts`'s
    * `setEnabled` handler, which reads a bare boolean as the phone and `{ device, enabled }`
    * as the device named. The phone keeps the bare boolean it has always been sent.
+   *
+   * Also kept on the server (`DeviceEnabledState`, MICA-474): a confiscated phone is not rung,
+   * and fails its caller as an unreachable number does.
    */
   publish(
     'SetPhoneEnabled',
@@ -850,6 +854,7 @@ export function registerPublicApi(): void {
       if (typeof source !== 'number' || !isConnected(source)) {
         return fail('unknown_player', 'That player is not connected.');
       }
+      recordDeviceEnabled(source, device, enabled === true);
       emitNet(
         'mica:client:shell:setEnabled',
         source,

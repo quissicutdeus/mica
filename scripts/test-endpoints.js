@@ -91,6 +91,7 @@ const FLOW_CHECKS = {
   reconnect: { standalone: 8, qb: 8 },
   createCall: { standalone: 25, qb: 25 },
   micacall: { standalone: 15, qb: 15 },
+  unreachableTarget: { standalone: 21, qb: 27 },
   lineCall: { standalone: 22, qb: 22 },
   lineText: { standalone: 13, qb: 13 },
   sendMessage: { standalone: 12, qb: 12 },
@@ -1428,6 +1429,142 @@ const runMicacall = async (shape, live) => {
     [to(idle, NOTIFY, B).map((m) => m.args[0].type), idle.filter((m) => m.event === ENDED)],
     [['error'], []]
   );
+};
+
+/**
+ * MICA-474: a phone that may not be used is not rung, at any of the places a call rings — a
+ * dial, a line's group ring, a line's forward, and `micacall`. The server keeps what its
+ * `SetPhoneEnabled` said, and on qb counts the phone item, at the ring; the client's refusal to
+ * raise the phone (MICA-467) is not what stops it. A refused dial shows its caller exactly what a
+ * number nobody holds shows (MICA-64), a forward never names the player behind the line, and
+ * each refusal has a positive twin that rings.
+ */
+const runUnreachableTarget = async (shape, numbers, live) => {
+  const { kind } = shape;
+  const { A, B } = live;
+  const RINGS_B = '5550474';
+  const FORWARDS_B = '5550475';
+  const setEnabled = (src, enabled) =>
+    shape.invoke('fake_dispatch', 'SetPhoneEnabled', src, enabled);
+  /** A dials, and the shape of what came back to A. */
+  const dial = async (number) => {
+    const sent = (await shape.fire(A, 'mica:server:phone:start', number)).sent;
+    return {
+      sent,
+      shown: [events(sent), to(sent, NOTIFY, A).map((m) => m.args[0].key)],
+      rung: to(sent, INCOMING, B).length
+    };
+  };
+  const lastRowOfA = () => lastCallRow(shape, PEOPLE[1]);
+  const nowhere = await dial('5559999');
+
+  step(`${kind}: two lines reach 2, one by ringing and one by forwarding`);
+  const lines = [
+    [RINGS_B, { action: 'ring', sources: [B] }],
+    [FORWARDS_B, { action: 'forward', source: B }]
+  ];
+  for (const [number, verdict] of lines) {
+    check(
+      `${kind}: ${number} is registered`,
+      await shape.runtime.callExport('fake_dispatch', 'RegisterNumber', number, {
+        onCall: () => ({ ...verdict })
+      }),
+      { ok: true }
+    );
+  }
+
+  try {
+    step(`${kind}: a resource confiscates 2's phone, and 1 calls 2`);
+    const taken = await setEnabled(B, false);
+    check(`${kind}: SetPhoneEnabled answers ok`, taken.result, { ok: true });
+    const toTaken = await dial(numbers[2]);
+    check(`${kind}: 2 is not rung`, toTaken.rung, 0);
+    check(
+      `${kind}: the caller sees what a number nobody holds shows`,
+      toTaken.shown,
+      nowhere.shown
+    );
+    check(`${kind}: with 'Number unavailable'`, toTaken.shown[1], [
+      'server.phone.numberUnavailable'
+    ]);
+    check(`${kind}: and logs an outgoing row to the number dialled`, await lastRowOfA(), {
+      kind: 'outgoing',
+      number: numbers[2]
+    });
+    check(
+      `${kind}: and neither is left in a call`,
+      [await isInCall(shape, A), await isInCall(shape, B)],
+      [false, false]
+    );
+
+    step(`${kind}: 1 calls each line, and neither rings 2's confiscated phone`);
+    const toLine = await dial(RINGS_B);
+    check(`${kind}: 2 is not rung by the ringing line`, toLine.rung, 0);
+    check(`${kind}: and the caller sees what nobody shows`, toLine.shown, nowhere.shown);
+    const toForward = await dial(FORWARDS_B);
+    check(`${kind}: 2 is not rung by the forwarding line`, toForward.rung, 0);
+    check(`${kind}: and the caller sees what nobody shows`, toForward.shown, nowhere.shown);
+    check(`${kind}: and logs the line's number, never 2's`, await lastRowOfA(), {
+      kind: 'outgoing',
+      number: FORWARDS_B
+    });
+
+    step(`${kind}: 2, an admin, runs micacall with the phone confiscated`);
+    const micacall = await shape.raise(() => shape.runtime.command(B, 'micacall', []));
+    check(`${kind}: 2 is not rung`, to(micacall, INCOMING, B).length, 0);
+    check(
+      `${kind}: and is told why, as an error`,
+      to(micacall, NOTIFY, B).map((m) => m.args[0].type),
+      ['error']
+    );
+    check(`${kind}: and nothing is addressed to -1`, toNobody(micacall), []);
+
+    step(`${kind}: the phone is returned, and every path rings 2 again`);
+    check(`${kind}: SetPhoneEnabled answers ok`, (await setEnabled(B, true)).result, { ok: true });
+    check(`${kind}: 1's call rings 2`, (await dial(numbers[2])).rung, 1);
+    await shape.fire(A, 'mica:server:phone:end');
+    check(`${kind}: the ringing line rings 2`, (await dial(RINGS_B)).rung, 1);
+    await shape.fire(A, 'mica:server:phone:end');
+    check(`${kind}: the forwarding line rings 2`, (await dial(FORWARDS_B)).rung, 1);
+    await shape.fire(A, 'mica:server:phone:end');
+    check(`${kind}: and 1 logs the forwarded call to the line, not to 2`, await lastRowOfA(), {
+      kind: 'outgoing',
+      number: FORWARDS_B
+    });
+
+    if (shape.qb) {
+      step(`${kind}: a phone item is required, 1 holds one and 2 holds none, and 1 calls 2`);
+      shape.runtime.setConvar('mica_phone_item', 'probe_phone');
+      shape.qb.give(PEOPLE[1], 'probe_phone', 1);
+      try {
+        const toEmpty = await dial(numbers[2]);
+        check(`${kind}: 2 is not rung`, toEmpty.rung, 0);
+        check(`${kind}: the caller sees what nobody shows`, toEmpty.shown, nowhere.shown);
+        const forwardToEmpty = await dial(FORWARDS_B);
+        check(`${kind}: 2 is not rung through the forward`, forwardToEmpty.rung, 0);
+        check(
+          `${kind}: and the caller sees what nobody shows`,
+          forwardToEmpty.shown,
+          nowhere.shown
+        );
+        check(`${kind}: and logs the line's number, as for a confiscation`, await lastRowOfA(), {
+          kind: 'outgoing',
+          number: FORWARDS_B
+        });
+        shape.qb.give(PEOPLE[2], 'probe_phone', 1);
+        check(`${kind}: once 2 holds one, 2 is rung`, (await dial(numbers[2])).rung, 1);
+        await shape.fire(A, 'mica:server:phone:end');
+      } finally {
+        shape.qb.give(PEOPLE[1], 'probe_phone', 0);
+        shape.qb.give(PEOPLE[2], 'probe_phone', 0);
+        shape.runtime.setConvar('mica_phone_item', undefined);
+      }
+    }
+  } finally {
+    for (const [number] of lines) {
+      await shape.runtime.callExport('fake_dispatch', 'UnregisterNumber', number);
+    }
+  }
 };
 
 const CAB = { number: '5550777', label: 'Downtown Cab' };
@@ -2868,6 +3005,7 @@ const runShape = async (db, kind) => {
     const live = { A: 5, B: 2, D: 4 };
     await flow(shape, 'createCall', () => runCreateCall(shape, numbers, live));
     await flow(shape, 'micacall', () => runMicacall(shape, live));
+    await flow(shape, 'unreachableTarget', () => runUnreachableTarget(shape, numbers, live));
     await flow(shape, 'lineCall', () => runLineCall(shape, numbers, live));
     await flow(shape, 'lineText', () => runLineText(shape, numbers, live));
     await flow(shape, 'sendMessage', () => runSendMessage(shape, numbers, live));

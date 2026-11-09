@@ -1644,6 +1644,22 @@ device closed again, so `IsPhoneOpen` answers `false` rather than staying
 `true`. An incoming call no longer raises a phone that is disabled, confiscated
 or not held: the caller hears it ring out. Nothing to do on the server.
 
+**A phone that is disabled or not in hand can no longer ring, call or answer
+(MICA-474).** `SetPhoneEnabled(source, false)` used to be a push to the player's
+own client and nothing more, so the server rang a confiscated phone and let it
+dial. The server now keeps that state, until the player disconnects, and treats
+a disabled phone exactly like no phone in hand. A caller ringing it hears the
+same unreachable number a block gives, it cannot place or answer a call, and a
+job line's group ring skips it. `micacall` says why nothing rang. **A forwarded
+call now shows the line's number in the caller's Recents, not the number of the
+player it reached.** That stops the caller learning who is behind a line, and
+makes a forward to a player who blocked them, has no phone, has it disabled or
+is already on a call fail identically, as an unreachable number. `CreateCall` to
+a forwarding line whose player is busy now answers `unknown_player` rather than
+`not_ready`. A line on the emergency number that forwards to a player now
+connects even if that player blocked the caller, as the emergency number always
+should. Nothing to do on the server.
+
 **A phone or tablet whose screen never loads gives the player their controls
 back (MICA-475).** If the page has not shown the device within 15 seconds of it
 opening, because it crashed or failed to load, the device is put down and the

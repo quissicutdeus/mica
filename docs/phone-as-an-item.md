@@ -217,10 +217,16 @@ privileges revoked" state where the item stays in the pocket. The two are
 independent by design: a phone a job has confiscated stays confiscated whatever
 the inventory says, and the other way round.
 
-`SetPhoneEnabled` is **not persisted**. It is a push to the client, and a player
-who reconnects comes back enabled, the same as `LockPhone`. A script that needs
-the state to survive a relog or a restart reapplies it from its own record on
-the framework's player-loaded event, which is how every other resource on the
+The server enforces it too (MICA-474). It keeps the state per player and device
+(`server/lib/DeviceEnabledState.ts`), and a disabled phone is treated exactly
+like no phone in hand: it is never rung (a caller hears an unreachable number,
+the same as a block), it cannot place a call, and it cannot answer one.
+
+`SetPhoneEnabled` is **not persisted**. The server forgets it when the player
+disconnects, and a player who reconnects comes back enabled, the same as
+`LockPhone`. A character switch keeps it, as the client does. A script that
+needs the state to survive a relog or a restart reapplies it from its own record
+on the framework's player-loaded event, which is how every other resource on the
 server already treats `SetPhoneEnabled`-shaped state.
 
 **Returning the phone** is moving a phone item back, then
