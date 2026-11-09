@@ -422,16 +422,26 @@ test.describe('Notification shade gestures', () => {
     const box = await statusBar.boundingBox();
     if (!box) throw new Error('status bar not on screen');
 
-    // Well under half of SHADE_DRAG_REVEAL_DISTANCE, and slow (8 steps over a short
-    // distance) so neither the progress nor the velocity commit heuristic fires.
-    await dragVertical(
-      page,
+    // Well under half of SHADE_DRAG_REVEAL_DISTANCE, so the progress heuristic cannot
+    // commit. The velocity heuristic is the one that raced (MICA-476): it reads
+    // `e.timeStamp` over a 50ms window, and `dragVertical`'s 8 steps only read as "slow"
+    // while each CDP round trip takes real time. Under load the moves arrive compressed,
+    // the same 0.15 travel reads as >1.2 design-px/ms, and the shade legitimately opens.
+    // A single move records one velocity sample, and `velocityPerMs()` is 0 below two, so
+    // this release can never read as a flick whatever the machine is doing.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
       box.x + box.width / 2,
-      box.y + box.height / 2,
-      scale * SHADE_DRAG_REVEAL_DISTANCE * 0.15
+      box.y + box.height / 2 + scale * SHADE_DRAG_REVEAL_DISTANCE * 0.15
     );
+    // The shade renders while the finger is down — this proves the gesture armed, so the
+    // closed state below is a spring-back and not a drag that never started.
+    const shade = page.getByRole('dialog', { name: 'Notification Shade' });
+    await expect(shade).toBeVisible();
+    await page.mouse.up();
 
-    await expect(page.getByRole('dialog', { name: 'Notification Shade' })).toBeHidden();
+    await expect(shade).toBeHidden();
   });
 
   test('flicking up from the shade body past the threshold closes the shade', async ({ page }) => {
