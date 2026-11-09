@@ -559,6 +559,21 @@ export const runAccessMatrix = async (shape, { check, step }) => {
     shape.runtime.placePlayer(person.src, [100 + person.src, 200, 30]);
   }
   shape.runtime.grantAce(P.admin.src, 'mica.admin');
+  /*
+   * Battery's tick, quiesced. It runs on a 5 s wall-clock interval and writes `mica_battery` for
+   * every connected player — the flows' players as much as these four — whatever the matrix is
+   * doing: once a minute a drain moves each held charge a whole percent, and a tablet in use with
+   * no charge held is loaded and written back at 100. Either write landing between a case's two
+   * snapshots reads as the attack changing somebody else's row: a standalone run failed
+   * `messages:react.message_id` on two such inserts for the flows' players, and a slow qb run
+   * on a drain of every player's row at once. Cleared here, the drain loop has no charge to
+   * tick and the loader no source to load, so nothing writes on the timer, and the diff stays
+   * whole: a battery row an attack writes is still caught. Settled before the ranges are reset,
+   * so a save already in flight lands first. Batteries stay unloaded for the rest of the shape,
+   * until a connect or a character switch loads one again.
+   */
+  b.__resetBatteryState();
+  await shape.settle();
   const phoneOf = (who) => shape.numberOf(P[who]);
 
   const call = async (who, service, action, data) => {

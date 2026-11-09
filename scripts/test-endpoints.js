@@ -170,7 +170,9 @@ const buildBundle = async () => {
         `export { dispatcherFor } from '${root}/server/lib/ServiceEndpoint.ts';`,
         `export { contractFor } from '${root}/shared/contract.ts';`,
         `export { shapeOf, synthesize } from '${root}/server/__tests__/schemaShapes.ts';`,
-        `export { __resetRateLimits } from '${root}/server/lib/rateLimit.ts';`
+        `export { __resetRateLimits } from '${root}/server/lib/rateLimit.ts';`,
+        // So the matrix can quiesce Battery's wall-clock tick before it diffs the tables.
+        `export { __resetBatteryState } from '${root}/server/services/Battery.ts';`
       ].join('\n'),
       resolveDir: root,
       loader: 'ts'

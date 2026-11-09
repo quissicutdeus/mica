@@ -84,3 +84,5 @@ after the link — `lane-protocol` has why.
 - [A taint scan counts Repository.delete and guard verdicts as state](taint-scan-delete-is-a-repository.md)
 - [A whole-database diff flakes on second-resolution timestamps](whole-db-diff-flakes-on-timestamps.md)
 - [A dropped guard can fail closed downstream](a-dropped-guard-can-fail-closed.md)
+- [A snapshot of `emitNet.mock.calls` keeps growing](mock-calls-is-a-live-array.md)
+- [The endpoint harness runs every server timer on the wall clock](harness-timers-are-wall-clock.md)
