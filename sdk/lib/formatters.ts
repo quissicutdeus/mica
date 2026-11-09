@@ -2,7 +2,6 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { get } from 'svelte/store';
 import { is24HourNow } from '../host/seam/clockPreference';
 import { locale, t as translator, type Translate } from '../i18n';
 import '../ui/messages';
@@ -11,18 +10,81 @@ import '../ui/messages';
  * Every `Intl` call below formats under the phone's locale (MICA-61), read at call time so
  * a component that re-renders on a locale change re-formats too. Before this, currency was
  * pinned to `en-US` and dates fell back to whatever the CEF process reported.
+ *
+ * **Read through a standing subscription, not `get()` per call (MICA-453).** `get()` on a
+ * store subscribes and unsubscribes every time — and on `t`, a `derived` with nobody else
+ * listening, rebuilds the translator too — once per row of every list that formats a
+ * time. The subscription is taken on first use, never at module scope, and a store pushes
+ * to its subscribers synchronously inside `set()`, so the value read here is the same one
+ * `get()` would have returned at that instant: a locale switch is seen by the very next
+ * call, as before.
  */
-const activeLocale = (): string => get(locale);
+let currentLocale: string | undefined;
+const activeLocale = (): string => {
+  if (currentLocale === undefined) {
+    locale.subscribe((value) => (currentLocale = value));
+  }
+  return currentLocale as string;
+};
+
+let currentTranslate: Translate | undefined;
+const activeTranslate = (): Translate => {
+  if (currentTranslate === undefined) {
+    translator.subscribe((value) => (currentTranslate = value));
+  }
+  return currentTranslate as Translate;
+};
+
+/**
+ * One `Intl` formatter per (locale, option set), built on first use (MICA-453).
+ *
+ * `toLocale*String(locale, options)` constructs a fresh `Intl.DateTimeFormat` on every call,
+ * which is the expensive half of formatting — ~67 ms of a 50-row Messages thread open at 4x
+ * CPU. The cache is keyed by the locale tag as well as the option set, so a locale switch
+ * reaches a different formatter rather than a stale one. Output is unchanged: for each
+ * option set below, `toLocale{Date,Time}String` and `Intl.DateTimeFormat#format` resolve the
+ * same options (none of these sets triggers the date/time defaulting that differs between
+ * them), and the 24-hour path in `formatTime` builds its string by hand and never reaches
+ * here.
+ */
+const DATE_OPTIONS = {
+  date: undefined,
+  time: { hour: 'numeric', minute: '2-digit' },
+  monthDay: { month: 'short', day: 'numeric' },
+  monthDayYear: { month: 'short', day: 'numeric', year: 'numeric' }
+} as const satisfies Record<string, Intl.DateTimeFormatOptions | undefined>;
+
+type DateOptionSet = keyof typeof DATE_OPTIONS;
+
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+const dateFormat = (set: DateOptionSet): Intl.DateTimeFormat => {
+  const active = activeLocale();
+  const key = `${active}|${set}`;
+  let format = dateFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(active, DATE_OPTIONS[set]);
+    dateFormats.set(key, format);
+  }
+  return format;
+};
+
+const currencyFormats = new Map<string, Intl.NumberFormat>();
 
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat(activeLocale(), {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(amount);
+  const active = activeLocale();
+  let format = currencyFormats.get(active);
+  if (!format) {
+    format = new Intl.NumberFormat(active, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    currencyFormats.set(active, format);
+  }
+  return format.format(amount);
 }
 
 export function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp * 1000).toLocaleDateString(activeLocale());
+  return dateFormat('date').format(new Date(timestamp * 1000));
 }
 
 export function formatTime(isoString?: string | number | Date, override24Hour?: boolean): string {
@@ -38,10 +100,7 @@ export function formatTime(isoString?: string | number | Date, override24Hour?: 
     return `${hours}:${minutes}`;
   }
 
-  return date.toLocaleTimeString(activeLocale(), {
-    hour: 'numeric',
-    minute: '2-digit'
-  });
+  return dateFormat('time').format(date);
 }
 
 /**
@@ -63,7 +122,7 @@ export function formatRelativeTime(dateStr: Date | string, t?: Translate): strin
   if (!dateStr) return '';
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return '';
-  const translate = t ?? get(translator);
+  const translate = t ?? activeTranslate();
   const diffMs = Date.now() - date.getTime();
   const minutes = Math.floor(diffMs / (1000 * 60));
   const hours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -73,18 +132,14 @@ export function formatRelativeTime(dateStr: Date | string, t?: Translate): strin
   if (minutes < 60) return translate('ui.minutesAgo', { minutes });
   if (hours < 24) return translate('ui.hoursAgo', { hours });
   if (days === 1) return translate('ui.yesterday');
-  return date.toLocaleDateString(activeLocale(), { month: 'short', day: 'numeric' });
+  return dateFormat('monthDay').format(date);
 }
 
 export function formatDate(isoString?: string | number | Date): string {
   if (!isoString) return '';
   const date = isoString instanceof Date ? isoString : new Date(isoString);
   if (isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(activeLocale(), {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
+  return dateFormat('monthDayYear').format(date);
 }
 
 /**

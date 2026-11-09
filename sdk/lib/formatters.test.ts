@@ -15,6 +15,7 @@ import { get } from 'svelte/store';
 import { locale, t } from '../i18n';
 import {
   formatCurrency,
+  formatDate,
   formatDuration,
   formatTimestamp,
   formatTime,
@@ -104,6 +105,43 @@ describe('formatters utility module', () => {
         expect(formatRelativeTime(fiveMinsAgo, german)).toBe('vor 5 Min.');
       });
     });
+  });
+});
+
+describe('one cached Intl formatter per locale and option set (MICA-453)', () => {
+  afterEach(() => locale.set('en'));
+
+  const at = new Date('2026-07-24T14:30:00Z');
+
+  it('formats exactly as toLocale*String did, and follows a locale switch both ways', () => {
+    for (const tag of ['en', 'de', 'ja', 'en']) {
+      locale.set(tag);
+      expect(formatTime(at, false)).toBe(
+        at.toLocaleTimeString(tag, { hour: 'numeric', minute: '2-digit' })
+      );
+      expect(formatDate(at)).toBe(
+        at.toLocaleDateString(tag, { month: 'short', day: 'numeric', year: 'numeric' })
+      );
+      expect(formatTimestamp(at.getTime() / 1000)).toBe(at.toLocaleDateString(tag));
+      const older = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+      expect(formatRelativeTime(older)).toBe(
+        older.toLocaleDateString(tag, { month: 'short', day: 'numeric' })
+      );
+    }
+    locale.set('en');
+    const english = formatDate(at);
+    locale.set('de');
+    expect(formatDate(at)).not.toBe(english);
+  });
+
+  it('picks the 24-hour form per call, whichever form ran before it', () => {
+    const hhmm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+    const twelve = at.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' });
+    expect(formatTime(at, false)).toBe(twelve);
+    expect(formatTime(at, true)).toBe(hhmm);
+    expect(formatTime(at, false)).toBe(twelve);
+    locale.set('de');
+    expect(formatTime(at, true)).toBe(hhmm);
   });
 });
 
