@@ -19,6 +19,15 @@ add-on eviction. Neither was the shell. A heap snapshot named both causes.
   21 under `cef-floor` and stayed at 19 under modern Chromium. Chrome 156 ran
   sandboxed `srcdoc` frames out of process (the page session saw no frame
   contexts), so its page-level count cannot show this at all.
+- **Trace snapshots enter every frame too, even when the spec never does.** With
+  `trace: 'retain-on-failure'` (the config default), the DOM snapshotter
+  (`frameSnapshotStreamer`) runs in each frame around every action. In a frame
+  the shell is just removing, it throws
+  `Cannot read properties of undefined (reading 'DOCUMENT_FRAGMENT_NODE')`, and
+  in 103 that `TypeError` is held by a `DevTools console` handle. That pins the
+  frame. It only races under parallel load: MICA-469's crash spec failed 19 of
+  30 at 8 workers with tracing, and passed 30 of 30 with `--trace off` and 30 of
+  30 with `trace: { mode: 'retain-on-failure', snapshots: false }`.
 - **Each SVG image is a document.** Blink renders one in its own page, so it
   counts as an `XMLDocument` and a frame in `Performance.getMetrics`, held from
   C++ roots with no JS retainer. Bounded by the distinct images used.

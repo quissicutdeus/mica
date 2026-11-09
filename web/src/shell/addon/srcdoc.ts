@@ -73,9 +73,9 @@
  *   (`devAddOn.ts`). So all the scheme list did was let `await import('https://any/x.js')`
  *   or an appended `<script src>` run code the pinned SHA never covered, and let any script
  *   or stylesheet URL carry a query string to any host, plaintext included.
- *   - `'unsafe-inline'` is what the module script, the fallback `error` listener and the
- *     injected `<style>` need. A nonce or hash would add nothing while `'unsafe-eval'`
- *     stands: code that can `eval` can run any text it holds.
+ *   - `'unsafe-inline'` is what the module script, the frame's error listeners
+ *     (`FRAME_ERROR_LISTENERS`) and the injected `<style>` need. A nonce or hash would add
+ *     nothing while `'unsafe-eval'` stands: code that can `eval` can run any text it holds.
  *   - `'unsafe-eval'` is unchanged. It runs text the bundle already holds and reaches no
  *     host, so it is not an exit, and this directive's job is the exits.
  *   - `data:` and `blob:` stay for the reason they stay in `img-src`: neither leaves the
@@ -154,14 +154,68 @@ function cspFor(networkHosts: readonly string[], imageHosts: readonly string[]):
 }
 
 /**
+ * The frame's own `error` and `unhandledrejection` listeners, as the text of a classic
+ * inline script. `'unsafe-inline'` in `script-src` is what lets it run.
+ *
+ * **Why it is first.** A syntax error in the inlined module fails to parse before
+ * `bootAddOn` ever runs, so its own `window.addEventListener('error', ...)` never registers
+ * to catch it. This one is a plain (non-module) script ahead of the module, so it is live
+ * before the module is even parsed, and it is the shell's, so it holds for an add-on built
+ * against any SDK.
+ *
+ * **What it does with each one:**
+ *
+ * - **Forwards it** to the shell as `{ kind: 'error', message, stack }`, the shape
+ *   `IframeHostServer` hands to `onError`. That is what puts the crash screen up. Once the
+ *   add-on has booted, `bootAddOn` forwards the same event too, so the shell can hear one
+ *   error twice; that was already so for `error` before this listener cancelled anything.
+ * - **Cancels it** (MICA-469). Chromium 103 keeps the exception object of an error it
+ *   reports as uncaught, behind a V8 global handle, and through the object's constructor
+ *   that handle holds the frame's whole realm: its window, its document and its heap stay
+ *   alive after the shell removes the `<iframe>`, and nothing in the shell can reach the
+ *   handle to drop it. A crashed add-on stayed in memory for the rest of the session, one
+ *   more per crash. A cancelled event is not reported as uncaught, and nothing keeps the
+ *   object. Measured in Chromium 103 with five sandboxed srcdoc frames that threw, then
+ *   removed: five documents stayed alive, and with the event cancelled none did. An
+ *   unhandled rejection behaved the same, which is why there are two listeners.
+ * - **Logs it once in the frame, as text.** Cancelling also drops the frame's own
+ *   "Uncaught" console line, and a developer reading the frame's console still needs it. So
+ *   it prints the stack, or the message when there is no stack, as one string. Never the
+ *   error object: an object argument is kept for the console the same way, and would pin
+ *   the frame again.
+ *
+ * The shell's own catcher (`shell/globalErrors.ts`) deliberately never cancels. Its window
+ * is never removed, so there is nothing for it to release.
+ *
+ * Everything that reads the thrown value is guarded, since a rejection's `reason` can be
+ * anything, including an object whose `message` or `toString` throws. Its only output is
+ * then `unknown error`. The `preventDefault` comes first, so the event is cancelled whatever
+ * the rest of it does.
+ */
+const FRAME_ERROR_LISTENERS = [
+  '(() => {',
+  'const forward = (event, prefix, thrown, fallback) => {',
+  'event.preventDefault();',
+  "let message = 'unknown error';",
+  'let stack = null;',
+  'try {',
+  "if (thrown instanceof Error && typeof thrown.stack === 'string') stack = thrown.stack;",
+  'message = String((thrown && thrown.message) || fallback);',
+  '} catch {}',
+  "parent.postMessage({ kind: 'error', message, stack }, '*');",
+  'console.error(prefix + (stack || message));',
+  '};',
+  "window.addEventListener('error', (e) => forward(e, 'Uncaught ', e.error, e.message));",
+  "window.addEventListener('unhandledrejection', (e) => forward(e, 'Uncaught (in promise) ', e.reason, e.reason));",
+  '})();'
+].join(' ');
+
+/**
  * The document an add-on runs in. The verified text is inlined directly as a module
  * script rather than wrapped in a `data:` URL — URL-encoding roughly triples a minified
  * bundle's size, which the browser then has to hold, decode and parse on every open.
  *
- * A syntax error in the inlined module fails to parse before `bootAddOn` ever runs, so
- * its own `window.addEventListener('error', ...)` never registers to catch it. The
- * fallback listener below is added first, in a plain (non-module) script, so it is live
- * before the module script is even parsed.
+ * `FRAME_ERROR_LISTENERS` goes in first, ahead of the module. Its comment has why.
  */
 export function srcdocFor(
   code: string,
@@ -173,7 +227,7 @@ export function srcdocFor(
     '<!doctype html><html><head><meta charset="utf-8">',
     cspFor(networkHosts, imageHosts),
     '<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}#app{height:100%}</style>',
-    `<script>window.addEventListener('error', (e) => parent.postMessage({ kind: 'error', message: String((e.error && e.error.message) || e.message), stack: e.error instanceof Error ? (e.error.stack ?? null) : null }, '*'));</script>`,
+    `<script>${FRAME_ERROR_LISTENERS}</script>`,
     '</head><body><div id="app"></div>',
     `<script type="module">${escaped}</script>`,
     '</body></html>'

@@ -2,8 +2,47 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { srcdocFor } from './srcdoc';
+
+/**
+ * The frame's error listeners, run for real: the text of the document's first classic
+ * script, executed against a stand-in `window`, `parent` and `console`. jsdom never runs a
+ * `srcdoc`, so this runs the exact text the frame would.
+ */
+function frameListeners() {
+  const html = srcdocFor('export {};');
+  const script = /<script>([\s\S]*?)<\/script>/.exec(html);
+  if (!script) throw new Error('no classic script in the document');
+  const listeners = new Map<string, (event: unknown) => void>();
+  const posted: { message: unknown; origin: string }[] = [];
+  const logged: unknown[][] = [];
+  const frameWindow = {
+    addEventListener: (type: string, listener: (event: unknown) => void) => {
+      listeners.set(type, listener);
+    }
+  };
+  const frameParent = {
+    postMessage: (message: unknown, origin: string) => posted.push({ message, origin })
+  };
+  const frameConsole = { error: (...args: unknown[]) => logged.push(args) };
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval -- the point is to run the emitted text
+  const run = new Function('window', 'parent', 'console', script[1]) as (
+    w: typeof frameWindow,
+    p: typeof frameParent,
+    c: typeof frameConsole
+  ) => void;
+  run(frameWindow, frameParent, frameConsole);
+  /** Dispatch a stand-in event of `type` to the listener the script registered for it. */
+  const fire = (type: string, init: Record<string, unknown>) => {
+    const listener = listeners.get(type);
+    if (!listener) throw new Error(`no '${type}' listener`);
+    const event = { preventDefault: vi.fn(), ...init };
+    listener(event);
+    return event;
+  };
+  return { listeners, posted, logged, fire, html };
+}
 
 describe('srcdocFor', () => {
   it('produces a document with a root and no allow-same-origin dependency', () => {
@@ -219,6 +258,85 @@ describe('srcdocFor', () => {
     it('emits exactly one CSP meta, so no directive is silently duplicated', () => {
       const html = srcdocFor('x', ['https://api.example.com']);
       expect(html.match(/http-equiv="Content-Security-Policy"/g)).toHaveLength(1);
+    });
+  });
+
+  /**
+   * MICA-469. In Chromium 103 an error reported as uncaught keeps its exception object, and
+   * through it the frame's window and document, alive after the frame is removed: every
+   * crashed add-on stayed in memory for the session. Cancelling the event is what releases
+   * it, and the shell must still hear about the crash. `srcdoc.ts` has the measurement.
+   */
+  describe("the frame's error listeners", () => {
+    /** Every argument of every `console.error` call is a string, never an object. */
+    const allText = (logged: unknown[][]) => logged.flat().every((a) => typeof a === 'string');
+
+    it('cancels an uncaught error, forwards it to the shell, and logs it as text', () => {
+      const { fire, posted, logged } = frameListeners();
+      const error = new Error('boom');
+
+      const event = fire('error', { error, message: 'Uncaught Error: boom' });
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1);
+      expect(posted).toEqual([
+        { message: { kind: 'error', message: 'boom', stack: error.stack }, origin: '*' }
+      ]);
+      expect(logged).toEqual([[`Uncaught ${error.stack}`]]);
+      expect(allText(logged)).toBe(true);
+    });
+
+    it('does the same for an unhandled rejection', () => {
+      const { fire, posted, logged } = frameListeners();
+      const reason = new Error('nope');
+
+      const event = fire('unhandledrejection', { reason });
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1);
+      expect(posted).toEqual([
+        { message: { kind: 'error', message: 'nope', stack: reason.stack }, origin: '*' }
+      ]);
+      expect(logged).toEqual([[`Uncaught (in promise) ${reason.stack}`]]);
+      expect(allText(logged)).toBe(true);
+    });
+
+    it('forwards a thrown value that is not an Error by its text, with no stack', () => {
+      const { fire, posted, logged } = frameListeners();
+
+      fire('unhandledrejection', { reason: 'plain' });
+      // A cross-origin script error arrives with no error object, only the message.
+      fire('error', { error: null, message: 'Script error.' });
+
+      expect(posted.map((p) => p.message)).toEqual([
+        { kind: 'error', message: 'plain', stack: null },
+        { kind: 'error', message: 'Script error.', stack: null }
+      ]);
+      expect(logged).toEqual([['Uncaught (in promise) plain'], ['Uncaught Script error.']]);
+    });
+
+    it('still cancels and forwards when reading the thrown value throws', () => {
+      const { fire, posted, logged } = frameListeners();
+      const hostile = {
+        get message(): string {
+          throw new Error('no');
+        }
+      };
+
+      const event = fire('unhandledrejection', { reason: hostile });
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1);
+      expect(posted.map((p) => p.message)).toEqual([
+        { kind: 'error', message: 'unknown error', stack: null }
+      ]);
+      expect(logged).toEqual([['Uncaught (in promise) unknown error']]);
+    });
+
+    it('registers one listener per event, in a classic script ahead of the module', () => {
+      const { listeners, html } = frameListeners();
+      expect([...listeners.keys()].sort()).toEqual(['error', 'unhandledrejection']);
+      // Classic, so it is live before the module parses and catches the module's own
+      // syntax error; inline, which the policy's `'unsafe-inline'` admits.
+      expect(html.indexOf('<script>')).toBeLessThan(html.indexOf('<script type="module">'));
+      expect(html).toMatch(/script-src 'unsafe-inline'/);
     });
   });
 });

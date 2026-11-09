@@ -26,6 +26,10 @@ import { seedHomeGrid } from './support/homeGrid';
  * in for FiveM's CEF; neither is the CEF itself.
  */
 
+// Trace DOM snapshots inject into every frame and, under load, pin a crashed or evicted one in
+// Chromium 103 (MICA-469); keep the trace itself, drop the snapshots.
+test.use({ trace: { mode: 'retain-on-failure', snapshots: false, screenshots: true } });
+
 /** The add-on pool size, restated from `shell/state/navigation.ts` (MAX_RESIDENT_ADDONS). */
 const POOL = 3;
 /** More than the pool, so every open once the pool is full is a miss and evicts one. */

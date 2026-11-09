@@ -34,6 +34,8 @@ export { expect };
  *   mock is seen whatever path made the call and whatever the caller did with the failure
  *   (`nui.spec.ts` has a probe for each). A mock that answers `{ error }` is still seen
  *   only on the defaulted, non-quiet path.
+ * - An add-on frame's uncaught error or unhandled rejection, which the frame cancels and logs
+ *   as an `Uncaught …` console line instead of raising a `pageerror` (MICA-469).
  * - An uncaught page error — in the main document or an add-on frame — whose message
  *   matches either of the two above. A write with no default rejects instead of warning,
  *   and a store that does not catch it lands here; so does an add-on that lets a failed
@@ -75,6 +77,15 @@ const NUI_FAILURE_PATTERNS: readonly RegExp[] = [
   /fetchNui\('[^']*'\) (?:failed|returned an error)/
 ];
 
+/**
+ * An add-on frame's own uncaught error or unhandled rejection, as the frame prints it
+ * (`shell/addon/srcdoc.ts`, MICA-469). The frame cancels both so Chromium 103 releases it,
+ * which also means Playwright never sees a `pageerror` for them; this console line is the
+ * only trace left. The phone's own document never prints it (its uncaught errors arrive as
+ * `pageerror` and are not console messages), so a match is an add-on frame's.
+ */
+const ADDON_UNCAUGHT = /^Uncaught(?: \(in promise\))? /;
+
 const readsAsNuiFailure = (text: string): boolean =>
   NUI_FAILURE_PATTERNS.some((pattern) => pattern.test(text));
 
@@ -94,6 +105,9 @@ export const test = base.extend<NuiFixtureOptions>({
     page.on('console', (message: ConsoleMessage) => {
       const text = message.text();
       if (readsAsNuiFailure(text)) failures.push(`console.${message.type()}: ${text}`);
+      else if (message.type() === 'error' && ADDON_UNCAUGHT.test(text)) {
+        failures.push(`add-on frame ${text.split('\n')[0]}`);
+      }
     });
     page.on('pageerror', (error: Error) => {
       failures.push(`pageerror: ${error.message}`);

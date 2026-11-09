@@ -16,14 +16,21 @@ The snapshot path is `(Global handles)` → the exception → its constructor �
 frame's native context → `Window` → the document, so the whole frame heap stays
 too. Cancelling the `error` or `unhandledrejection` event is what lets it go.
 
-For micaOS that is every add-on crash that came from an uncaught error or
-rejection. `bootAddOn`'s listeners (`sdk/host/iframe/boot.ts`) and the shell's
-fallback in `web/src/shell/addon/srcdoc.ts` forward the error and do not cancel
-it. So each crashed frame stays in memory after the crash screen replaces it,
-one more per crash. Found during MICA-451 and reported, not fixed: cancelling
-also removes the frame's own "Uncaught" console line. A `console.error` of the
-stack **string** would keep the line without keeping the frame, since a string
-holds no context.
+For micaOS that was every add-on crash. MICA-469 fixed it where the shell writes
+every frame's first script, `FRAME_ERROR_LISTENERS` in
+`web/src/shell/addon/srcdoc.ts`. It cancels both events, still forwards them,
+and prints the stack once as a string, since a string holds no context.
+`bootAddOn`'s own listeners need no change: the shell's run first in every frame
+it builds.
+
+Two consequences to know before touching it:
+
+- **Never log the error object in a frame.** `console.error(error)` keeps the
+  object for the console and pins the frame again; log its `stack` string.
+- **A cancelled error raises no Playwright `pageerror`.** The e2e fixture's
+  "uncaught page error fails the test" no longer sees add-on frames. Their crash
+  still reaches the page console twice: as the frame's `Uncaught …` line and as
+  the shell's `add-on '<id>' crashed:` line.
 
 [A document count includes the harness](document-count-includes-the-harness.md)
 has the measuring method.
