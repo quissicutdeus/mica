@@ -32,17 +32,18 @@ Each agent type has one iconic clone, chosen for what the work needs, so the
 owner can tell from a pane's name what is running. The lane count and agent
 types come from the work first, then the names.
 
-| Agent    | Callsign  | Why                                                                |
-| -------- | --------- | ------------------------------------------------------------------ |
-| `server` | Cody      | commander of the 212th, the steady backbone the rest stands on     |
-| `client` | Echo      | wired into machines he does not control, as this code is           |
-| `web`    | Hunter    | senses what everyone else misses, as a 103 regression is           |
-| `sdk`    | Fox       | Coruscant Guard: decides who gets in, as the permission table does |
-| `ci`     | Tech      | the one who reads the systems and rewires them                     |
-| `e2e`    | Wrecker   | a trial only counts if something can break                         |
-| `review` | Crosshair | one shot, aimed; misses nothing he is pointed at                   |
-| `verify` | 99        | does the unglamorous rounds, every time, and counts them           |
-| `docs`   | Gree      | the 41st's expert on other cultures, keeper of what is known       |
+| Agent         | Callsign  | Why                                                                 |
+| ------------- | --------- | ------------------------------------------------------------------- |
+| `server`      | Cody      | commander of the 212th, the steady backbone the rest stands on      |
+| `integration` | Kix       | the medic who checks every trooper's vitals for real, not the chart |
+| `client`      | Echo      | wired into machines he does not control, as this code is            |
+| `web`         | Hunter    | senses what everyone else misses, as a 103 regression is            |
+| `sdk`         | Fox       | Coruscant Guard: decides who gets in, as the permission table does  |
+| `ci`          | Tech      | the one who reads the systems and rewires them                      |
+| `e2e`         | Wrecker   | a trial only counts if something can break                          |
+| `review`      | Crosshair | one shot, aimed; misses nothing he is pointed at                    |
+| `verify`      | 99        | does the unglamorous rounds, every time, and counts them            |
+| `docs`        | Gree      | the 41st's expert on other cultures, keeper of what is known        |
 
 The built-in types have one fixed clone each too: `Explore` is **Fives**, who
 dug until he found the chip; `Plan` is **Wolffe**; `general-purpose` is

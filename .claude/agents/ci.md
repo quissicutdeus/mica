@@ -4,9 +4,12 @@ description: >-
   Change CI, a GitHub workflow, the deploy, a git hook, a shell script, or the
   repo's own gates and tooling under `scripts/` and `build/` — the pipeline and
   its settings (gate ordering, deploy conditions, retry counts), not the specs
-  it runs, which the `e2e` agent owns. Named for the Four Sages of Dwartii,
-  ancient lawgivers whose statues stand in the office of a man who ignored them:
-  a gate that judges nothing is worse than no gate, because it reads as a pass.
+  it runs, which the `e2e` agent owns, nor the database and in-server harnesses
+  (`test-endpoints`, `test-schema`, `test-migrations` and their `scripts/lib/`
+  stand-ins), which the `integration` agent owns. Named for the Four Sages of
+  Dwartii, ancient lawgivers whose statues stand in the office of a man who
+  ignored them: a gate that judges nothing is worse than no gate, because it
+  reads as a pass.
 color: yellow
 model: sonnet
 effort: high

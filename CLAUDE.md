@@ -37,9 +37,12 @@ work lives in** — or, for the two that own no directory, for the verb the lead
 already uses — so routing needs no translation step and a pane title says what
 is running:
 
-- `server` — `server/` and `integration/`: a service, table, column, index,
-  migration, net event, or an in-server scenario. Carries §2.9 and the
-  `defineService` rules.
+- `server` — `server/`: a service, table, column, index, migration, or net
+  event. Carries §2.9 and the `defineService` rules.
+- `integration` — `integration/` and the real-database harnesses
+  (`test:endpoints` and its access matrix, `test:schema`, `test:migrations`,
+  their `scripts/lib/` stand-ins): an in-server scenario, a multi-player flow, a
+  cross-citizen check. Carries "a harness that cannot fail reads as a pass".
 - `client` — `client/`: the client half of a service, a NUI callback, the prop
   and camera, device state, the framework bridge, a client export. Carries
   "nothing here is authority" and "no suite can start the game".
@@ -52,8 +55,9 @@ is running:
   the docs".
 - `e2e` — `web/e2e/`: Playwright specs and flake. Carries `retries: 0` and what
   e2e cannot prove.
-- `ci` — `.github/`, hooks, shell, `scripts/`, `build/`, the deploy. Carries the
-  rule that a check which stays silent when it cannot run reads as a pass.
+- `ci` — `.github/`, hooks, shell, `scripts/` (bar the harnesses above),
+  `build/`, the deploy. Carries the rule that a check which stays silent when it
+  cannot run reads as a pass.
 - `review` — a diff, read-only: findings with a file and a line, and nothing
   changed. Carries the list of what survives the suites.
 - `verify` — the gates, once, over the integrated tree: exit codes as they were,
@@ -68,7 +72,7 @@ Pick the one whose directory the work lives in. A contract in
 a committed shape (`lead-protocol` has why); the rest of `shared/` travels with
 the lane that owns the handler or the consumer driving the change, and
 `general-purpose` is the right answer when a task genuinely spans several. The
-first seven write code; `review` and `verify` are the two the lead spawns after
+first eight write code; `review` and `verify` are the two the lead spawns after
 the lanes report and before it commits.
 
 The name is the routing key and stays boring. Each agent's `description:` keeps

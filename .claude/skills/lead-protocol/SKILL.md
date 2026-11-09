@@ -55,17 +55,18 @@ writes: a wrong ownership predicate passes every gate, a wrong paragraph in a
 doc is caught by reading the code. `assistantConfig.test.ts` holds this table to
 each agent's frontmatter, so change both together and say why here.
 
-| Agent    | Model            | Effort | Why                                                     |
-| -------- | ---------------- | ------ | ------------------------------------------------------- |
-| `server` | opus             | xhigh  | §2.9 is behaviour no suite proves; review keeps finding |
-| `client` | opus             | high   | nothing can start the game, so nothing checks it after  |
-| `web`    | opus             | high   | busiest lane; Web APIs past Chromium 103 go unchecked   |
-| `sdk`    | opus             | high   | public surface; breaks add-ons nobody here builds       |
-| `review` | opus             | xhigh  | pure reasoning against the threat model                 |
-| `ci`     | sonnet           | high   | a gate that fails open is found by reasoning, not tests |
-| `e2e`    | sonnet           | high   | the spec itself is the check, and it runs               |
-| `docs`   | sonnet           | medium | accuracy comes from reading the code, not from thinking |
-| `verify` | claude-haiku-5-5 | medium | mechanical: run, keep exit codes, reconcile counts      |
+| Agent         | Model            | Effort | Why                                                         |
+| ------------- | ---------------- | ------ | ----------------------------------------------------------- |
+| `server`      | opus             | xhigh  | §2.9 is behaviour no suite proves; review keeps finding     |
+| `integration` | opus             | xhigh  | a harness that fails open reads as a pass; §2.9 on real SQL |
+| `client`      | opus             | high   | nothing can start the game, so nothing checks it after      |
+| `web`         | opus             | high   | busiest lane; Web APIs past Chromium 103 go unchecked       |
+| `sdk`         | opus             | high   | public surface; breaks add-ons nobody here builds           |
+| `review`      | opus             | xhigh  | pure reasoning against the threat model                     |
+| `ci`          | sonnet           | high   | a gate that fails open is found by reasoning, not tests     |
+| `e2e`         | sonnet           | high   | the spec itself is the check, and it runs                   |
+| `docs`        | sonnet           | medium | accuracy comes from reading the code, not from thinking     |
+| `verify`      | claude-haiku-5-5 | medium | mechanical: run, keep exit codes, reconcile counts          |
 
 The lead is the session's own model, set by `/model`, not by a file. The
 built-in types inherit it unless the `Agent` call passes `model`: give an

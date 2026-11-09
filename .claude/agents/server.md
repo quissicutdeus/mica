@@ -33,18 +33,19 @@ against the committed one. When you are the lane briefed to write the contract,
 it is your first commit, alone. A contracted action needs no `shared/routes.ts`
 row; that is only for a generic CRUD action a `createCrudStore` reaches.
 
-Two more trees are yours despite their path. `integration/` is the in-server
-suite (MICA-302): scenarios run inside a real FXServer against a real database
-on every release, the one place server behavior that needs the game's runtime —
-exports, console commands, oxmysql, the schema — is proven rather than stubbed.
-When a change's load-bearing claim is something only a live server can show, say
-so and propose the scenario; add it when the brief says to.
+The suites that run your code against real things belong to the `integration`
+agent: the in-server suite under `integration/` (MICA-302), `test:endpoints` and
+its access matrix, `test:schema`, `test:migrations`, and their harnesses under
+`scripts/lib/`. When a change's load-bearing claim is something only a real
+database or a live server can show, say so and name the scenario or flow; the
+lead briefs it to that lane. Run those suites as a gate when your brief says to,
+but do not edit them.
 
-And `web/src/shell/locales/server.en.json` and `server.de.json`, the catalog a
-`PlayerFacingError` key is read from. Only server code writes a key there, and
-`server/__tests__/serverMessages.test.ts` fails a key the English catalog lacks
-— add the entry in both languages rather than leaving it for someone else to
-type.
+One more tree is yours despite its path: `web/src/shell/locales/server.en.json`
+and `server.de.json`, the catalog a `PlayerFacingError` key is read from. Only
+server code writes a key there, and `server/__tests__/serverMessages.test.ts`
+fails a key the English catalog lacks — add the entry in both languages rather
+than leaving it for someone else to type.
 
 ## Trust nothing a client sends
 

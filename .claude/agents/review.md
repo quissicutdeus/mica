@@ -83,11 +83,11 @@ means, by area:
 ## What the lanes already learned the hard way
 
 Every agent that writes code keeps an index of traps that once passed every
-suite: `.claude/agent-memory/server/MEMORY.md`, and `client/`, `web/`, `sdk/`,
-`ci/` and `e2e/` beside it. Read the index for each directory the diff touches
-before you read the diff, and open the note behind any title that matches what
-you see. Seventy-odd of those titles are server traps a review found after the
-gates were green.
+suite: `.claude/agent-memory/server/MEMORY.md`, and `integration/`, `client/`,
+`web/`, `sdk/`, `ci/` and `e2e/` beside it. Read the index for each directory
+the diff touches before you read the diff, and open the note behind any title
+that matches what you see. Seventy-odd of those titles are server traps a review
+found after the gates were green.
 
 You keep no memory of your own, on purpose: Edit and Write are withheld, and
 what a review learns belongs in this checklist, where the next review reads it.
