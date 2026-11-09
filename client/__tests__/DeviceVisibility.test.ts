@@ -133,7 +133,8 @@ describe('DeviceVisibility', () => {
     it('runs no interval while every device is down', () => {
       expect(vi.getTimerCount()).toBe(0);
       openDevice('phone');
-      expect(vi.getTimerCount()).toBe(1);
+      // The clock, and the deadline for the page's `frameShown` (MICA-475).
+      expect(vi.getTimerCount()).toBe(2);
 
       closeDevice('phone');
       expect(vi.getTimerCount()).toBe(0);
@@ -154,7 +155,8 @@ describe('DeviceVisibility', () => {
       openDevice('phone');
       openDevice('tablet');
 
-      expect(vi.getTimerCount()).toBe(1);
+      // One clock, and only the tablet's deadline: the phone's went down with it (MICA-475).
+      expect(vi.getTimerCount()).toBe(2);
       closeOpenDevice();
       expect(vi.getTimerCount()).toBe(0);
     });

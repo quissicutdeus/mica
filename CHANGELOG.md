@@ -1644,6 +1644,12 @@ device closed again, so `IsPhoneOpen` answers `false` rather than staying
 `true`. An incoming call no longer raises a phone that is disabled, confiscated
 or not held: the caller hears it ring out. Nothing to do on the server.
 
+**A phone or tablet whose screen never loads gives the player their controls
+back (MICA-475).** If the page has not shown the device within 15 seconds of it
+opening, because it crashed or failed to load, the device is put down and the
+mouse and keyboard return to the game. Before, the player stayed stuck until a
+script closed the phone. Nothing to do on the server.
+
 **A call that cannot start returns to the keypad with a message (MICA-473).** A
 number the server would refuse used to leave the call screen on "dialing" with
 nobody on the line.

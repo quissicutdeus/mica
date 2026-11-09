@@ -18,3 +18,4 @@ instead — the break-proof, scratchpad and warm-`.d.ts` notes moved there.
 - [Catch inside the async method](catch-inside-the-async-method.md) — a `.catch`
   at a fire-and-forget call site breaks sibling suites whose `vi.fn()` mock
   returns undefined
+- [An open device closes itself unless the page answers `frameShown`](an-open-device-closes-itself-without-frameshown.md)

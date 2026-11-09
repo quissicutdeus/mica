@@ -34,6 +34,8 @@ export const mocks: Record<string, MockHandler> = {
 
   // Navigation & Client Controls
   hideFrame: () => true,
+  // The page's answer to `setVisible` (MICA-475). In a browser no client is waiting on it.
+  frameShown: () => true,
   toggleFreelook: () => true,
   setTyping: () => true,
   setBatteryLevel: () => true

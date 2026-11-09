@@ -1106,6 +1106,8 @@ const JUDGED: Record<string, string> = {
     "the page opening the client's own camera view; nothing reaches the server",
   "client/game/PhoneCamera.ts PhoneCamera <- client/services/Camera.ts: '__cfx_nui:flipCamera'":
     "the page flipping the client's own camera; nothing reaches the server",
+  "client/lib/DeviceVisibility.ts awaitingFrame <- client/client.ts: '__cfx_nui:frameShown'":
+    "the page saying it drew the frame: it only stops the open's deadline for releasing focus, so a forged one keeps the player's own focus held, as never sending `hideFrame` already does; nothing reaches the server",
   "client/services/Battery.ts level <- client/services/Battery.ts: '__cfx_nui:setBatteryLevel'":
     "the DevTools slider's local paint; the server re-checks the admin ace and its next push wins",
   'client/services/Relay.ts proxies <- client/services/Relay.ts: `__cfx_nui:${GENERIC_SERVICE_ACTION}`':
@@ -1409,8 +1411,8 @@ describe('the derivation is not vacuous', () => {
     expect(count(server.entries, /: registerEvent /), 'endpoint actions').toBe(155);
     expect(count(server.entries, /: registerGeneric /), 'generic CRUD actions').toBe(4);
     expect(server.entries.length, 'every server entry').toBe(172);
-    // MICA-466's census counts the same 21 registration sites (`hostileNuiPayloads.test.ts`).
-    expect(client.entries.length, 'NUI callbacks').toBe(21);
+    // MICA-466's census counts the same 22 registration sites (`hostileNuiPayloads.test.ts`).
+    expect(client.entries.length, 'NUI callbacks').toBe(22);
   });
 
   it('lost no trail: every unopened call is pinned with why, and none ran too deep', () => {

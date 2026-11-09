@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { DEVICES, type DeviceId } from '@mica/shared/devices';
+import { DEVICES, isDeviceId, type DeviceId } from '@mica/shared/devices';
 import { sendNuiMessage } from './nui';
 import { DeviceState } from './DeviceState';
 import { sendChargeToNui } from '../services/Battery';
@@ -62,6 +62,77 @@ const stopClock = (): void => {
 };
 
 /**
+ * How long an open waits for the page to say it drew the frame (`frameShown`, MICA-475) before
+ * it puts the device down again and hands the player their keys back.
+ *
+ * `SetNuiFocus(true, true)` gives the page every input, so the page's own `hideFrame` is the
+ * player's way out. A page that never draws, whether it threw at boot, never loaded, or dropped
+ * the `setVisible` it was sent, cannot send one, and nothing else on the client noticed.
+ *
+ * Fifteen seconds is `ServiceProxy.relay`'s line for a NUI request the other side will never
+ * answer, the one the client already draws. A cold first open fits well inside it, because the
+ * page loads at resource start, during the join, and never unloads (`services/Settings.ts`). By
+ * the time a player can press a key, a first open costs mounting the frame and the launcher,
+ * and none of that waits on the server: `bootstrapStores` starts after the frame is up. Erring
+ * long is the safe side. A bound that is too short drops a frame that was coming, and the player
+ * presses the key again. A bound that is too long only holds a broken page's player longer.
+ */
+export const FRAME_SHOWN_TIMEOUT_MS = 15_000;
+
+/** The open still waiting on the page's `frameShown`, and the deadline that puts it down. */
+let awaitingFrame: { device: DeviceId; timer: ReturnType<typeof setTimeout> } | null = null;
+
+/**
+ * Stop waiting for `id`'s frame, and only `id`'s. An answer, or a close, for one device never
+ * cancels the other's deadline (MICA-475).
+ */
+const stopWaitingForFrame = (id: DeviceId): void => {
+  if (awaitingFrame === null || awaitingFrame.device !== id) return;
+  clearTimeout(awaitingFrame.timer);
+  awaitingFrame = null;
+};
+
+/**
+ * Start `id`'s deadline. It replaces any earlier one, so a reopen gets a full window of its
+ * own. Missing it closes the device through the every-step close, which releases focus and
+ * keep-input whatever else throws.
+ */
+const waitForFrame = (id: DeviceId): void => {
+  if (awaitingFrame !== null) clearTimeout(awaitingFrame.timer);
+  const pending = {
+    device: id,
+    timer: setTimeout(() => {
+      if (awaitingFrame !== pending) return;
+      awaitingFrame = null;
+      console.warn(
+        `[mica] the page never drew the ${id} (no frameShown in ${FRAME_SHOWN_TIMEOUT_MS} ms); putting it down to release NUI focus`
+      );
+      try {
+        closeDevice(id);
+      } catch (error) {
+        // A throw from a timer has nowhere to go. The close ran every step regardless.
+        console.error(`[mica] closing the ${id} after its page never drew it:`, error);
+      }
+    }, FRAME_SHOWN_TIMEOUT_MS)
+  };
+  awaitingFrame = pending;
+};
+
+/**
+ * The page's word that it drew `device`'s frame (`frameShown`, MICA-475): the open stops
+ * waiting. Honoured only while an open of that device is waiting. A late answer, after the
+ * deadline has put the device down, or one naming a device that is not opening, is ignored.
+ *
+ * Reachable by any script in the page (AGENTS.md §7), so `device` is untrusted. A forged answer
+ * can only stop this deadline, which leaves the player's focus where a page that never sends
+ * `hideFrame` already leaves it. That is the player's own focus, never a value the server reads.
+ */
+export const frameShown = (device: unknown): void => {
+  if (!isDeviceId(device)) return;
+  stopWaitingForFrame(device);
+};
+
+/**
  * Raise a device: the frame, focus, the prop in hand and the idle, the clock and the charge.
  *
  * All of it or none of it (MICA-467). A throw anywhere in here used to leave whatever had run
@@ -78,6 +149,8 @@ export const openDevice = (id: DeviceId): void => {
     DeviceState.setOpen(id, true);
     SetNuiFocus(true, true);
     sendNuiMessage('setVisible', { device: id, visible: true });
+    // Until the page answers `frameShown`, focus is held on its word alone (MICA-475).
+    waitForFrame(id);
 
     const ped = PlayerPedId();
     void DeviceAnimation.playIdle(ped, descriptor);
@@ -118,6 +191,9 @@ export const closeDevice = (id: DeviceId): void => {
   // refusing to raise it again until the page happened to report a blur (MICA-467).
   step(() => DeviceState.setTyping(false));
   step(stopClock);
+  // A device that is down has no frame left to wait for. Left running, the deadline would run
+  // this whole close again on a device already down (MICA-475).
+  step(() => stopWaitingForFrame(id));
   // Only the phone has a camera to put down; the scripted cam is never up for the tablet.
   if (descriptor.chrome.camera) step(() => PhoneCamera.disable());
   step(() => DeviceAnimation.removeProp());

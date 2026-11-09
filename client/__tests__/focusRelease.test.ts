@@ -28,6 +28,10 @@
  * other frame is shown. Then the page's `hideFrame` must leave everything released. A case is
  * run only after its happy run proved it takes focus, so a refused open cannot pass vacuously.
  *
+ * **The page** answers each show with `frameShown` once it has drawn (MICA-475), as the real one
+ * does, so every case above runs against a working page. The last block kills it: an open whose
+ * page never answers is put down at `FRAME_SHOWN_TIMEOUT_MS`, whichever path raised it.
+ *
  * **The failures injected**: a throw at each native the path calls, one at a time, in order
  * (one-shot, so the recovering close can run); each async step never resolving, resolving to
  * nothing, or throwing, both left to run and closed mid-flight; each server gate refusing the
@@ -42,7 +46,7 @@ import '../client';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ALL_DEVICES, DEVICES, type DeviceId } from '@mica/shared/devices';
 import { DeviceState } from '../lib/DeviceState';
-import { closeOpenDevice } from '../lib/DeviceVisibility';
+import { closeOpenDevice, FRAME_SHOWN_TIMEOUT_MS } from '../lib/DeviceVisibility';
 import { Freelook } from '../game/Freelook';
 import { publishedClientExport, publishedClientExports } from '../lib/publicApi';
 import { SourceGraph } from './sourceGraph';
@@ -78,8 +82,44 @@ for (const name of new Set([...nativeNames, 'SendNuiMessage', 'TriggerServerEven
       call.threw = true;
       throw new Error(`injected failure in ${name}`);
     }
-    return (answers.get(name) ?? (stub as (...a: unknown[]) => unknown))(...args);
+    const result = (answers.get(name) ?? (stub as (...a: unknown[]) => unknown))(...args);
+    if (name === 'SendNuiMessage') pageReceives(String(args[0]));
+    return result;
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The page, as the client meets it (MICA-475)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A live page answers each `setVisible` show with `frameShown` once Svelte's flush has put that
+ * device's frame in the document, and only while that frame is still the one up. That is what
+ * `web/src/shell/state/frameShown.ts` does: `tick()`, then the frame's `data-device-frame` root
+ * must be `isConnected`, with no wait on a paint. Every case runs against a live page unless it
+ * sets `draws` false, for a page that threw at boot or never loaded.
+ */
+const page = { draws: true, shown: null as DeviceId | null };
+/**
+ * How long the model page takes to answer. The real answer follows the flush, well inside this;
+ * any delay short of `FRAME_SHOWN_TIMEOUT_MS` would do. It is not zero, so the answer arrives
+ * after the open's own synchronous steps, as a NUI callback does.
+ */
+const PAGE_DRAW_MS = 32;
+
+function pageReceives(message: string): void {
+  const { action, data } = JSON.parse(message) as {
+    action: string;
+    data: { device: DeviceId; visible: boolean };
+  };
+  if (action !== 'setVisible') return;
+  const { device, visible } = data;
+  if (visible) page.shown = device;
+  else if (page.shown === device) page.shown = null;
+  if (!visible || !page.draws) return;
+  setTimeout(() => {
+    if (page.draws && page.shown === device) nui('frameShown', { device });
+  }, PAGE_DRAW_MS);
 }
 
 const failing = (name: string) => (): never => {
@@ -197,9 +237,11 @@ const hideFrame = (): unknown => nui('hideFrame', {});
 const reset = async (): Promise<void> => {
   throwAt = null;
   answers.clear();
+  page.draws = true;
   closeOpenDevice();
   Freelook.resetFreelook();
   await settle();
+  page.shown = null;
   DeviceState.__reset();
   // The tablet starts switched off until the server says otherwise (MICA-263).
   DeviceState.setServerEnabled('tablet', true);
@@ -762,23 +804,121 @@ describe('what opens nothing', () => {
 });
 
 /**
- * A known gap, MICA-475, kept as a case rather than a skip so it cannot read as a pass. The open awaits
- * nothing from the page: it takes focus and sends `setVisible`, and if the page never renders
- * (a broken build, a page that failed to load) nothing on the client notices. The player's
- * keys reach only the page, so the device's own key cannot close it. What still can is
- * anything that does not come through the keyboard: the server's gates and another script's
- * export. Closing the gap needs the page to acknowledge `setVisible`, which is `web/`'s half.
+ * A page that never draws the frame (MICA-475). This was a known gap: the open took focus, sent
+ * `setVisible`, and awaited nothing from the page, so a page that threw at boot or never loaded
+ * left the player's every key going to a frame that was not there, until a push or an export
+ * closed it. Now the open waits for the page's `frameShown`, and at `FRAME_SHOWN_TIMEOUT_MS`
+ * without it, puts the device down through the every-step close.
  */
-describe('KNOWN GAP (MICA-475): a page that never answers', () => {
+describe('a page that never draws the frame (MICA-475)', () => {
+  it.each(cases)('releases $label at the deadline', async ({ path, device }) => {
+    await reset();
+    page.draws = false;
+    await openFresh(path, device);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(tookFocus(path, device), 'the open took focus').toBe(true);
+    await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS);
+    expect(held()).toEqual(RELEASED);
+  });
+
+  it.each(ALL_DEVICES)('holds the %s up to the deadline and not past it', async (device) => {
+    await reset();
+    page.draws = false;
+    exported('OpenPhone')(device);
+    await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS - 1);
+    expect(held()).toEqual({ focus: true, keepInput: false, open: device, shown: [device] });
+    const before = calls.length;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(held()).toEqual(RELEASED);
+    // The server's half: `PhoneOpenState` is told the device went down.
+    const told = calls.slice(before).filter((c) => c.name === 'TriggerServerEvent');
+    expect(told.map((c) => c.args)).toContainEqual([
+      'mica:server:shell:setOpen',
+      { device, open: false }
+    ]);
+  });
+
+  it.each(ALL_DEVICES)('keeps the %s up when the page draws it', async (device) => {
+    await reset();
+    exported('OpenPhone')(device);
+    await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS * 4);
+    expect(held()).toEqual({ focus: true, keepInput: false, open: device, shown: [device] });
+    attempt(hideFrame);
+    expect(held()).toEqual(RELEASED);
+  });
+
+  it('ignores a late answer for one device while the other waits', async () => {
+    // The phone's page never answered and its deadline put it down. The tablet is raised next,
+    // and its page never answers either. The phone's answer arriving now must not cancel the
+    // tablet's deadline.
+    await reset();
+    page.draws = false;
+    exported('OpenPhone')('phone');
+    await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS);
+    expect(held()).toEqual(RELEASED);
+    exported('OpenPhone')('tablet');
+    nui('frameShown', { device: 'phone' });
+    await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS);
+    expect(held()).toEqual(RELEASED);
+  });
+
   it.each(ALL_DEVICES)(
-    'holds focus on the %s until a push or an export closes it',
+    'takes nothing from a late answer after the %s went down, and the reopen still waits',
     async (device) => {
       await reset();
+      page.draws = false;
       exported('OpenPhone')(device);
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(held()).toMatchObject({ focus: true, open: device });
-      net('mica:client:shell:setEnabled')({ device, enabled: false });
+      await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS);
+      const after = calls.length;
+      nui('frameShown', { device });
+      await settle();
+      expect(held()).toEqual(RELEASED);
+      expect(calls.slice(after), 'the late answer did nothing').toEqual([]);
+      exported('OpenPhone')(device);
+      await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS);
       expect(held()).toEqual(RELEASED);
     }
   );
+
+  it.each(ALL_DEVICES)('ignores an answer that does not name the %s', async (device) => {
+    const other = ALL_DEVICES.find((d) => d !== device);
+    await reset();
+    page.draws = false;
+    exported('OpenPhone')(device);
+    // The other device, a wrong case, and nothing a device id can be. The page is untrusted.
+    for (const named of [other, device.toUpperCase(), undefined, null, 1, {}, [device]]) {
+      nui('frameShown', { device: named });
+    }
+    nui('frameShown', device);
+    nui('frameShown', null);
+    await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS);
+    expect(held()).toEqual(RELEASED);
+  });
+
+  it.each(ALL_DEVICES)('cancels the deadline when the %s is closed first', async (device) => {
+    await reset();
+    page.draws = false;
+    exported('OpenPhone')(device);
+    await vi.advanceTimersByTimeAsync(1_000);
+    attempt(hideFrame);
+    const closedAt = calls.length;
+    await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS);
+    expect(held()).toEqual(RELEASED);
+    // Nothing runs at the old deadline: no second close of a device already down.
+    expect(calls.slice(closedAt).map((c) => c.name)).toEqual([]);
+  });
+
+  it.each(ALL_DEVICES)('gives a reopen of the %s a deadline of its own', async (device) => {
+    await reset();
+    page.draws = false;
+    exported('OpenPhone')(device);
+    await vi.advanceTimersByTimeAsync(1_000);
+    attempt(hideFrame);
+    exported('OpenPhone')(device);
+    // The first open's deadline passes with the reopen still waiting on its own.
+    await vi.advanceTimersByTimeAsync(FRAME_SHOWN_TIMEOUT_MS - 1_000);
+    expect(held()).toEqual({ focus: true, keepInput: false, open: device, shown: [device] });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(held()).toEqual(RELEASED);
+  });
 });

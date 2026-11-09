@@ -118,6 +118,8 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'toggleFreelook',
   'setTyping',
   'onCameraApp',
+  // The page's word that it drew the frame `setVisible` asked for (MICA-475).
+  'frameShown',
   // Calls — fire-and-forget, no cbId to correlate and no reply to await.
   'startCall',
   'answerCall',

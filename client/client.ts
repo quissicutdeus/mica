@@ -6,7 +6,7 @@ import './services';
 import './game';
 import { FrameworkBridge } from './lib/FrameworkBridge';
 import { DeviceState } from './lib/DeviceState';
-import { closeOpenDevice, toggleDevice } from './lib/DeviceVisibility';
+import { closeOpenDevice, frameShown, toggleDevice } from './lib/DeviceVisibility';
 import { registerClientApi } from './lib/publicApi';
 import { DeviceAnimation } from './game/DeviceAnimation';
 import { Freelook } from './game/Freelook';
@@ -73,6 +73,19 @@ on('__cfx_nui:hideFrame', (_: any, cb: Function) => {
   try {
     DeviceState.setTyping(false);
     closeOpenDevice();
+  } finally {
+    cb({});
+  }
+});
+
+// The page's word that it drew the frame `setVisible` asked for (MICA-475). Until it comes, the
+// open's deadline is running, and a page that never draws has its device put down so focus is
+// released. `frameShown` takes the payload's `device` as untrusted and ignores anything but the
+// device that is waiting. The page is always answered.
+RegisterNuiCallbackType('frameShown');
+on('__cfx_nui:frameShown', (data: { device?: unknown } | null | undefined, cb: Function) => {
+  try {
+    frameShown(data?.device);
   } finally {
     cb({});
   }

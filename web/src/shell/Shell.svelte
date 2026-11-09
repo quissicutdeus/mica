@@ -47,6 +47,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     viewportSize
   } from './state/display';
   import { activeDevice, descriptor, frame, setActiveDevice } from './state/device';
+  import { acknowledgeFrameShown } from './state/frameShown';
   import { get } from 'svelte/store';
   import { callStore } from '../services/call';
   import type { CallStatus } from '../../../sdk/vocabulary/call';
@@ -265,6 +266,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       if (!parsed.visible && visible && parsed.device !== $activeDevice) return;
       if (parsed.visible) setActiveDevice(parsed.device);
       visible = parsed.visible;
+      // The client holds focus on this open until the frame is on the page and said so
+      // (MICA-475). Answered from the frame the render attached, never from `visible`.
+      if (parsed.visible) {
+        void acknowledgeFrameShown(parsed.device, (device) =>
+          frameBox?.querySelector(`[data-device-frame="${device}"]`)
+        );
+      }
       if (visible) audio.warm();
       if (!visible && isFreelook) isFreelook = false;
       // Developer Tools are earned per session, so closing the phone puts them back
@@ -346,6 +354,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   };
 
   let isFreelook = false;
+  /**
+   * The box the device's frame is rendered into. `acknowledgeFrameShown` looks inside it for
+   * the frame's `data-device-frame` root, the marker `DragGhost` already measures from
+   * (MICA-475).
+   */
+  let frameBox = $state<HTMLDivElement | null>(null);
   let incomingToastId: string | null = null;
 
   const declineCall = () => {
@@ -843,6 +857,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       style="width: {$phoneBox.width}px; height: {$phoneBox.height}px;"
     >
       <div
+        bind:this={frameBox}
         class="absolute top-0 left-0 origin-top-left"
         style="width: {$frame.width}px; height: {$frame.height}px; transform: scale({$phoneScale});"
       >
