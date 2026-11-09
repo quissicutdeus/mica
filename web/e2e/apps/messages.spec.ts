@@ -43,8 +43,9 @@ test.describe('Messages App E2E', () => {
     // Attachments sit on every twenty-fifth message, so the first fifty-message page is
     // not guaranteed to hold one. Driving the same "Load older messages" button the
     // paging test uses, rather than scrolling, keeps this off scroll physics entirely —
-    // three clicks fetches the thread's remaining 150 messages deterministically.
-    for (let i = 0; i < 3; i += 1) {
+    // four clicks fetches the thread's remaining 185 messages deterministically (the
+    // first reveals the rest of the opening 50-row page, then three more pages).
+    for (let i = 0; i < 4; i += 1) {
       await messagesContainer
         .locator('button', { hasText: 'Load older messages' })
         .dispatchEvent('click');
@@ -110,12 +111,18 @@ test.describe('Messages App E2E', () => {
     const bubbles = messagesContainer.locator('[id^="msg-"]');
     const loadOlder = messagesContainer.locator('button', { hasText: 'Load older messages' });
 
-    // The newest page only, and the newest message of the fixture is in it.
-    await expect(bubbles).toHaveCount(50);
+    // The newest 15 rows only, and the newest message of the fixture is in them.
+    await expect(bubbles).toHaveCount(15);
     await expect(page.locator('#msg-3200')).toBeVisible();
     await expect(page.locator('#msg-3150')).toHaveCount(0);
     await expect(loadOlder).toBeVisible();
     await expect(messagesContainer.locator('button', { hasText: 'hidden' })).toHaveCount(0);
+
+    // --- The rest of the opening 50-row page ---
+    await loadOlder.dispatchEvent('click');
+    await expect(bubbles).toHaveCount(50);
+    await expect(page.locator('#msg-3151')).toBeVisible();
+    await expect(page.locator('#msg-3150')).toHaveCount(0);
 
     // --- First page back ---
     await loadOlder.dispatchEvent('click');
@@ -534,6 +541,7 @@ test.describe('Messages App E2E', () => {
     const message = messagesContainer.locator('[id^="msg-"]').last();
     await expect(message).toBeVisible();
 
+    await message.getByRole('button', { name: 'Add reaction' }).click();
     await message.getByRole('button', { name: 'React with 👍' }).click();
 
     const chip = message.getByRole('button', { name: /^👍 reaction, 1,/ });
@@ -574,9 +582,9 @@ test.describe('Messages App E2E', () => {
     const messagesContainer = page.locator('#messages-container');
     await expect(messagesContainer).toBeVisible();
 
-    // The seeded message is the thread's oldest, behind three "Load older" pages — the
+    // The seeded message is the thread's oldest, behind four "Load older" clicks — the
     // same technique the attachment spec above uses to reach a deterministic row.
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < 4; i += 1) {
       await messagesContainer
         .locator('button', { hasText: 'Load older messages' })
         .dispatchEvent('click');

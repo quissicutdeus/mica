@@ -120,3 +120,6 @@ its one-line summary.
 - [`pkill -f` kills its own shell](pkill-f-matches-its-own-shell.md) — the Bash
   tool's zsh argv holds the pattern; exit 144, batch lost. `TaskStop` or
   `kill $pid`
+- [A thread open is not the scroll write](thread-open-cost-is-not-the-scroll-write.md)
+  — rAF/column-reverse save nothing; cold layout is emoji-font first use, script
+  is `formatTime`; measure a warm open

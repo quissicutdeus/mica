@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { ReactionSummary } from '@mica/shared/types';
   import EmojiPicker from './EmojiPicker.svelte';
   import { NO_REACTIONS } from '../kit/createReactionStore';
@@ -50,9 +51,34 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       .filter(([, total]) => total > 0)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   );
+
+  /**
+   * The picker mounts on first open, not with the bar (MICA-448).
+   *
+   * Every message bubble draws a `ReactionBar`, and an always-mounted `EmojiPicker` put
+   * seven buttons in each — six of them colour emoji, whose first shaping walks the font
+   * fallback chain. A 50-row thread paid ~110 ms of layout and ~40 ms of script for a
+   * palette almost nobody touches. Until the player asks, the bar draws one "+" button in
+   * the picker's own look, labelled "Add reaction" (`ui.addReaction`); pressing it mounts `EmojiPicker` in its place,
+   * and from then on the bar is exactly what it always was. It never folds back: a bar the
+   * player has reached for stays the way they left it.
+   *
+   * The trigger is removed by the press that opens the picker, so focus moves to the
+   * picker's first button rather than falling to `<body>` — a keyboard user lands on the
+   * palette they just asked for.
+   */
+  let open = $state(false);
+  let bar = $state<HTMLElement>();
+
+  const openPicker = async () => {
+    open = true;
+    await tick();
+    // The chips are the bar's own buttons; the picker's are inside its root `div`.
+    bar?.querySelector<HTMLButtonElement>(':scope > div button')?.focus();
+  };
 </script>
 
-<div class="flex flex-wrap items-center gap-1 {className}">
+<div class="flex flex-wrap items-center gap-1 {className}" bind:this={bar}>
   {#each entries as [emoji, total] (emoji)}
     {@const isMine = mine.includes(emoji)}
     <button
@@ -72,5 +98,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <span>{total}</span>
     </button>
   {/each}
-  <EmojiPicker onselect={ontoggle} class="scale-90" />
+  {#if open}
+    <EmojiPicker onselect={ontoggle} class="scale-90" />
+  {:else}
+    <button
+      type="button"
+      class="text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface duration-short ease-standard flex h-8 w-8 scale-90 cursor-pointer items-center justify-center rounded-full text-lg transition-colors"
+      onclick={openPicker}
+      aria-label={$t('ui.addReaction')}
+      aria-expanded="false"
+    >
+      +
+    </button>
+  {/if}
 </div>

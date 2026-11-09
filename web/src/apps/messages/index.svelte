@@ -57,6 +57,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import MessageThread from './components/MessageThread.svelte';
   import ConversationDetailsModal from './components/ConversationDetailsModal.svelte';
   import { nobodyElse } from './nobodyElse';
+  import { firstPageAnchor, firstPageStart } from './firstPage';
 
   let {
     onback,
@@ -204,8 +205,54 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     }
   };
 
-  const renderedMessages = $derived(inChatSearchQuery.trim() ? filteredMessages : page.visible);
-  const renderIndexOffset = $derived(inChatSearchQuery.trim() ? 0 : page.offset);
+  /**
+   * The open shows a first page smaller than the one it pages by (MICA-448, `firstPage.ts`).
+   *
+   * `firstPageCapped` holds until the reader asks for older messages, by the control or by
+   * scrolling to the top; `firstPageAnchorId` is the first row it shows once the thread has
+   * loaded. Both reset whenever a thread is opened or closed.
+   */
+  let firstPageCapped = $state(true);
+  let firstPageAnchorId = $state<number | null>(null);
+  const searchingThread = $derived(!!inChatSearchQuery.trim());
+  const firstPageHidden = $derived(
+    searchingThread || !firstPageCapped ? 0 : firstPageStart(page.visible, firstPageAnchorId)
+  );
+
+  const renderedMessages = $derived(
+    searchingThread ? filteredMessages : page.visible.slice(firstPageHidden)
+  );
+  const renderIndexOffset = $derived(searchingThread ? 0 : page.offset + firstPageHidden);
+
+  /**
+   * Reveal the rest of the first page, holding the reader where they are.
+   *
+   * The same compensation `usePagedList.loadMore` makes: the rows arrive above, so what the
+   * reader was looking at moves down by exactly the height that was added. One layout, on
+   * the reader's own request.
+   */
+  const expandFirstPage = async () => {
+    if (!firstPageCapped) return;
+    const el = document.getElementById('messages-container');
+    const previousHeight = el ? el.scrollHeight : 0;
+    const previousTop = el ? el.scrollTop : 0;
+    firstPageCapped = false;
+    await tick();
+    if (el) el.scrollTop = el.scrollHeight - previousHeight + previousTop;
+  };
+
+  /** "Load older" reveals the first page's hidden rows before it pages anything. */
+  const loadOlderRows = () => (firstPageHidden > 0 ? expandFirstPage() : page.loadMore());
+
+  /** The top of the thread, while the first page is capped, reveals the rest of it. */
+  const onThreadScroll = (event: Event) => {
+    if (firstPageHidden === 0) {
+      page.onScroll(event);
+      return;
+    }
+    const el = event.target as HTMLElement | null;
+    if (el && el.scrollTop <= 40) void expandFirstPage();
+  };
 
   /**
    * Reactions for whatever page of the thread is actually on screen, not the whole
@@ -270,6 +317,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     draftBeforeEdit = '';
     unreadDividerIndex = -1;
     page.reset();
+    firstPageCapped = true;
+    firstPageAnchorId = null;
+    restoreListScroll();
+  };
+
+  /**
+   * The inbox stays mounted under an open thread, hidden rather than destroyed (MICA-448).
+   *
+   * Destroying it cost the open as much again as building the thread's first page. Hidden,
+   * it keeps its rows and its search, but not its scroll: the scroller is `Screen`'s, shared
+   * with the thread, and it clamps to the thread while the inbox is hidden. So the offset is
+   * read on the way in and put back on the way out.
+   */
+  let listHost = $state<HTMLElement>();
+  let listScrollTop = 0;
+  const listScroller = () => listHost?.closest<HTMLElement>('.overflow-y-auto') ?? null;
+  const restoreListScroll = () => {
+    void tick().then(() => {
+      const el = listScroller();
+      if (el) el.scrollTop = listScrollTop;
+    });
   };
 
   /**
@@ -347,7 +415,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   };
 
   const handleSelectConversation = async (id: number) => {
+    if (!selectedConversationId) listScrollTop = listScroller()?.scrollTop ?? 0;
     page.reset();
+    firstPageCapped = true;
+    firstPageAnchorId = null;
     const conv = $conversationsStore.find((c) => c.id === id);
     initialUnreadCount = conv?.unreadCount || 0;
     selectedConversationId = id;
@@ -366,6 +437,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     } else {
       unreadDividerIndex = -1;
     }
+    // Before the tick, so the rows the divider needs are in the same render as the divider,
+    // and the scroll below is the open's one layout.
+    firstPageAnchorId = firstPageAnchor(page.visible, page.offset, unreadDividerIndex);
 
     await tick();
 
@@ -432,7 +506,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     showPhotoPicker = true;
   };
 
-  const handleScrollToMessage = (msgId: number) => {
+  const handleScrollToMessage = async (msgId: number) => {
+    // A quote can name a message the first page is still hiding; the whole page had it.
+    if (!document.getElementById(`msg-${msgId}`) && firstPageHidden > 0) {
+      await expandFirstPage();
+    }
     const targetEl = document.getElementById(`msg-${msgId}`);
     if (targetEl) {
       targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -761,8 +839,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <MessageThread
         messages={renderedMessages}
         offset={renderIndexOffset}
-        hiddenCount={page.hiddenCount}
-        hasOlder={threadHasOlder}
+        hiddenCount={page.hiddenCount > 0 ? page.hiddenCount + firstPageHidden : 0}
+        hasOlder={threadHasOlder || firstPageHidden > 0}
         loadingMore={page.loading}
         {unreadDividerIndex}
         {currentConv}
@@ -772,8 +850,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onscrollto={handleScrollToMessage}
         onedit={threadClosed ? undefined : startEdit}
         ondelete={handleUnsendMessage}
-        onloadmore={page.loadMore}
-        onscroll={page.onScroll}
+        onloadmore={loadOlderRows}
+        onscroll={onThreadScroll}
         unreadCount={initialUnreadCount}
         searching={!!inChatSearchQuery.trim()}
         reactions={$messageReactions}
@@ -812,7 +890,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         />
       {/if}
     </div>
-  {:else}
+  {/if}
+
+  <!-- Hidden under an open thread rather than destroyed (MICA-448): see `listHost`. -->
+  <div
+    bind:this={listHost}
+    class={selectedConversationId ? 'hidden' : ''}
+    data-testid="conversation-list-host"
+  >
     <ConversationList
       conversations={filteredConversations}
       loaded={$conversationsLoaded}
@@ -825,7 +910,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       onselect={handleSelectConversation}
       onloadmore={loadMoreConversations}
     />
-  {/if}
+  </div>
 
   {#if showDetailsModal && currentConv}
     <ConversationDetailsModal

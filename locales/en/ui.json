@@ -18,6 +18,7 @@
   "emoji": "Emoji",
   "moreEmoji": "More emoji",
   "closeEmojiPicker": "Close emoji picker",
+  "addReaction": "Add reaction",
   "reactWith": "React with {emoji}",
   "reaction": "{emoji} reaction, {total}, {action}",
   "tapToAddReaction": "tap to add yours",

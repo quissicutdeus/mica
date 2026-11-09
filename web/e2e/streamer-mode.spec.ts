@@ -151,9 +151,9 @@ test.describe('with streamer mode on', () => {
 
     const thread = page.locator('#messages-container');
     await expect(thread).toBeVisible();
-    // Attachments sit on every twenty-fifth message; the same three clicks
+    // Attachments sit on every twenty-fifth message; the same four clicks
     // `messages.spec.ts` uses fetch the rest of the thread deterministically.
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < 4; i += 1) {
       await thread.locator('button', { hasText: 'Load older messages' }).dispatchEvent('click');
     }
     await expect(thread.locator('button', { hasText: 'Load older messages' })).not.toBeVisible();
