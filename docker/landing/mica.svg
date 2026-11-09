@@ -1,0 +1,6 @@
+<!--
+SPDX-FileCopyrightText: 2026 quissicutdeus
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50"><title>micaOS</title><defs><linearGradient id="f" x1="14" x2="38" y1="8" y2="56" gradientUnits="userSpaceOnUse"><stop stop-color="#3b82f6"/><stop offset=".5" stop-color="#155dfc"/><stop offset="1" stop-color="#1e40af"/></linearGradient><linearGradient id="m" href="#f"><stop stop-color="#22c55e"/><stop offset="1" stop-color="#15803d"/></linearGradient><linearGradient id="b" href="#f"><stop stop-color="#ef4444"/><stop offset="1" stop-color="#b91c1c"/></linearGradient><rect id="s" width="24" height="48" x="14" y="8" rx="6"/><clipPath id="c"><use href="#s"/></clipPath></defs><g transform="matrix(.98 0 0 .98 -5.88 -6.86)"><use href="#s" fill="url(#b)" transform="rotate(16 26 56)"/><use href="#s" fill="url(#m)" transform="rotate(8 26 56)"/><use href="#s" fill="url(#f)"/><path fill="#fff" fill-opacity=".14" d="M14 8h24v12L14 34z" clip-path="url(#c)"/><circle cx="26" cy="13.5" r="1.6" fill="#fff"/><path stroke="#fff" stroke-linecap="round" stroke-width="2.2" d="M21.5 50.5h9"/></g></svg>

@@ -10,7 +10,8 @@
   image. The phone and tablet screenshots are copies of docs/screenshots/home.png
   and tablet-settings.png (regenerate those with web/e2e/screenshots.spec.ts,
   then copy them here), not hotlinks, so this page has no dependency on
-  anything outside `docker/landing/`.
+  anything outside `docker/landing/`. mica.svg is a copy of web/public/mica.svg,
+  the demo's own icon; keep the two in step by hand.
 
   This is a real page for real browsers (mica.gg visitors), not FiveM's CEF --
   the Chromium-103 floor in AGENTS.md §6 and the `cef-css` skill do not apply
@@ -26,11 +27,13 @@
       content="micaOS: an open-source TypeScript phone and tablet OS for FiveM. Works with qbcore, qbox, esx, or standalone. Try the phone or tablet demo, or install from a release."
     />
     <title>micaOS</title>
+    <link rel="icon" type="image/svg+xml" href="./mica.svg" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main>
       <header class="hero">
+        <img class="logo" src="./mica.svg" alt="" width="72" height="72" />
         <h1>micaOS</h1>
         <p class="tagline">
           An open-source, in-game phone and tablet OS for FiveM. Works with

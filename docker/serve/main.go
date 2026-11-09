@@ -333,6 +333,16 @@ func handler(assets map[string]*asset) http.Handler {
 			p = path.Join(p, "index.html")
 		}
 
+		// Browsers and crawlers ask for /favicon.ico whatever the page's <link rel="icon">
+		// says, and the landing page ships an SVG, not an .ico. Answer with the same bytes
+		// rather than a 404 in every access log; browsers sniff an SVG icon fine. Root only
+		// -- /demo/ names its own icon, and a real file at this path would win.
+		if p == "/favicon.ico" {
+			if _, ok := assets[p]; !ok {
+				p = "/mica.svg"
+			}
+		}
+
 		// Read-only public files, no credentials, so the wildcard is the whole of it: no
 		// Allow-Credentials, no Allow-Methods, no Allow-Headers. Set before the lookup so
 		// a 404 carries it too -- a cross-origin fetch that missed should read as a 404,

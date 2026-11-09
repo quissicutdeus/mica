@@ -77,34 +77,61 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onerror={() => (failedLogo = logo)}
         />
       {:else}
-        <!-- The micaOS mark: a phone outline, its camera and its home bar, as `mica.svg`
-             draws them, but on the black this screen always is. `mica.svg` itself follows
-             the OS colour scheme, which is the wrong thing to follow inside the phone. -->
+        <!-- The micaOS mark: `web/public/mica.svg` inline, kept in step with it by hand, so
+             the boot needs no request and draws offline in CEF. The same markup, shared
+             sheet and gradient `href` inheritance included, with two deliberate differences:
+             every id is prefixed `mica-boot-`, because an inline SVG's ids are
+             document-global and the file's one-letter `f` or `s` could collide with anything
+             else in the shell (a dangling `url(#…)` or `href` paints nothing, silently); and
+             the file's `<title>` is dropped for the translated `aria-label`.
+             The square 50×50 viewBox sits centred in `h-24 w-28` by the default
+             `xMidYMid meet`, so it draws 96px tall, about the old outline's height. -->
         <svg
           data-testid="boot-mark"
-          viewBox="120 20 272 470"
+          viewBox="0 0 50 50"
           class="h-24 w-28"
           role="img"
           aria-label={$t('shell.bootLogoAlt', { brand: OS_NAME })}
         >
-          <rect
-            x="157"
-            y="36"
-            width="198"
-            height="440"
-            rx="32"
-            fill="none"
-            stroke="#ffffff"
-            stroke-width="12"
-          />
-          <circle cx="256" cy="70" r="8" fill="#ffffff" />
-          <path
-            d="M236 450h40"
-            fill="none"
-            stroke="#ffffff"
-            stroke-width="6"
-            stroke-linecap="round"
-          />
+          <defs>
+            <!-- Blue front, then green and red, the latter two inheriting the front's axis. -->
+            <linearGradient
+              id="mica-boot-f"
+              x1="14"
+              x2="38"
+              y1="8"
+              y2="56"
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop stop-color="#3b82f6" />
+              <stop offset=".5" stop-color="#155dfc" />
+              <stop offset="1" stop-color="#1e40af" />
+            </linearGradient>
+            <linearGradient id="mica-boot-m" href="#mica-boot-f">
+              <stop stop-color="#22c55e" />
+              <stop offset="1" stop-color="#15803d" />
+            </linearGradient>
+            <linearGradient id="mica-boot-b" href="#mica-boot-f">
+              <stop stop-color="#ef4444" />
+              <stop offset="1" stop-color="#b91c1c" />
+            </linearGradient>
+            <!-- One sheet, drawn three times and clipping the sheen. -->
+            <rect id="mica-boot-s" width="24" height="48" x="14" y="8" rx="6" />
+            <clipPath id="mica-boot-c"><use href="#mica-boot-s" /></clipPath>
+          </defs>
+          <g transform="matrix(.98 0 0 .98 -5.88 -6.86)">
+            <use href="#mica-boot-s" fill="url(#mica-boot-b)" transform="rotate(16 26 56)" />
+            <use href="#mica-boot-s" fill="url(#mica-boot-m)" transform="rotate(8 26 56)" />
+            <use href="#mica-boot-s" fill="url(#mica-boot-f)" />
+            <path
+              fill="#fff"
+              fill-opacity=".14"
+              d="M14 8h24v12L14 34z"
+              clip-path="url(#mica-boot-c)"
+            />
+            <circle cx="26" cy="13.5" r="1.6" fill="#fff" />
+            <path stroke="#fff" stroke-linecap="round" stroke-width="2.2" d="M21.5 50.5h9" />
+          </g>
         </svg>
       {/if}
     </div>

@@ -24,6 +24,7 @@ func testAssets() map[string]*asset {
 	}
 	return map[string]*asset{
 		"/index.html":                file("/index.html", "landing"),
+		"/mica.svg":                  file("/mica.svg", "<svg/>"),
 		"/demo/index.html":           file("/demo/index.html", "demo"),
 		"/demo/addons/catalog.json":  file("/demo/addons/catalog.json", `[{"id":"snek"}]`),
 		"/addons/sdk-1/catalog.json": file("/addons/sdk-1/catalog.json", "[]\n"),
@@ -174,5 +175,22 @@ func TestHasPublicCatalog(t *testing.T) {
 	onlyDemo := map[string]*asset{"/demo/addons/catalog.json": testAssets()["/demo/addons/catalog.json"]}
 	if hasPublicCatalog(onlyDemo) {
 		t.Error("the demo catalog was reported as the public catalog")
+	}
+}
+
+func TestFaviconIcoServesTheSVGAtTheRootOnly(t *testing.T) {
+	rec := get(t, "/favicon.ico")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/favicon.ico status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/svg+xml" {
+		t.Errorf("Content-Type = %q, want image/svg+xml", got)
+	}
+	if rec.Body.String() != "<svg/>" {
+		t.Errorf("body = %q, want the root mica.svg", rec.Body.String())
+	}
+	// The alias is not a general fallback: a missing icon elsewhere stays a 404.
+	if rec := get(t, "/addons/favicon.ico"); rec.Code != http.StatusNotFound {
+		t.Errorf("/addons/favicon.ico status = %d, want 404", rec.Code)
 	}
 }

@@ -45,6 +45,42 @@ describe('BootScreen', () => {
     expect(container.querySelector('img')).toBeNull();
   });
 
+  /**
+   * The mark is `public/mica.svg` inline, whose sheet, gradients and clip-path are reached
+   * by `href="#id"` and `url(#id)`. Inline ids are document-global, so each is prefixed;
+   * and a reference that names no id paints nothing, with no error anywhere, so every one
+   * is checked against the ids the mark itself defines.
+   */
+  it('draws the mark with prefixed ids and no dangling reference', () => {
+    boot();
+    const { getByTestId } = render(BootScreen);
+    const mark = getByTestId('boot-mark');
+    const ids = [...mark.querySelectorAll('[id]')].map((el) => el.id).sort();
+    expect(ids).toEqual([
+      'mica-boot-b',
+      'mica-boot-c',
+      'mica-boot-f',
+      'mica-boot-m',
+      'mica-boot-s'
+    ]);
+
+    const REF: Record<string, RegExp> = {
+      fill: /^url\(#(.+)\)$/,
+      'clip-path': /^url\(#(.+)\)$/,
+      href: /^#(.+)$/
+    };
+    const refs = [...mark.querySelectorAll('[fill], [clip-path], [href]')].flatMap((el) =>
+      Object.entries(REF)
+        .map(([attr, pattern]) => pattern.exec(el.getAttribute(attr) ?? '')?.[1])
+        .filter((ref): ref is string => ref !== undefined)
+    );
+    // Ten references: four uses of the sheet (three drawn, one in the clip), two inherited
+    // gradients, three fills, one clip-path. Every one resolves inside the mark, and every
+    // id is used.
+    expect(refs).toHaveLength(10);
+    expect([...new Set(refs)].sort()).toEqual(ids);
+  });
+
   it("draws the owner's logo, with alt text, when there is one", () => {
     ownerConfig.update((c) => ({ ...c, brandLogo: LOGO }));
     boot();
