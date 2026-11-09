@@ -33,19 +33,24 @@ let pmaVoice: {
 
 // The incoming-call path raises the phone through `DeviceVisibility` (MICA-262), the
 // same sequence the key uses; that sequence has its own suite, so here it is a spy.
-const { openDeviceSpy, phoneOpen } = vi.hoisted(() => ({
+const { openDeviceSpy, phoneOpen, phoneEnabled } = vi.hoisted(() => ({
   openDeviceSpy: vi.fn(),
-  phoneOpen: { value: false }
+  phoneOpen: { value: false },
+  phoneEnabled: { value: true }
 }));
 vi.mock('../lib/DeviceVisibility', () => ({ openDevice: openDeviceSpy }));
 vi.mock('../lib/DeviceState', () => ({
-  DeviceState: { isOpen: (id: string) => id === 'phone' && phoneOpen.value }
+  DeviceState: {
+    isOpen: (id: string) => id === 'phone' && phoneOpen.value,
+    isEnabled: (id: string) => id !== 'phone' || phoneEnabled.value
+  }
 }));
 
 beforeEach(async () => {
   vi.resetModules();
   openDeviceSpy.mockClear();
   phoneOpen.value = false;
+  phoneEnabled.value = true;
 
   nuiCallbacks = new Map();
   netSubscriptions = new Map();
@@ -311,6 +316,16 @@ describe('incoming call', () => {
       action: 'callStatus',
       data: { status: 'incoming', number: '555-0199', name: 'Unknown' }
     });
+  });
+
+  // MICA-467: a confiscated, switched-off or item-less phone is not raised for a ring, and its
+  // page is not told of one it could not answer.
+  it('neither raises nor rings a phone that is disabled', () => {
+    phoneEnabled.value = false;
+    serverEvent('mica:client:phone:incoming', { from: '555-0199', callId: 42 });
+
+    expect(openDeviceSpy).not.toHaveBeenCalled();
+    expect(sentNuiMessages).toEqual([]);
   });
 });
 

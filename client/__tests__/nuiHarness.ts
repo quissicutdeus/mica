@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * The FiveM client runtime, stubbed whole, for `hostileNuiPayloads.test.ts` (MICA-466).
+ * The FiveM client runtime, stubbed whole, for `hostileNuiPayloads.test.ts` (MICA-466) and
+ * `focusRelease.test.ts` (MICA-467).
  *
  * **Importing this module installs the stubs.** That is the point of it being a module rather
  * than a function a test calls: the suite imports it first and `../client` second, and ES
@@ -36,6 +37,12 @@ export type NuiHandler = (data: unknown, cb: (...reply: unknown[]) => void) => u
 export const registeredNuiTypes: string[] = [];
 /** Every `on('__cfx_nui:<name>')` handler, by name, duplicates kept. */
 export const nuiHandlers = new Map<string, NuiHandler[]>();
+/** Every `onNet` handler, by event name, duplicates kept (MICA-467). */
+export const netHandlers = new Map<string, ((...args: unknown[]) => unknown)[]>();
+/** Every `RegisterCommand` handler, by command name (MICA-467). */
+export const commands = new Map<string, (...args: unknown[]) => unknown>();
+/** Every native `@citizenfx/client` declares, so a suite can wrap them all (MICA-467). */
+export const nativeNames: string[] = [];
 
 /** The calls recorded since the current case began, or null between cases. */
 let recording: SinkCall[] | null = null;
@@ -99,6 +106,7 @@ for (const match of readFileSync(DECLARATIONS, 'utf8').matchAll(
   /^declare function (\w+)\(.*\): ([^;]+);$/gm
 )) {
   const [, name, returns] = match as unknown as [string, string, string];
+  nativeNames.push(name);
   // `server/__tests__/setup.ts` already answers a few (`GetConvar`, `RegisterCommand`); its
   // answers are the ones every other suite relies on, so they stay.
   if (g[name] !== undefined) continue;
@@ -118,8 +126,15 @@ g.on = (event: string, handler: NuiHandler) => {
   const name = event.slice('__cfx_nui:'.length);
   nuiHandlers.set(name, [...(nuiHandlers.get(name) ?? []), handler]);
 };
-// Server-emitted events are trusted as far as the server is; this file sweeps the page's door.
-g.onNet = () => undefined;
+// Server-emitted events are trusted as far as the server is, so the hostile sweep never sends
+// one; they are kept so `focusRelease.test.ts` can drive the open paths a push takes.
+g.onNet = (event: string, handler: (...args: unknown[]) => unknown) => {
+  netHandlers.set(event, [...(netHandlers.get(event) ?? []), handler]);
+};
+// `server/__tests__/setup.ts` answers this with a no-op, so the native loop above left it alone.
+g.RegisterCommand = (name: unknown, handler: (...args: unknown[]) => unknown) => {
+  commands.set(String(name), handler);
+};
 g.emitNet = (...args: unknown[]) => record({ kind: 'server', sink: 'emitNet', args });
 g.TriggerServerEvent = (...args: unknown[]) => record({ kind: 'server', sink: 'emitNet', args });
 // Captured and never run: a per-frame loop has nothing to do with a NUI payload.

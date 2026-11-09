@@ -53,9 +53,9 @@ RegisterNuiCallbackType('startCall');
 on('__cfx_nui:startCall', (data: unknown, cb: Function) => {
   const number = dialedNumber(data);
   if (number === null) {
-    // Nothing is dialed. `fetchNui` throws on the `error`, and `services/call.ts` only logs
-    // it, so the call screen stays on 'dialing' — what it did before, when the server's guard
-    // dropped the same request without a word. `status` is read by nobody today.
+    // Nothing is dialed. `fetchNui` throws on the `error`, and `services/call.ts` undoes that
+    // dial (MICA-473): back to idle with a "call failed" toast, unless a ring or another dial
+    // has arrived since. `status` is read by nobody today.
     cb({ status: 'idle', error: 'Invalid number' });
     return;
   }
@@ -203,6 +203,12 @@ onNet('mica:client:phone:incoming', (data: IncomingCall) => {
   // and push `setVisible` by hand, which left no prop and — before the flag was shared —
   // a `M` press that re-opened instead of closing. Calls are the phone's (`chrome.calls`),
   // so a tablet that was up goes down (MICA-262).
+  //
+  // A phone that may not be raised does not ring (MICA-467): confiscated by the client export
+  // `SetPhoneEnabled(false)`, switched off, or its item not held. It used to be raised anyway,
+  // which handed a confiscated phone back for as long as the call lasted. The server cannot
+  // see the client export's flag, so it still places the call; its half is MICA-474.
+  if (!DeviceState.isEnabled('phone')) return;
   if (!DeviceState.isOpen('phone')) openDevice('phone');
 
   // Send incoming status

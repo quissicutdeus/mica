@@ -144,10 +144,17 @@ export class DeviceAnimation {
     RemoveAnimDict(state.dict);
   }
 
-  /** The device's own idle: the phone held to read, the tablet held flat. */
+  /**
+   * The device's own idle: the phone held to read, the tablet held flat.
+   *
+   * Never rejects (MICA-467): the open does not await it — the frame is usable while the pose
+   * streams in — so a rejection here would reach nobody but the console as an unhandled one.
+   */
   public static playIdle(ped: number, descriptor: DeviceDescriptor): Promise<void> {
     DeviceAnimation.idle = descriptor.animation;
-    return DeviceAnimation.play(ped, descriptor.animation);
+    return DeviceAnimation.play(ped, descriptor.animation).catch((error: unknown) => {
+      console.error('[DeviceAnimation] the idle animation failed:', error);
+    });
   }
 
   public static stopAll(ped: number): void {
@@ -165,39 +172,53 @@ export class DeviceAnimation {
     const { model, bone, offset, rotation } = descriptor.prop;
     const hash = GetHashKey(model);
     const propId = ++DeviceAnimation.currentPropId;
-    void DeviceAnimation.loadModel(hash, propId).then((loaded) => {
-      if (!loaded) return;
-      // Only if this prop is still wanted — no `removeProp` since, which a close calls — the
-      // device is still the one being raised, and nothing is in the hand yet.
-      if (
-        propId !== DeviceAnimation.currentPropId ||
-        DeviceAnimation.idle !== descriptor.animation ||
-        DeviceAnimation.prop
-      ) {
+    void DeviceAnimation.loadModel(hash, propId)
+      .then((loaded) => {
+        if (!loaded) return;
+        // Only if this prop is still wanted — no `removeProp` since, which a close calls — the
+        // device is still the one being raised, and nothing is in the hand yet.
+        if (
+          propId !== DeviceAnimation.currentPropId ||
+          DeviceAnimation.idle !== descriptor.animation ||
+          DeviceAnimation.prop
+        ) {
+          SetModelAsNoLongerNeeded(hash);
+          return;
+        }
+        const coords = GetEntityCoords(ped, true);
+        DeviceAnimation.prop = CreateObject(
+          hash,
+          coords[0],
+          coords[1],
+          coords[2],
+          true,
+          true,
+          false
+        );
+        AttachEntityToEntity(
+          DeviceAnimation.prop,
+          ped,
+          GetPedBoneIndex(ped, bone),
+          offset[0],
+          offset[1],
+          offset[2],
+          rotation[0],
+          rotation[1],
+          rotation[2],
+          true,
+          true,
+          false,
+          true,
+          1,
+          true
+        );
         SetModelAsNoLongerNeeded(hash);
-        return;
-      }
-      const coords = GetEntityCoords(ped, true);
-      DeviceAnimation.prop = CreateObject(hash, coords[0], coords[1], coords[2], true, true, false);
-      AttachEntityToEntity(
-        DeviceAnimation.prop,
-        ped,
-        GetPedBoneIndex(ped, bone),
-        offset[0],
-        offset[1],
-        offset[2],
-        rotation[0],
-        rotation[1],
-        rotation[2],
-        true,
-        true,
-        false,
-        true,
-        1,
-        true
-      );
-      SetModelAsNoLongerNeeded(hash);
-    });
+      })
+      .catch((error: unknown) => {
+        // Not awaited by the open, so nothing else would hear of it (MICA-467). The device stays
+        // up without a prop in hand, and the next close deletes whatever did spawn.
+        console.error('[DeviceAnimation] the prop failed to spawn:', error);
+      });
   }
 
   /** The held prop, so the scripted camera can hide it while framing a shot. */

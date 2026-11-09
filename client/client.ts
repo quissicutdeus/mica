@@ -65,12 +65,17 @@ on('__cfx_nui:setTyping', (data: { typing: boolean }, cb: Function) => {
   cb({});
 });
 
-// NUI Callback to close whichever device is up.
+// NUI Callback to close whichever device is up. The page is answered even when the close
+// throws (MICA-467): focus is released by then, and a `fetchNui('hideFrame')` left waiting is a
+// page that never hears its frame went down. The throw still reaches FiveM's log.
 RegisterNuiCallbackType('hideFrame');
 on('__cfx_nui:hideFrame', (_: any, cb: Function) => {
-  DeviceState.setTyping(false);
-  closeOpenDevice();
-  cb({});
+  try {
+    DeviceState.setTyping(false);
+    closeOpenDevice();
+  } finally {
+    cb({});
+  }
 });
 
 // NUI Callback for camera app animation state

@@ -15,3 +15,6 @@ instead — the break-proof, scratchpad and warm-`.d.ts` notes moved there.
 - [Every native can be stubbed from the typings](native-stubs-from-the-typings.md)
 - [`Has*Loaded` stubs must answer true](has-loaded-stubs-must-answer-true.md)
 - [An own `__proto__` key needs `JSON.parse`](own-proto-key-needs-json-parse.md)
+- [Catch inside the async method](catch-inside-the-async-method.md) — a `.catch`
+  at a fire-and-forget call site breaks sibling suites whose `vi.fn()` mock
+  returns undefined

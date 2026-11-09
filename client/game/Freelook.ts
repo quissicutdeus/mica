@@ -122,17 +122,36 @@ export class Freelook {
     }
   }
 
+  /**
+   * Hand every input back to the game. Each release runs even when one before it throws, and
+   * the first throw is rethrown once they all have (MICA-467): keep-input failing to drop used
+   * to skip `SetNuiFocus(false, false)`, leaving the page holding every key with no frame up.
+   */
   public static resetFreelook(): void {
     Freelook.isFreelookActive = false;
-    SetNuiFocusKeepInput(false);
-    SetNuiFocus(false, false);
-    if (Freelook.keptInput) Freelook.flushHeldControls();
-    Freelook.keptInput = false;
+    const failures: unknown[] = [];
+    const step = (run: () => void): void => {
+      try {
+        run();
+      } catch (error) {
+        failures.push(error);
+      }
+    };
 
-    if (Freelook.freelookTick !== null) {
-      clearTick(Freelook.freelookTick);
-      Freelook.freelookTick = null;
-    }
+    step(() => SetNuiFocusKeepInput(false));
+    step(() => SetNuiFocus(false, false));
+    step(() => {
+      if (Freelook.keptInput) Freelook.flushHeldControls();
+    });
+    Freelook.keptInput = false;
+    step(() => {
+      if (Freelook.freelookTick !== null) {
+        clearTick(Freelook.freelookTick);
+        Freelook.freelookTick = null;
+      }
+    });
+
+    if (failures.length > 0) throw failures[0];
   }
 
   public static isActive(): boolean {

@@ -1633,6 +1633,17 @@ and the player's toast says which field was wrong, never the table. Clearing a
 nullable field still works. Nothing to do on the server; an add-on or a script
 of your own that sends the wrong type will now see the refusal.
 
+**A phone or tablet that fails part-way through opening or closing no longer
+keeps the player's mouse and keyboard (MICA-467).** A failure after the device
+took focus, during a close, or between releasing keep-input and focus could
+leave the device marked closed while the screen still held every input, with no
+way back to the game. Each now puts the device down and releases both. A device
+force-closed while a text field had focus also refused its own key until the
+player clicked elsewhere; it opens again now. A failed open now reports the
+device closed again, so `IsPhoneOpen` answers `false` rather than staying
+`true`. An incoming call no longer raises a phone that is disabled, confiscated
+or not held: the caller hears it ring out. Nothing to do on the server.
+
 **A call that cannot start returns to the keypad with a message (MICA-473).** A
 number the server would refuse used to leave the call screen on "dialing" with
 nobody on the line.

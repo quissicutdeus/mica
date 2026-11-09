@@ -61,36 +61,71 @@ const stopClock = (): void => {
   }
 };
 
+/**
+ * Raise a device: the frame, focus, the prop in hand and the idle, the clock and the charge.
+ *
+ * All of it or none of it (MICA-467). A throw anywhere in here used to leave whatever had run
+ * so far: focus taken with no frame told to show, which traps the player, since the page that
+ * would send `hideFrame` is not on screen and focus keeps every key from the game. Now a throw
+ * puts the device down again before it goes on to the caller, who logs it as it always did.
+ */
 export const openDevice = (id: DeviceId): void => {
-  const other = DeviceState.openDevice();
-  if (other && other !== id) closeDevice(other);
+  try {
+    const other = DeviceState.openDevice();
+    if (other && other !== id) closeDevice(other);
 
-  const descriptor = DEVICES[id];
-  DeviceState.setOpen(id, true);
-  SetNuiFocus(true, true);
-  sendNuiMessage('setVisible', { device: id, visible: true });
+    const descriptor = DEVICES[id];
+    DeviceState.setOpen(id, true);
+    SetNuiFocus(true, true);
+    sendNuiMessage('setVisible', { device: id, visible: true });
 
-  const ped = PlayerPedId();
-  void DeviceAnimation.playIdle(ped, descriptor);
-  DeviceAnimation.spawnProp(ped, descriptor);
+    const ped = PlayerPedId();
+    void DeviceAnimation.playIdle(ped, descriptor);
+    DeviceAnimation.spawnProp(ped, descriptor);
 
-  startClock();
-  sendChargeToNui(id);
+    startClock();
+    sendChargeToNui(id);
+  } catch (error) {
+    try {
+      closeDevice(id);
+    } catch {
+      // The failure that stopped the open is the one worth reporting; the close released focus.
+    }
+    throw error;
+  }
 };
 
+/**
+ * Lower a device. Every step runs even when one before it throws, and the first throw is
+ * rethrown once they all have (MICA-467): focus is released near the end, so a prop that will
+ * not delete or an event that will not send used to leave the player held by a frame already
+ * marked closed.
+ */
 export const closeDevice = (id: DeviceId): void => {
   const descriptor = DEVICES[id];
-  DeviceState.setOpen(id, false);
-  stopClock();
+  const failures: unknown[] = [];
+  const step = (run: () => void): void => {
+    try {
+      run();
+    } catch (error) {
+      failures.push(error);
+    }
+  };
 
-  const ped = PlayerPedId();
+  step(() => DeviceState.setOpen(id, false));
+  // A field in a frame that is down is not being typed in. Only `hideFrame` used to clear this,
+  // so a close from a push or an export while a field had focus left the device's own key
+  // refusing to raise it again until the page happened to report a blur (MICA-467).
+  step(() => DeviceState.setTyping(false));
+  step(stopClock);
   // Only the phone has a camera to put down; the scripted cam is never up for the tablet.
-  if (descriptor.chrome.camera) PhoneCamera.disable();
-  DeviceAnimation.removeProp();
-  DeviceAnimation.stopAll(ped);
-  Freelook.resetFreelook();
+  if (descriptor.chrome.camera) step(() => PhoneCamera.disable());
+  step(() => DeviceAnimation.removeProp());
+  step(() => DeviceAnimation.stopAll(PlayerPedId()));
+  step(() => Freelook.resetFreelook());
+  step(() => sendNuiMessage('setVisible', { device: id, visible: false }));
 
-  sendNuiMessage('setVisible', { device: id, visible: false });
+  if (failures.length > 0) throw failures[0];
 };
 
 /** Lower whatever is up — `hideFrame` and Escape do not say which, and need not. */
