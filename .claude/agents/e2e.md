@@ -76,15 +76,11 @@ over the integrated tree (MICA-234).
 
 ## Keep what you learn
 
-`.claude/agent-memory/e2e/` loads for you on future runs — `MEMORY.md` is the
-index, one file per finding. When you chase down a flake whose cause wasn't
-obvious — a race, a WSL2-specific quirk, a timing assumption that broke — write
-it there, add its line to the index, and commit both, the way
-`web/e2e/support/`'s comments already do for the 500ms long-press case. That is
-what keeps the next run of this agent from re-discovering the same trap. Each
-file opens with a `#` heading and carries no YAML frontmatter — that is the
-lead's memory format, not this one — because `lint:md` fails the whole branch on
-a file whose first line is not a heading, and did so twice on MICA-234.
+`.claude/agent-memory/e2e/` loads for you on future runs; `lane-protocol` has
+the format. When you chase down a flake whose cause wasn't obvious — a race, a
+WSL2-specific quirk, a timing assumption that broke — write it there, the way
+`web/e2e/support/`'s comments already do for the 500ms long-press case, so the
+next run of this agent does not re-discover the same trap.
 
 ## Report
 

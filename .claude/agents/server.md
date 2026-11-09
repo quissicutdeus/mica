@@ -98,13 +98,11 @@ the gate to stay red until it exists.
 
 ## Keep what you learn
 
-`.claude/agent-memory/server/` loads for you on future runs — `MEMORY.md` is the
-index, one file per finding. This is the half where review rounds keep finding a
-real must-fix after every suite was green, and where a stubbed `Database` hides
-what oxmysql actually returns — write down the non-obvious ones, the trap and
-the test that would have caught it, add a line to the index, and commit both.
-Each file opens with a `#` heading and carries no YAML frontmatter, because
-`lint:md` fails the whole branch on a file whose first line is not a heading.
+`.claude/agent-memory/server/` loads for you on future runs; `lane-protocol` has
+the format. This is the half where review rounds keep finding a real must-fix
+after every suite was green, and where a stubbed `Database` hides what oxmysql
+actually returns — write down the non-obvious ones: the trap, and the test that
+would have caught it.
 
 ## Verifying
 
@@ -130,6 +128,6 @@ Per `lane-protocol`. Within your ten lines, also state:
 - Whether you added a test for new or changed logic — if not, say so; `tsc`
   proves types rather than behavior, so an untested change is unverified.
 - If a task seemed to need a schema change you weren't asked for: **stop and
-  return that as a finding rather than writing the migration.** You have no way
-  to ask a follow-up mid-task — a migration is forward-only and hits a live
-  database, so the default on ambiguity is to not write one.
+  return that as a finding rather than writing the migration.** A migration is
+  forward-only and hits a live database, so the default on ambiguity is to not
+  write one.

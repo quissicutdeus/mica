@@ -73,5 +73,7 @@ the lanes report and before it commits.
 
 The name is the routing key and stays boring. Each agent's `description:` keeps
 the reason it works the way it does — that is where a name from the setting
-earns its place, rather than in an identifier you have to translate first.
-`server/__tests__/assistantConfig.test.ts` holds this list to what is on disk.
+earns its place, rather than in an identifier you have to translate first. Which
+model and effort each one runs on, and why, is the `## Models` table in
+`lead-protocol`. `server/__tests__/assistantConfig.test.ts` holds this list and
+that table to what is on disk.

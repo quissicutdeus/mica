@@ -78,6 +78,38 @@ lane may hold it. A spec that pins the behavior you removed turns the full
 verify red long after your own gates were green (MICA-194). "No e2e spec covers
 this" has been wrong twice.
 
+## Keep what you learn
+
+An agent type that declares `memory: project` has `.claude/agent-memory/<type>/`
+loaded on every run: `MEMORY.md` is the index, one file per finding. Your agent
+definition says what is worth writing there. The format is the same for all of
+them:
+
+- A note opens with a `#` heading, has no YAML frontmatter, and wraps at 80
+  columns. Frontmatter is the lead's memory format, not this one, and `lint:md`
+  fails the whole branch on a file whose first line is not a heading; it did so
+  twice on MICA-234.
+- Write it by absolute path. A relative write once left an empty
+  `web/src/apps/.claude/agent-memory/`, and every directory under
+  `web/src/apps/` reads as an app, so every a11y test failed at load.
+- Its index line is the link alone, the title stating the trap:
+  `- [A row from oxmysql fails a prototype check](oxmysql-rows-are-foreign-realm.md)`.
+  Claude Code loads only the first 200 lines of `MEMORY.md` and drops the rest
+  without a word, and Prettier puts any summary after a long link on lines of
+  its own, so `assistantConfig.test.ts` caps an index at 150 lines.
+- Commit the note with its index line, or in a shared checkout list both as
+  uncommitted in your report.
+- The directory is committed to a public repository, so a note never holds a
+  secret, a key or a token: name where one lives, never its value.
+
+## When the task needs a decision you were not given
+
+You cannot stop mid-task to ask the lead and wait for an answer. So when the
+work seems to need something your agent definition marks as a stop — a schema
+change, a new export, a value the client decides, a protected branch — stop and
+return it as a finding instead of doing it. Not doing it is the one choice the
+lead can still change.
+
 ## Report
 
 Your final message goes to the lead, who is short on attention. **Ten lines at

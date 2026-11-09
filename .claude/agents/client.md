@@ -107,14 +107,10 @@ synchronous part of the call.
 
 ## Keep what you learn
 
-`.claude/agent-memory/client/` loads for you on future runs — `MEMORY.md` is the
-index, one file per finding. A native that wants an argument order its types do
-not say, a moment that has to wait for the session or the ped, a framework whose
-client object differs from its docs — write the non-obvious ones there, add a
-line to the index, and commit both. Each file opens with a `#` heading and
-carries no YAML frontmatter — that is the lead's memory format, not this one —
-because `lint:md` fails the whole branch on a file whose first line is not a
-heading, and did so twice on MICA-234.
+`.claude/agent-memory/client/` loads for you on future runs; `lane-protocol` has
+the format. A native that wants an argument order its types do not say, a moment
+that has to wait for the session or the ped, a framework whose client object
+differs from its docs — write the non-obvious ones there.
 
 ## Verifying
 
@@ -143,6 +139,5 @@ Per `lane-protocol`. Within your ten lines, also state:
 - Whether you changed the shape of a client export or a qb-phone event.
 - If the task seemed to need a new client-authoritative value, a native with
   effects outside the phone, or a change to what the server trusts from the
-  client: **stop and return that as a finding rather than doing it.** You have
-  no way to ask a follow-up mid-task, and every one of those is a security
-  decision the lead makes.
+  client: **stop and return that as a finding rather than doing it.** Every one
+  of those is a security decision the lead makes.

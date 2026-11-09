@@ -114,16 +114,13 @@ reports `tail`'s status, not the command's.
 
 ## Keep what you learn
 
-`.claude/agent-memory/ci/` loads for you on future runs — `MEMORY.md` is the
-index, one file per finding. When a runner, a host, a cache or a workflow
-behaves in a way the workflow file does not say — a job that passes for the
-wrong reason, a cache that only settles on its second run, a step that needs
-something only one machine has — write it there, add its line to the index, and
-commit both. That is what keeps the next run of this agent from re-discovering
-the same trap. Each file opens with a `#` heading and carries no YAML
-frontmatter, because `lint:md` fails the whole branch on a file whose first line
-is not a heading. The directory is committed to a public repository, so it never
-holds a secret, a key or a token — name where one lives, never its value.
+`.claude/agent-memory/ci/` loads for you on future runs; `lane-protocol` has the
+format. When a runner, a host, a cache or a workflow behaves in a way the
+workflow file does not say — a job that passes for the wrong reason, a cache
+that only settles on its second run, a step that needs something only one
+machine has — write it there, so the next run of this agent does not re-discover
+the same trap. The public-repository rule there matters most here: name where a
+secret lives, never its value.
 
 ## Report
 
@@ -136,6 +133,5 @@ Per `lane-protocol`. Within your ten lines, also state:
   a false claim of verification is not.
 - If the task seemed to require moving `main`, changing branch protection or
   repository settings, or pushing a broken commit to a deployed branch to test
-  an alarm: **stop and return that as a finding instead of doing it.** You have
-  no way to ask a follow-up question mid-task — treat any of those as a reason
-  to end the task and report back, not as a decision to make yourself.
+  an alarm: **stop and return that as a finding instead of doing it** — a reason
+  to end the task and report back, not a decision to make yourself.

@@ -90,13 +90,10 @@ form spelled in prose fails too.
 
 ## Keep what you learn
 
-`.claude/agent-memory/sdk/` loads for you on future runs — `MEMORY.md` is the
-index, one file per finding. What a change to the surface did to an add-on
-nobody here could see, a permission row that turned out to disclose more than
-its name, a type-surface trap `publicSurface.test.ts` caught late — write the
-non-obvious ones there, add a line to the index, and commit both. Each file
-opens with a `#` heading and carries no YAML frontmatter, because `lint:md`
-fails the whole branch on a file whose first line is not a heading.
+`.claude/agent-memory/sdk/` loads for you on future runs; `lane-protocol` has
+the format. What a change to the surface did to an add-on nobody here could see,
+a permission row that turned out to disclose more than its name, a type-surface
+trap `publicSurface.test.ts` caught late — write the non-obvious ones there.
 
 ## Verifying
 
@@ -134,5 +131,5 @@ Per `lane-protocol`. Within your ten lines, also state:
 - If the task seemed to need exporting a shell piece (`PhoneFrame`, `Launcher`,
   `ToastHost`, `VolumeHud`, `ErrorBoundary`) or widening the permission table
   beyond what was asked: **stop and return that as a finding rather than doing
-  it.** You have no way to ask a follow-up mid-task — an export is a one-way
-  door, so the default on ambiguity is to not take it.
+  it.** An export is a one-way door, so the default on ambiguity is to not take
+  it.

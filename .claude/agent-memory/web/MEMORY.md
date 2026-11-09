@@ -1,131 +1,52 @@
 # web agent memory
 
-One file per finding; this index is what loads. Read the file before relying on
-its one-line summary.
+One file per finding; this index is what loads. Each gets one line here: the
+link, its title stating the trap. The detail lives in the file, so read it
+before relying on the title. No summary after the link — `lane-protocol` has
+why.
 
-- [`isBrowser()` is safe headless](vitest-node-env-window.md) — `hostRuntime()`
-  answers `headless` with no `window` (MICA-177); a raw `window.` read is still
-  a trap; the in-flight-promise rule for server-answered stores
-- [Building an add-on outside the repo](out-of-tree-addon-build.md) — pnpm 11
-  reads overrides from `pnpm-workspace.yaml` only; the git specifier that works
-- [CSP violations in the add-on sandbox](csp-blockeduri-opaque-frame.md) —
-  `blockedURI` carries the full URL, path and query, in chromium and cef-floor
-- [First test pays the cold transform](cold-import-first-test-timeout.md) — on
-  the Forgejo runner that is the whole 20s budget; warm the import in
-  `beforeAll`, do not raise `testTimeout`
+- [`isBrowser()` is safe headless](vitest-node-env-window.md)
+- [Building an add-on outside the repo](out-of-tree-addon-build.md)
+- [CSP violations in the add-on sandbox](csp-blockeduri-opaque-frame.md)
+- [First test pays the cold transform](cold-import-first-test-timeout.md)
 - [A persisted default must not persist](persisted-default-must-not-persist.md)
-  — `usePersisted`'s outer `set` always writes storage and queues a debounced
-  server save; overlay a runtime default with `derived`, never write it in
-- [`callOr`'s default hides failure](callor-default-hides-failure.md) — `[]` on
-  failure and `[]` on real-empty are the same value; swap to `call` in place,
-  keep the export's name, check `vi.mock` sites outside your fence first
+- [`callOr`'s default hides failure](callor-default-hides-failure.md)
 - [Persisted registry has no unregister](persisted-registry-vs-frame-lifecycle.md)
-  — don't wire a disposable object (an add-on frame server) into a permanent sdk
-  registry; give it its own registry with a real unregister instead
-- [A sweep needs a real load signal](hydrate-must-not-sweep-on-every-call.md) —
-  don't sweep on every hydrate call; the e2e/dev mock's `[]` looks identical to
-  a real empty answer. Also: don't cancel a pending write, exclude its key.
-  Also: `pnpm test:e2e -- <files>` from root doesn't filter, use web's
-  playwright
-- [`derived_inert` only fires for a rune](derived-inert-mechanism.md) — needs
-  dirty+INERT/DESTROYED at once; store-backed deriveds sever on unmount before
-  they can be dirtied; two real hits fixed (Trade.svelte, License.svelte)
+- [A sweep needs a real load signal](hydrate-must-not-sweep-on-every-call.md)
+- [`derived_inert` only fires for a rune](derived-inert-mechanism.md)
 - [Mocking `nui/fetchNui` misses CRUD stores](fetchnui-mock-misses-crud-stores.md)
-  — `createCrudStore` uses the SDK transport; `.set()` it in the test. `svc`
-  calls carry a 3rd arg, so `toHaveBeenCalledWith` fails on arity
-- [Lazy shell import kills boot](lazy-import-chunk-cycle-persisted-facet.md) —
-  chunk cycle evaluates state modules before facets register; import statically
-  or eager; worktree+symlink trap
-- [Prove a move by handler source](prove-a-move-by-handler-source.md) — keys
-  aren't enough; compare `String(fn)` with `__vite_ssr_import_N__.` stripped;
-  knip follows `import.meta.glob`
-- [A build-flag gate folds](build-flag-gate-and-persist-proof.md) —
-  `DEV || VITE_X` dynamic import emits no chunk; prove it on a scratch outDir;
-  "persists nothing" needs both a storage snapshot and `saveSetting` unspied
-- [Mock files are scanned as text](mock-files-are-scanned-as-text.md) —
-  routes.test needs 2-space keys and a bare-identifier `defineMockCrud` first
-  arg; handlers get `{ device }`
-- [A mocked promise is never unhandled](mocked-promise-is-never-unhandled.md) —
-  `vi.fn` handles what it returns; spy on the promise's `catch` instead of
-  listening for `unhandledRejection`
-- [Assert a fake-timer count as a difference](fake-timer-count-is-relative.md) —
-  `recordConsent` queues its own debounced timer; and `waitFor` needs
-  `shouldAdvanceTime`
-- [The Bash guard reads a regex `|` as a pipe](bash-guard-reads-regex-pipe.md) —
-  `grep -E "a|b"` beside a gate drops the batch; filter logs with `-e` flags
+- [Lazy shell import kills boot](lazy-import-chunk-cycle-persisted-facet.md)
+- [Prove a move by handler source](prove-a-move-by-handler-source.md)
+- [A build-flag gate folds](build-flag-gate-and-persist-proof.md)
+- [Mock files are scanned as text](mock-files-are-scanned-as-text.md)
+- [A mocked promise is never unhandled](mocked-promise-is-never-unhandled.md)
+- [Assert a fake-timer count as a difference](fake-timer-count-is-relative.md)
+- [The Bash guard reads a regex `|` as a pipe](bash-guard-reads-regex-pipe.md)
 - [`__resetAppEvents` wipes module subscribers](reset-app-events-wipes-module-subscribers.md)
-  — import-time subscribers never re-register; drain with `clearAppEvents`
-- [No `<form>` submit in an add-on](no-form-submit-in-addon-frame.md) — the
-  frame lacks `allow-forms`; the handler silently never runs; click + Enter
+- [No `<form>` submit in an add-on](no-form-submit-in-addon-frame.md)
 - [A union state does not narrow in `{:else if}`](svelte-template-union-narrowing.md)
-  — passes typecheck, fails `lint:web`; split the state. `ReportDialog` needs
-  `reports` + `notifications`
-- [A new app trips two pins](new-app-trips-two-pins.md) — appContract `APPS` row
-  and the computed-class ratchet (Icon `class={className}`); `run()` answers a
-  boolean
+- [A new app trips two pins](new-app-trips-two-pins.md)
 - [`Object.hasOwn`/`.at()` fail web's typecheck](es2022-lib-gap-object-hasown.md)
-  — CEF has them, web's TS lib does not. Plus the utilities that look real and
-  aren't (`mx-4`, `pt-6`, `bg-gray-900`)
 - [A `.svelte` module-script type fails lint](svelte-module-script-type-export.md)
-  — typecheck passes, eslint sees `error` types; declare it in `store.ts`
-  instead
-- [jsdom keeps `inert` as a property](jsdom-inert-is-a-property.md) — Svelte
-  sets `el.inert`; jsdom never reflects it, so `hasAttribute('inert')` is false
-- [Read the sibling server file first](sibling-server-contract-drift.md) — a
-  brief's contract drifted from the parallel server lane (returned refusals,
-  other slugs); handle returned and thrown refusals, then run `routes.test`
+- [jsdom keeps `inert` as a property](jsdom-inert-is-a-property.md)
+- [Read the sibling server file first](sibling-server-contract-drift.md)
 - [A throwing store subscriber wedges every store](store-subscriber-throw-wedges-every-store.md)
-  — Svelte's shared queue never drains again; clone-check pushes in tests;
-  dedupe a scoped derived yourself
 - [axe 4.14 turns on `label-content-name-mismatch`](axe-414-label-content-name-mismatch.md)
-  — now on by default, matches whole words; `aria-hidden` does not exempt
-  visible text
 - [svelte-eslint-parser 1.9.0 finds root's TypeScript 7](svelte-eslint-parser-finds-root-ts7.md)
-  — crashes on script-less components; held at 1.8.1 by MICA-402's override
 - [A heading level change is invisible only with a size class](heading-level-change-is-not-free.md)
-  — app-reset zeroes heading margins only; UA font-size per level survives
-- [Measure role contrast from `m3.ts`](role-contrast-measured-from-m3.md) —
-  esbuild bundle `buildSchemes`; every role passes both schemes, seeded roles
-  lie about meaning
-- [A surface with several controls](stretched-control-in-a-surface.md) — sibling
-  buttons plus a stretched `::after`; a `<style>` class fails utilityClasses,
-  use a data attribute; keep clicked text inside the stretched button
+- [Measure role contrast from `m3.ts`](role-contrast-measured-from-m3.md)
+- [A surface with several controls](stretched-control-in-a-surface.md)
 - [A new dialog breaks an unnamed e2e locator](new-dialog-breaks-unnamed-dialog-locator.md)
-  — a nested picker makes two dialogs; grep e2e for a bare
-  `getByRole('dialog')`. Also the add-on `index.svelte` unit harness
-- [Any directory under apps/ is an app](any-dir-under-apps-is-an-app.md) — an
-  empty stray `.claude/` broke appContract and a11y; write memory by absolute
-  path
+- [Any directory under apps/ is an app](any-dir-under-apps-is-an-app.md)
 - [A failure stub must follow fetchNui's contract](a-failure-stub-must-follow-fetchnui.md)
-  — `mockRejectedValue` skips the default-value path; return the default or
-  throw, as the real layer does
 - [A `beforeEach` arrow must not return the mock](beforeeach-must-not-return-the-mock.md)
-  — the returned function runs as teardown; use a block body
-- [`rerender` resets a component's `ready` flag](rerender-resets-ready.md) —
-  drive bound props through a `__fixtures__/` wrapper that binds the flag
-- [The real Shell renders in jsdom](the-real-shell-renders-in-jsdom.md) — stub
-  `Element.animate`, reset `openDevice`, assert on the real Shell
-- [An unsynced key needs a synced owner](unsynced-key-needs-a-synced-owner.md) —
-  the sweep skips `sync: false`; gate it on a synced fingerprint. Mock strip
-  must cover named routes, not just the generic branch
-- [A new core call needs the facet](new-core-call-needs-the-facet.md) — app
-  can't reach `services/`; sdk facet type, host facet and iframe twin all
-  change; ask for them
+- [`rerender` resets a component's `ready` flag](rerender-resets-ready.md)
+- [The real Shell renders in jsdom](the-real-shell-renders-in-jsdom.md)
+- [An unsynced key needs a synced owner](unsynced-key-needs-a-synced-owner.md)
+- [A new core call needs the facet](new-core-call-needs-the-facet.md)
 - [`content-visibility` still builds the nodes](content-visibility-does-not-skip-node-creation.md)
-  — node creation dominated Contacts; window the rows instead; no `bind:` sizes
-  (jsdom), read `scrollTop` on `focusin`
 - [The boot overlay's fly-in wait has no slack](boot-overlay-fly-in-has-no-slack.md)
-  — overlay shows ~65 ms after the frame lands; tune `BOOT_MIN_MS`, not
-  `OPEN_FLY_MS`; A/B cold start interleaved, gated on loadavg
-- [`pkill -f` kills its own shell](pkill-f-matches-its-own-shell.md) — the Bash
-  tool's zsh argv holds the pattern; exit 144, batch lost. `TaskStop` or
-  `kill $pid`
+- [`pkill -f` kills its own shell](pkill-f-matches-its-own-shell.md)
 - [A thread open is not the scroll write](thread-open-cost-is-not-the-scroll-write.md)
-  — rAF/column-reverse save nothing; cold layout is emoji-font first use, script
-  is `formatTime`; measure a warm open
-- [Many Vite builds: one warm process](many-vite-builds-one-process.md) — a warm
-  build is 0.8 CPU-s vs 2.1 cold; mirror the CLI via `createBuilder`; reset cwd
-  and `NODE_ENV`; one svelte-check over fixtures with a canary
+- [Many Vite builds: one warm process](many-vite-builds-one-process.md)
 - [vmThreads puts a realm boundary in jsdom files](vmthreads-realm-boundary.md)
-  — Node-realm `structuredClone`, `postMessage` deaf to fake timers, no
-  `crypto.subtle`; rerun one file with `--pool=forks` to tell

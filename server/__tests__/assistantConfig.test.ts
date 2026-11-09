@@ -214,8 +214,10 @@ describe('assistant config', () => {
    * real findings sitting unread in the directory the whole time.
    */
   it('every agent whose body relies on agent memory declares a memory scope', () => {
-    const reliant = agentDefinitions().filter(({ path }) =>
-      bodyOf(readFileSync(path, 'utf8')).includes('agent-memory')
+    // Its own directory, not any mention: `review` reads the other agents' indexes and keeps
+    // none of its own, which is a different promise.
+    const reliant = agentDefinitions().filter(({ expectedName, path }) =>
+      bodyOf(readFileSync(path, 'utf8')).includes(`.claude/agent-memory/${expectedName}/`)
     );
     // A filter that matches nothing would pass the loop below for free.
     expect(
@@ -307,6 +309,137 @@ describe('assistant config', () => {
           'MEMORY.md does not exist — the index is the file that loads, so this agent ' +
           'starts every run with no memory'
       ).toBe(true);
+    }
+  });
+
+  /**
+   * Claude Code (2.1.319, bundled CLI: `var lm="MEMORY.md",XN=200,Wee=25000`) loads only the
+   * first 200 lines / 25,000 characters of an agent's `MEMORY.md` and drops the rest
+   * silently — no error, the tail of the index is just never read. It trims the text, counts
+   * lines as newlines + 1 and size as string length; this counts the same way. The cap here
+   * is lower (150 / 20,000) so there is headroom: an index that grows past the CLI's limit
+   * loses entries without any gate noticing, and this is the only one that does.
+   */
+  it('every agent-memory index stays under the CLI load limit, with headroom', () => {
+    const MAX_LINES = 150;
+    const MAX_CHARS = 20_000;
+    const indexes = readdirSync(MEMORY_DIR, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => ({
+        label: `.claude/agent-memory/${entry.name}/MEMORY.md`,
+        path: join(MEMORY_DIR, entry.name, 'MEMORY.md')
+      }))
+      .filter(({ path }) => existsSync(path));
+    // No index found would pass the loop below for free.
+    expect(indexes.length, 'no agent-memory MEMORY.md found to measure').toBeGreaterThan(0);
+    for (const { label, path } of indexes) {
+      const text = readFileSync(path, 'utf8').trim();
+      const lines = text.split('\n').length;
+      expect(
+        lines,
+        `${label} is ${lines} lines; the cap is ${MAX_LINES} (the CLI silently drops past 200)`
+      ).toBeLessThanOrEqual(MAX_LINES);
+      expect(
+        text.length,
+        `${label} is ${text.length} characters; the cap is ${MAX_CHARS} (the CLI silently drops past 25,000)`
+      ).toBeLessThanOrEqual(MAX_CHARS);
+    }
+  });
+
+  /**
+   * `lead-protocol`'s `## Models` table is the written record of what each agent runs on and
+   * why. A table that drifts from the frontmatter is a record nobody can trust, and the
+   * frontmatter is what actually runs, so each row is held to it: the same set of agents, and
+   * the same model and effort for each.
+   */
+  it("lead-protocol's Models table matches each agent's model and effort", () => {
+    const skill = readFileSync(join(SKILLS_DIR, 'lead-protocol', 'SKILL.md'), 'utf8');
+    const start = skill.search(/^## Models\s*$/mu);
+    expect(start, 'lead-protocol/SKILL.md has no `## Models` section').toBeGreaterThanOrEqual(0);
+    const rest = skill.slice(start).replace(/^## Models\s*$/mu, '');
+    const next = rest.search(/^## /mu);
+    const section = next === -1 ? rest : rest.slice(0, next);
+
+    const rows = section
+      .split('\n')
+      .filter((line) => line.trim().startsWith('|'))
+      .map((line) =>
+        line
+          .trim()
+          .replace(/^\||\|$/gu, '')
+          .split('|')
+          .map((cell) => cell.trim())
+      )
+      // The header and the `| --- |` rule are not agents; an agent cell is a backticked name.
+      .filter((cells) => /^`[a-z0-9-]+`$/u.test(cells[0] ?? ''))
+      .map(([agent, model, effort]) => ({
+        agent: (agent as string).slice(1, -1),
+        model: model ?? '',
+        effort: effort ?? ''
+      }));
+    expect(rows.length, 'the `## Models` section holds no table rows').toBeGreaterThan(0);
+
+    const declared = new Map(
+      agentDefinitions()
+        .map(({ expectedName, path }) => [expectedName, frontOf(path)] as const)
+        .filter(([, front]) => front.model !== undefined)
+    );
+    expect(declared.size, 'no agent declares a `model:`').toBeGreaterThan(0);
+
+    const tabled = new Set(rows.map((row) => row.agent));
+    for (const name of declared.keys()) {
+      expect(
+        tabled.has(name),
+        `agent "${name}" declares \`model:\` but has no row in the Models table`
+      ).toBe(true);
+    }
+    for (const row of rows) {
+      const front = declared.get(row.agent);
+      expect(
+        front,
+        `Models table names "${row.agent}", which declares no \`model:\` (or has no agent file)`
+      ).toBeDefined();
+      expect(
+        `${row.model} / ${row.effort}`,
+        `Models table row for "${row.agent}" says "${row.model} / ${row.effort}" but ` +
+          `.claude/agents/${row.agent}.md declares "${String(front?.model)} / ${String(front?.effort)}"`
+      ).toBe(`${String(front?.model)} / ${String(front?.effort)}`);
+    }
+  });
+
+  /**
+   * `lane-protocol` tells a lane to report by `SendMessage`. A `tools:` allowlist is
+   * exhaustive, so an agent that preloads the protocol and lists tools without `SendMessage`
+   * is told to do something it cannot, and its report has nowhere to go.
+   */
+  it('a lane with a tools allowlist can SendMessage', () => {
+    const allowlisted = agentDefinitions()
+      .map(({ label, path }) => ({ label, front: frontOf(path) }))
+      .filter(
+        ({ front }) =>
+          Array.isArray(front.skills) &&
+          front.skills.includes('lane-protocol') &&
+          front.tools !== undefined
+      );
+    // An allowlist is the exception; if none exists the check is checking nothing, which
+    // is fine only because the rule then has nothing to apply to.
+    for (const { label, front } of allowlisted) {
+      const tools = Array.isArray(front.tools)
+        ? (front.tools as string[])
+        : String(front.tools).split(',');
+      expect(
+        tools.map((tool) => tool.trim()),
+        `${label}: preloads lane-protocol, which reports by SendMessage, but its \`tools:\` ` +
+          'allowlist omits SendMessage, so the lane cannot report'
+      ).toContain('SendMessage');
+      // SendMessage reaches a subagent deferred even when its allowlist names it: a docs
+      // probe on 2026-11-08 found it absent from its callable tools and had to load it
+      // through ToolSearch before the send went through.
+      expect(
+        tools.map((tool) => tool.trim()),
+        `${label}: lists SendMessage but not ToolSearch, and SendMessage arrives deferred, ` +
+          'so without ToolSearch the lane cannot load it'
+      ).toContain('ToolSearch');
     }
   });
 

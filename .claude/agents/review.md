@@ -71,6 +71,21 @@ means, by area:
 - **The pipeline**: a gate that skips instead of failing, a check piped into a
   filter, a hook at a path that does not exist.
 
+## What the lanes already learned the hard way
+
+Every agent that writes code keeps an index of traps that once passed every
+suite: `.claude/agent-memory/server/MEMORY.md`, and `client/`, `web/`, `sdk/`,
+`ci/` and `e2e/` beside it. Read the index for each directory the diff touches
+before you read the diff, and open the note behind any title that matches what
+you see. Seventy-odd of those titles are server traps a review found after the
+gates were green.
+
+You keep no memory of your own, on purpose: Edit and Write are withheld, and
+what a review learns belongs in this checklist, where the next review reads it.
+When a confirmed finding is a pattern the list above does not name, add one
+`checklist:` line to your report with the rule in a sentence, and the lead adds
+it here.
+
 ## Verify the artifact
 
 Before you write "no e2e spec covers this", grep `web/e2e` for the testids,

@@ -35,6 +35,36 @@ has the list); use `review` and `verify` after the lanes report. **Resume a lane
 with `SendMessage`** when follow-up work lands in its files — it keeps its
 context, and a fresh `Agent` call starts from nothing.
 
+**A spec under `web/e2e/` is an `e2e` lane's file**, even when a `web` lane
+builds the feature it pins. The `e2e` agent carries `--repeat-each=5` and "red
+without the fix"; a `web` lane carries neither. Of about 260 spawns to
+2026-11-08 not one was `e2e`, so specs were written without either rule.
+
+## Models
+
+Spend follows where a mistake survives the suites, not how much code a lane
+writes: a wrong ownership predicate passes every gate, a wrong paragraph in a
+doc is caught by reading the code. `assistantConfig.test.ts` holds this table to
+each agent's frontmatter, so change both together and say why here.
+
+| Agent    | Model            | Effort | Why                                                     |
+| -------- | ---------------- | ------ | ------------------------------------------------------- |
+| `server` | opus             | xhigh  | §2.9 is behaviour no suite proves; review keeps finding |
+| `client` | opus             | high   | nothing can start the game, so nothing checks it after  |
+| `web`    | opus             | high   | busiest lane; Web APIs past Chromium 103 go unchecked   |
+| `sdk`    | opus             | high   | public surface; breaks add-ons nobody here builds       |
+| `review` | opus             | xhigh  | pure reasoning against the threat model                 |
+| `ci`     | sonnet           | high   | a gate that fails open is found by reasoning, not tests |
+| `e2e`    | sonnet           | high   | the spec itself is the check, and it runs               |
+| `docs`   | sonnet           | medium | accuracy comes from reading the code, not from thinking |
+| `verify` | claude-haiku-5-5 | medium | mechanical: run, keep exit codes, reconcile counts      |
+
+The lead is the session's own model, set by `/model`, not by a file. The
+built-in types inherit it unless the `Agent` call passes `model`: give an
+`Explore` search `model: "haiku"`, since it locates and does not judge, and
+leave `Plan` and `general-purpose` on the session's model unless the work is
+routine.
+
 **Land the contract before fanning out.** Most tickets here are one NUI round
 trip — the action in `shared/contracts/`, a `server/` handler, a `web/` call and
 its mock, and only for a `clientPrepared` action a `client/` hook — and every
@@ -102,8 +132,7 @@ report opens with `uncommitted:` and its paths rather than a sha. Then:
 - for a lane writing a FiveM export: read `GetInvokingResource()` into a const
   on the first synchronous line, since after an `await` it is null and no stub
   shows it;
-- for `review` lanes: never `checkout` or `switch` in the main checkout;
-- agent-memory notes: an H1, no frontmatter, wrapped at 80 columns.
+- for `review` lanes: never `checkout` or `switch` in the main checkout.
 
 Send the long brief once, then — if the lane idles without starting — a separate
 five-line message: what is already committed, the brief is in your inbox, **do
@@ -202,10 +231,6 @@ message reads as something to answer instead of something to execute.
   `restore --staged`, `stash`, `update-index`. They delete with plain `rm` and
   report it. Two lanes staged a deletion into the shared index on 2026-10-22.
   The brief says it, and so does a message when a wave starts.
-- **Agent-memory notes go by absolute path.** An empty
-  `web/src/apps/.claude/agent-memory/` left by a relative write made every a11y
-  test and `appContract` fail at load, because every directory under
-  `web/src/apps/` reads as an app.
 - **`pre-push` judges the uncommitted tree, not what is pushed.** `check:fast`
   selects suites from the working diff, so a lane's half-finished file (a
   migration with no CHANGELOG entry yet) refuses a push of verified commits.

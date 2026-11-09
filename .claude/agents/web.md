@@ -72,14 +72,10 @@ into `sdk/` to add it — that is a different lane's file and a different review
 
 ## Keep what you learn
 
-`.claude/agent-memory/web/` loads for you on future runs — `MEMORY.md` is the
-index, one file per finding. The CEF-103 floor throws up a steady stream of
-"this shipped in Chromium N, that fallback works" findings — write the
-non-obvious ones there, add a line to the index, and commit both, rather than
-re-deriving the same answer next time. Each file opens with a `#` heading and
-carries no YAML frontmatter — that is the lead's memory format, not this one —
-because `lint:md` fails the whole branch on a file whose first line is not a
-heading, and did so twice on MICA-234.
+`.claude/agent-memory/web/` loads for you on future runs; `lane-protocol` has
+the format. The CEF-103 floor throws up a steady stream of "this shipped in
+Chromium N, that fallback works" findings — write the non-obvious ones there,
+rather than re-deriving the same answer next time.
 
 ## Verifying
 

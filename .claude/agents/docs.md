@@ -8,7 +8,7 @@ description: >-
 color: purple
 model: sonnet
 effort: medium
-tools: Read, Write, Edit, Grep, Glob, Bash, Skill
+tools: Read, Write, Edit, Grep, Glob, Bash, Skill, SendMessage, ToolSearch
 skills:
   - lane-protocol
 ---
