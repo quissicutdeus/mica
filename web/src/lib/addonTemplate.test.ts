@@ -483,31 +483,56 @@ describe('the out-of-tree add-on template', () => {
    *
    * Offline: the template is copied out and its `node_modules` is links — `@mica/sdk` and
    * `@mica/shared` to this tree, the toolchain to `web/`'s copies — so the build reads exactly
-   * the SDK this commit holds and fetches nothing. Each build is a child Node running Vite's own
-   * CLI, as an author's `pnpm build` would, rather than Vite inside this Vitest process.
+   * the SDK this commit holds and fetches nothing.
+   *
+   * Every build runs in one child Node, `addonTemplateBuilds.mjs`, one after another, rather
+   * than as Vite inside this Vitest process. Each is what `vite build --mode <m>` (and, for
+   * one, `--outDir dist`) does, as an author's `pnpm build` would: the same inline config
+   * handed to the same `createBuilder`, from the copy's own directory, in a clean environment.
+   * Nine processes was nine cold starts of Vite and the Svelte compiler, which cost several
+   * times what the bundling did; the runner's header has what is reset between builds.
    *
    * What it proves that nothing else does: a production bundle carries no trace of the mock,
    * a development bundle does, `mica-dev.json` is an entry the phone keeps for the bytes beside
    * it, and each route by which a production build could pull the mock in is refused.
    */
   describe('built offline, in production and in development', () => {
-    const VITE_BIN = path.join(ROOT, 'web/node_modules/vite/bin/vite.js');
-    /** A Vite build as its own process, without this runner's `NODE_ENV=test`. */
-    const viteBuild = (dir: string, mode: 'production' | 'development', args: string[] = []) =>
-      new Promise<{ code: number; output: string }>((resolve) => {
-        const env = Object.fromEntries(
-          Object.entries(process.env).filter(([k]) => k !== 'NODE_ENV' && !k.startsWith('VITEST'))
-        );
+    const RUNNER = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      'addonTemplateBuilds.mjs'
+    );
+    type Build = { name: string; dir: string; mode: 'production' | 'development'; build: object };
+    /** Every build in `jobs`, in one child Node, without this runner's `NODE_ENV=test`. */
+    const viteBuilds = async (jobs: Build[]) => {
+      const io = fs.mkdtempSync(path.join(os.tmpdir(), 'mica-addon-template-builds-'));
+      made.push(io);
+      const [jobsFile, resultsFile] = [path.join(io, 'jobs.json'), path.join(io, 'results.json')];
+      fs.writeFileSync(jobsFile, JSON.stringify(jobs));
+      const env = Object.fromEntries(
+        Object.entries(process.env).filter(([k]) => k !== 'NODE_ENV' && !k.startsWith('VITEST'))
+      );
+      const runner = await new Promise<{ code: number; output: string }>((resolve) => {
         execFile(
           process.execPath,
-          [VITE_BIN, 'build', '--mode', mode, ...args],
-          { cwd: dir, env, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 },
+          [RUNNER, jobsFile, resultsFile],
+          { env, timeout: 170_000, maxBuffer: 16 * 1024 * 1024 },
           (error, stdout, stderr) => {
             const code = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
             resolve({ code, output: `${stdout}\n${stderr}` });
           }
         );
       });
+      // The runner answers every build or none: a crash of its own is not a build's verdict.
+      if (runner.code !== 0 || !fs.existsSync(resultsFile)) {
+        throw new Error(`the build runner failed (${runner.code}):\n${runner.output}`);
+      }
+      const results = JSON.parse(read(resultsFile)) as Record<
+        string,
+        { code: number; output: string }
+      >;
+      expect(Object.keys(results).sort()).toEqual(jobs.map((job) => job.name).sort());
+      return results;
+    };
 
     /** A source file of the author's that pulls something in, wired from the component. */
     const sneaking = (body: string) => {
@@ -540,7 +565,9 @@ describe('the out-of-tree add-on template', () => {
     const builds: Record<string, { dir: string; code: number; output: string }> = {};
 
     beforeAll(async () => {
-      const cases: [string, Record<string, string>, 'production' | 'development', string[]?][] = [
+      // The last field is the `build` block `vite build`'s flags become: `--outDir dist` is
+      // `{ outDir: 'dist' }`, and no flag is `{}`.
+      const cases: [string, Record<string, string>, 'production' | 'development', object?][] = [
         ['production', {}, 'production'],
         ['development', {}, 'development'],
         // A dev session's leftovers in `dist/`, as an older template wrote them there.
@@ -553,7 +580,7 @@ describe('the out-of-tree add-on template', () => {
           'production'
         ],
         // Pointed back at `dist/` by hand: the dev output still goes to `dist-dev/`.
-        ['dev into dist', {}, 'development', ['--outDir', 'dist']],
+        ['dev into dist', {}, 'development', { outDir: 'dist' }],
         [
           'specifier',
           sneaking(
@@ -575,12 +602,14 @@ describe('the out-of-tree add-on template', () => {
         ['tablet', withTablet(true), 'production'],
         ['tablet without display', withTablet(false), 'production']
       ];
-      await Promise.all(
-        cases.map(async ([name, extra, mode, args]) => {
-          const dir = copyTemplate(extra);
-          builds[name] = { dir, ...(await viteBuild(dir, mode, args)) };
-        })
-      );
+      const jobs = cases.map(([name, extra, mode, build = {}]) => ({
+        name,
+        dir: copyTemplate(extra),
+        mode,
+        build
+      }));
+      const results = await viteBuilds(jobs);
+      for (const { name, dir } of jobs) builds[name] = { dir, ...results[name] };
     }, 180_000);
 
     const bundleOf = (name: string, folder: 'dist' | 'dist-dev' = 'dist'): string =>
@@ -662,8 +691,10 @@ describe('the out-of-tree add-on template', () => {
    *
    * The script is read out of the template's `package.json` and run by a shell with the
    * copy's `node_modules/.bin` first on `PATH`, as `pnpm check` would — so a script that names
-   * a missing binary or a wrong path fails here. The toolchain is this repo's: `svelte-check`
-   * and TypeScript from `web/`, stylelint and its two companions from the root.
+   * a missing binary or a wrong path fails here. Each of its two halves is run that way, the
+   * svelte-check half once for all three copies; the `beforeAll` has why, and how a verdict
+   * is still each copy's own. The toolchain is this repo's: `svelte-check` and TypeScript
+   * from `web/`, stylelint and its two companions from the root.
    *
    * The ticket's own acceptance: a planted `:has()`, a `dvh`, a misspelt utility class and an
    * `h-full` inside `Screen` each fail it by name, and the same file with each fixed passes —
@@ -760,11 +791,61 @@ describe('the out-of-tree add-on template', () => {
     ).scripts.check;
     const checks: Record<string, { code: number; output: string }> = {};
 
+    /**
+     * Where each case's component sits in the one copy svelte-check reads. The template's
+     * `include` is `src/**\/*.svelte`, so the two variants beside its own component are
+     * typechecked exactly as the component itself is, and keep its `./service` import.
+     */
+    const COMPONENT_OF = {
+      clean: 'src/index.svelte',
+      planted: 'src/index.planted.svelte',
+      fixed: 'src/index.fixed.svelte'
+    };
+    /**
+     * In that copy only, a component svelte-check must fault. A run that never read the
+     * components placed beside the template's would otherwise charge nothing to any case and
+     * read as three passes.
+     */
+    const CANARY = 'src/index.canary.svelte';
+    const CANARY_SOURCE = `<script lang="ts">\n  const canary: number = 'not a number';\n</script>\n\n<p>{canary}</p>\n`;
+    /**
+     * A line of svelte-check's `machine` format,
+     * `<time> ERROR|WARNING "<file>" <line>:<col> "<message>"`, and its closing summary.
+     */
+    const DIAGNOSTIC = /^\d+ (?:ERROR|WARNING) "([^"]+)" /;
+    const COMPLETED = /^\d+ COMPLETED \d+ FILES .*$/m;
+
     beforeAll(async () => {
+      /**
+       * The script's two halves, split at its one `&&` — the string is pinned whole above.
+       *
+       * svelte-check is nearly all of `pnpm check`'s cost: to report on the few files in `src/`
+       * it typechecks the whole SDK graph they import, some 550 files, and three copies paid
+       * that three times. So the first half runs once, with `--output machine` to fix the
+       * format it is read in, over one copy holding all three components side by side; each
+       * diagnostic is charged to the case whose component it names, or to every case when it
+       * names a file they share. The second half, the SDK checker, still runs in each case's
+       * own copy, whose `src/` is exactly what an author's would be. And `&&` is applied here
+       * as the shell would: a case svelte-check faulted fails with that, and nothing of the
+       * checker's.
+       */
+      const [svelteCheck, checker, ...more] = script.split(' && ');
+      if (checker === undefined || more.length > 0) {
+        throw new Error(`pnpm check is no longer two commands joined by one &&: ${script}`);
+      }
+      const together = copyTemplate(
+        {
+          [COMPONENT_OF.planted]: variant(true)['src/index.svelte'],
+          [COMPONENT_OF.fixed]: variant(false)['src/index.svelte'],
+          [CANARY]: CANARY_SOURCE
+        },
+        CHECK_TOOLCHAIN,
+        CHECK_BIN
+      );
       const cases: [string, Record<string, string>, Record<string, string>, string][] = [
-        ['clean', {}, CHECK_TOOLCHAIN, script],
-        ['planted', variant(true), CHECK_TOOLCHAIN, script],
-        ['fixed', variant(false), CHECK_TOOLCHAIN, script],
+        ['clean', {}, CHECK_TOOLCHAIN, checker],
+        ['planted', variant(true), CHECK_TOOLCHAIN, checker],
+        ['fixed', variant(false), CHECK_TOOLCHAIN, checker],
         // Nothing to read: a directory with no component in it.
         [
           'empty',
@@ -775,24 +856,58 @@ describe('the out-of-tree add-on template', () => {
         // Installed without the stylelint half: the floor cannot be checked.
         ['no stylelint', {}, {}, `node node_modules/@mica/sdk/${CHECK_CLI} src`]
       ];
-      await Promise.all(
-        cases.map(async ([name, extra, links, command]) => {
+      const [typecheck] = await Promise.all([
+        run(together, `${svelteCheck} --output machine`),
+        ...cases.map(async ([name, extra, links, command]) => {
           const dir = copyTemplate(extra, links, links === CHECK_TOOLCHAIN ? CHECK_BIN : {});
           checks[name] = await run(dir, command);
         })
-      );
+      ]);
+
+      const completed = COMPLETED.exec(typecheck.output)?.[0];
+      const diagnostics = typecheck.output.split('\n').flatMap((line) => {
+        const file = DIAGNOSTIC.exec(line)?.[1];
+        return file === undefined ? [] : [{ file, line }];
+      });
+      if (completed !== undefined) {
+        const canary = diagnostics.filter((d) => d.file === CANARY);
+        if (
+          typecheck.code !== 1 ||
+          canary.length !== 1 ||
+          !/is not assignable to type 'number'/.test(canary[0].line)
+        ) {
+          throw new Error(
+            `svelte-check did not fault ${CANARY} alone, so what it said of the components ` +
+              `beside it cannot be trusted:\n${typecheck.output}`
+          );
+        }
+      }
+      const fixtures = new Set<string>([...Object.values(COMPONENT_OF), CANARY]);
+      for (const [name, own] of Object.entries(COMPONENT_OF)) {
+        const charged = diagnostics
+          .filter((d) => d.file === own || !fixtures.has(d.file))
+          .map((d) => d.line);
+        checks[name] =
+          completed === undefined
+            ? { code: typecheck.code || 1, output: typecheck.output }
+            : charged.length > 0
+              ? { code: 1, output: `${charged.join('\n')}\n${completed}` }
+              : {
+                  code: checks[name].code,
+                  output:
+                    `svelte-check charged nothing to ${own} or the files it shares; its one ` +
+                    `run, the canary's error included, ended:\n${completed}\n${checks[name].output}`
+                };
+      }
     }, 180_000);
 
     it('passes the template as shipped, svelte-check and the SDK checker both', () => {
       expect(checks.clean.code, checks.clean.output).toBe(0);
-      // svelte-check picks its summary format from the environment when `--output` is unset:
-      // `machine` (`COMPLETED …`) under `CLAUDECODE=1`, which every Claude Code shell sets, and
-      // `human-verbose` (`svelte-check found 0 errors and 0 warnings`) everywhere else, CI and
-      // an IDE included. The exit code above is the verdict; this only confirms svelte-check
-      // ran and said clean, in either form.
-      expect(checks.clean.output).toMatch(
-        /COMPLETED \d+ FILES 0 ERRORS 0 WARNINGS|found 0 errors and 0 warnings/
-      );
+      // The code above is the verdict, svelte-check's half charged nothing to the template's
+      // own files and the checker passed; this confirms svelte-check ran to its summary, and
+      // that no diagnostic of its is in the clean case's output.
+      expect(checks.clean.output).toMatch(COMPLETED);
+      expect(checks.clean.output).not.toMatch(new RegExp(DIAGNOSTIC.source, 'm'));
       expect(checks.clean.output).toMatch(/mica check: OK — 2 \.svelte, \d+ \.ts/);
     });
 

@@ -123,3 +123,6 @@ its one-line summary.
 - [A thread open is not the scroll write](thread-open-cost-is-not-the-scroll-write.md)
   — rAF/column-reverse save nothing; cold layout is emoji-font first use, script
   is `formatTime`; measure a warm open
+- [Many Vite builds: one warm process](many-vite-builds-one-process.md) — a warm
+  build is 0.8 CPU-s vs 2.1 cold; mirror the CLI via `createBuilder`; reset cwd
+  and `NODE_ENV`; one svelte-check over fixtures with a canary
