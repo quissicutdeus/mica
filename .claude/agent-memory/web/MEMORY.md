@@ -54,3 +54,4 @@ why.
 - [An add-on's components ship in the shell build](addon-components-ship-in-the-shell.md)
 - [A document count includes the harness](document-count-includes-the-harness.md)
 - [An uncaught error keeps a removed frame alive](uncaught-error-pins-the-frame.md)
+- [A test click reaches a disabled button](jsdom-click-reaches-disabled-button.md)

@@ -25,8 +25,14 @@ const announceLiveShare = (payload: Record<string, unknown>): void => {
 };
 
 export const mocks: Record<string, MockHandler> = {
-  // Purely local in game (`SetNewWaypoint`); nothing for the browser to do but succeed.
-  setWaypoint: async () => ({ ok: true }),
+  // Purely local in game (`SetNewWaypoint`). Refuses exactly what the client refuses
+  // (`waypointOf`, `client/services/Location.ts`, MICA-466): anything but two finite numbers,
+  // which is what a saved place whose position would not read sends.
+  setWaypoint: async (data?: { x?: unknown; y?: unknown }) => {
+    const { x, y } = data ?? {};
+    const finite = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
+    return finite(x) && finite(y) ? { ok: true } : { ok: false, error: 'Invalid waypoint' };
+  },
 
   // Places (MICA-65) — saved places only; recently-shared locations read `mockMedia`
   // (`services/media.ts`), filtered to `kind === 'location'`, the same way the real app

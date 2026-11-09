@@ -1637,6 +1637,10 @@ of your own that sends the wrong type will now see the refusal.
 number the server would refuse used to leave the call screen on "dialing" with
 nobody on the line.
 
+**Places no longer offers Set waypoint, or draws a pin, for a saved place whose
+position cannot be read (MICA-472).** Such a place says "No usable position
+saved" instead of failing when tapped.
+
 **On ESX, a new character in a deleted character's slot gets a phone of its own
 (MICA-440).** esx_multicharacter gives the next character in a slot the deleted
 one's identifier, `char<slot>:<license>`, and micaOS kept a deleted character's

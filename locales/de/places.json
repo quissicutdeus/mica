@@ -23,6 +23,7 @@
   "noPlaces": "Noch keine gespeicherten Orte",
   "setWaypoint": "Wegpunkt setzen",
   "setWaypointTo": "Wegpunkt auf {name} setzen",
+  "noPosition": "Keine verwendbare Position gespeichert",
   "rename": "Umbenennen",
   "renameNamed": "{name} umbenennen",
   "delete": "Löschen",

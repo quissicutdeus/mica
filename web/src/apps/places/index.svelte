@@ -129,6 +129,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     }
   };
 
+  /**
+   * Whether a saved place has a position a waypoint can be set to (MICA-472). The server sends
+   * `x`/`y` as null for a row whose stored position will not parse, and the client refuses
+   * anything but two finite numbers (MICA-466), so the button would only ever fail. Typed as
+   * numbers, null at run time; `Number.isFinite` is false for both.
+   */
+  const hasPosition = (place: SavedPlace): boolean =>
+    Number.isFinite(place.x) && Number.isFinite(place.y);
+
   const handleSetWaypointFrom = async (x: number, y: number) => {
     await run(() => setWaypoint(x, y), {
       success: $t('places.waypointSet'),
@@ -229,7 +238,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   };
 
   let pins = $derived.by((): MapPin[] => {
-    const out: MapPin[] = $places.map((place) => ({
+    // A place whose position will not read has nowhere to be drawn (MICA-472).
+    const out: MapPin[] = $places.filter(hasPosition).map((place) => ({
       id: `place-${place.id}`,
       kind: 'place',
       x: place.x,
@@ -459,13 +469,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         {place.street_label}
                       </p>
                     {/if}
+                    {#if !hasPosition(place)}
+                      <p
+                        class="text-on-surface-variant text-body-small truncate"
+                        data-testid="places-no-position"
+                      >
+                        {$t('places.noPosition')}
+                      </p>
+                    {/if}
                   </div>
                   <div class="flex shrink-0 items-center gap-1">
                     <button
                       type="button"
-                      class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard rounded-full p-1.5 transition-colors"
+                      class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary disabled:text-disabled-content disabled:hover:bg-transparent disabled:hover:text-disabled-content disabled:cursor-default duration-short ease-standard rounded-full p-1.5 transition-colors"
                       onclick={() => handleSetWaypointFrom(place.x, place.y)}
-                      disabled={$busy}
+                      disabled={$busy || !hasPosition(place)}
                       title={$t('places.setWaypoint')}
                       aria-label={$t('places.setWaypointTo', { name: place.name })}
                     >

@@ -23,6 +23,7 @@
   "noPlaces": "No saved places yet",
   "setWaypoint": "Set waypoint",
   "setWaypointTo": "Set waypoint to {name}",
+  "noPosition": "No usable position saved",
   "rename": "Rename",
   "renameNamed": "Rename {name}",
   "delete": "Delete",
