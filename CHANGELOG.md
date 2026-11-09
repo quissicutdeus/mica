@@ -1652,6 +1652,12 @@ nobody on the line.
 position cannot be read (MICA-472).** Such a place says "No usable position
 saved" instead of failing when tapped.
 
+**`IsPhoneOpen` is the player's own report, and the docs now say so
+(MICA-468).** Whether a device is on screen lives only on the player's machine,
+so the export answers from what the client last said. Treat it as a hint, never
+as a gate: a modified client can report closed while open. `docs/security.md`
+lists it under the values a client decides.
+
 **On ESX, a new character in a deleted character's slot gets a phone of its own
 (MICA-440).** esx_multicharacter gives the next character in a slot the deleted
 one's identifier, `char<slot>:<license>`, and micaOS kept a deleted character's

@@ -501,11 +501,17 @@ players join. It is in the README's convar table with exactly that warning.
 
 ## Client-authoritative values
 
-**One is legitimate. Two have since been fixed** — and this section used to call
-all three "by design", which is exactly what let two "has not moved yet" cases
-read as "cannot move". That framing was wrong and worth correcting: the default
-is server-authoritative, and anything the client owns needs a reason it _cannot_
-move rather than a reason it has not.
+**Two are legitimate. Two have since been fixed** — and this section used to
+call all three "by design", which is exactly what let two "has not moved yet"
+cases read as "cannot move". That framing was wrong and worth correcting: the
+default is server-authoritative, and anything the client owns needs a reason it
+_cannot_ move rather than a reason it has not.
+
+`server/__tests__/clientAuthoritative.test.ts` (MICA-468) holds this list to the
+code. It traces every client-sent payload to the state it lands in, and fails
+when a value the client decides is missing from the headings below, or a heading
+names one the code no longer trusts. Adding an entry is a heading here and a
+line in that test, in the same commit.
 
 ### `DeviceState.isTyping` — legitimately client-owned
 
@@ -513,6 +519,21 @@ The server cannot see DOM focus. There is no server-side version of "this player
 has a text field focused", so the web pushes it over on `focusin`/`focusout`. It
 suppresses keybinds; asserting it wrongly costs you your own hotkeys and nothing
 else.
+
+### `PhoneOpenState.isDeviceOpen` — legitimately client-owned
+
+Whether a device is up on screen lives only on the player's machine: NUI focus,
+the animation and the frame. The server has no round trip that could ask, so the
+client pushes `mica:server:shell:setOpen` whenever its own state changes, and
+`server/lib/PhoneOpenState.ts` keeps the last value per source and device. Found
+by MICA-468's trace, not listed here before it.
+
+Two things read it. Battery's bank charges the tablet instead of the phone while
+the tablet is open, so a lie picks which of the player's own devices an item
+charges. The `IsPhoneOpen` export answers other resources from it. **Treat that
+answer as a hint, never as a gate:** a modified client can report closed while
+open, so a resource that forbids an action while the phone is up cannot rely on
+it.
 
 ### Battery charge — moved
 
