@@ -44,14 +44,19 @@ types come from the work first, then the names.
 | `verify` | 99        | does the unglamorous rounds, every time, and counts them           |
 | `docs`   | Gree      | the 41st's expert on other cultures, keeper of what is known       |
 
-A second lane of a type in one session, alongside the first or after it, takes
-the next free name from this reserve, in order: Wolffe, Bly, Gregor, Boss, Sev,
-Scorch, Fixer, Bacara, Neyo, Thire, Howzer, Appo. A built-in type (`Explore`,
-`Plan`, `general-purpose`) takes from the reserve too.
+The built-in types have one fixed clone each too: `Explore` is **Fives**, who
+dug until he found the chip; `Plan` is **Wolffe**; `general-purpose` is
+**Jesse**.
 
-The callsign is also the `SendMessage` address, so it is unique within a session
-and never `Rex`. Names recur across sessions by design: recover a dead lead from
-the newest transcript that spawned the name.
+**One name per type, always** (owner's rule, 2026-11-09). Every lane of a type
+takes that type's name, in every session and every wave: a server lane is Cody,
+every time. There is no reserve. So one lane of a type is live at a time: two
+tickets in one directory are one lane with two commits, and a later lane of the
+type reuses the name once the earlier one is stopped.
+
+The callsign is also the `SendMessage` address, so it is never `Rex`. Names
+recur within and across sessions by design: recover a dead lead from the newest
+transcript that spawned the name.
 
 ## What only you do
 

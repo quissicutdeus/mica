@@ -87,9 +87,11 @@ then do the lanes spawn, each briefed with that sha and the contract as
 read-only. A change to it mid-wave stops the wave: the lead amends it and
 re-briefs every lane that reads it.
 
-Callsigns come from the roster in `lead.md`: one clone per agent type, then a
-reserve in order. Never reuse one within a session, and never give a lane the
-lead's name; either makes the transcript ambiguous about who decided what.
+Callsigns come from the roster in `lead.md`: one fixed clone per agent type,
+always the same name, with no reserve (owner's rule, 2026-11-09). So only one
+lane of a type is live at a time; a second ticket in that directory goes to the
+live lane. Never give a lane the lead's name, which makes the transcript
+ambiguous about who decided what.
 
 ## Spawn mode decides what can collide
 

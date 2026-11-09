@@ -45,8 +45,9 @@ means, by area:
 
 - **`server/`** (§2.9, §10): a payload key reaching SQL without the `columns`
   allowlist; an `update` or `delete` without a `citizenid` predicate, or with a
-  phone id standing in for one; a field `clientWritable` should not admit; a
-  `registerEvent` the app never calls but a modified client can; a
+  phone id standing in for one; an exemption compared against the dialled number
+  that a forward or re-dial silently drops; a field `clientWritable` should not
+  admit; a `registerEvent` the app never calls but a modified client can; a
   `PlayerFacingError` that names a table; a schema change with no
   `pnpm generate:sql` behind it, or no `CHANGELOG.md` line under "Action
   required" for a migration or an added column.
@@ -64,8 +65,11 @@ means, by area:
   `SDK_CONTRACT_VERSION` unmoved by a type-only break.
 - **`client/`**: a value the client now decides that the server used to; a focus
   set with no path that releases it, or a release sequence where one throwing
-  native skips the next; a native whose effect reaches past the phone's own
-  prop, animation and camera.
+  native skips the next; an acknowledgement that cancels a safety deadline but
+  is computed from the flag that schedules the render, not from observed state
+  (a Svelte 5 mount throw escapes in its own microtask and `tick()` still
+  resolves); a native whose effect reaches past the phone's own prop, animation
+  and camera.
 - **Tests**: a test that cannot fail — a scan that never asserts it found
   something, a regression test never shown red without its fix, a fixed
   `waitForTimeout` against an animation in a suite that runs with `retries: 0`;
