@@ -135,8 +135,12 @@ jobs:
       # runs properly with `--require`. Without the flag this job would find the runner's
       # Docker, pull two images and spend ~30s reaching a verdict that job has already
       # reached -- and would newly depend on Docker Hub to do it.
+      #
+      # `--no-db` drops the real-MariaDB gates (MICA-465), which the `schema` and `endpoints`
+      # jobs below run against a service container. This runner has Docker, so without the
+      # flag verify would find it and run both a second time.
       - name: Verify
-        run: pnpm verify --quick --no-container
+        run: pnpm verify --quick --no-container --no-db
 
   # The e2e suite, on its own machines, split in two.
   #

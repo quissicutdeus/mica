@@ -14,3 +14,4 @@ lane needs goes to `lane-protocol` instead.
 - [Splitting a test file hides typos](splitting-a-test-file-trap-list.md) —
   oxlint misses undefined names, a failed beforeAll reads as skipped, and the
   lane Bash guard's limits
+- [verify DB gate timings](verify-db-gate-timings.md)

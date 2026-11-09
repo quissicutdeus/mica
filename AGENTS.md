@@ -484,9 +484,9 @@ worked example.
 
 What `pnpm verify` **cannot** catch: anything that needs the game — the
 client/server relay layers and framework bridge behavior. CI adds two gates
-verify lacks: Playwright in a real Chromium 103 (§6), and `test:schema`, the
-repositories against MariaDB on both framework shapes. Playwright drives mocks —
-**a green suite is not evidence a NUI feature works in game.**
+verify lacks: Playwright in a real Chromium 103 (§6), and `test:migrations`, the
+migrations replayed against MariaDB. Playwright drives mocks — **a green suite
+is not evidence a NUI feature works in game.**
 
 E2E serves its own build with `vite preview --strictPort` on port **4173**
 (`web/playwright.config.ts`), deliberately not the dev server's 5173, so a port
@@ -509,7 +509,11 @@ local loop" for what each of those actually covers.
 
 It runs, in order: a `generate-barrels` prerequisite, then `locales`,
 `format:check`, `lint:md`, `lint:agents`, `lint:container`, `lint`, `typecheck`,
-`test:unit`, `test:e2e`, `build:nocheck`, `pack:resource`, `deadcode`.
+`test:unit`, `test:schema`, `test:endpoints`, `test:e2e`, `build:nocheck`,
+`pack:resource`, `deadcode`. The two database gates need Docker (or
+`MICA_DB_*`); without either they print **NOT RUN**, which is not a pass.
+`--migrations` adds `test:migrations` (~5 min); `--no-db` drops all three, for
+CI rather than for you. [`docs/dev-loop.md`](docs/dev-loop.md) has the detail.
 `scripts/verify.js` is the source of truth for this order — read it before
 restating the list elsewhere, since it has grown twice without this file being
 updated to match.
@@ -517,8 +521,9 @@ updated to match.
 **`pnpm verify` is every gate but one**, and CI runs it across four machines, so
 a gate added to `scripts/verify.js` lands in CI untouched. The exception is the
 `container` job's **image build**, which no local command runs — see
-[`docs/demo-container.md`](docs/demo-container.md). §8 has the two gates CI runs
-that `verify` does not.
+[`docs/demo-container.md`](docs/demo-container.md). CI's own `verify` job passes
+`--no-db`, because its `schema` and `endpoints` jobs run those gates; §8 has the
+two gates CI runs that `verify` does not.
 
 ### Match the gate to what the change touched
 

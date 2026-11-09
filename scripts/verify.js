@@ -6,6 +6,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { planDbGates } from './lib/db-gates.js';
 import { gateEnv, gateEnvNotice } from './lib/gate-env.js';
 
 /**
@@ -32,6 +33,8 @@ import { gateEnv, gateEnvNotice } from './lib/gate-env.js';
  *   pnpm verify --quick   skips e2e only — what pre-push runs
  *   pnpm verify --bail    stop at the first failing gate
  *   pnpm verify --force   ignore the cache and run every gate cold
+ *   pnpm verify --migrations   also run test:migrations (~5 min, opt-in)
+ *   pnpm verify --no-db   drop the real-MariaDB gates, for CI's `verify` job only
  */
 
 const QUICK = process.argv.includes('--quick');
@@ -51,6 +54,22 @@ const BAIL = process.argv.includes('--bail');
  * rather than dropping it, for the reason `skipped` is printed at all.
  */
 const NO_CONTAINER = process.argv.includes('--no-container');
+
+/**
+ * The real-MariaDB gates (MICA-465): `schema`, `endpoints`, and opt-in `migrations`.
+ *
+ * They run whenever a database can be had -- Docker answering, or `MICA_DB_*` named -- and
+ * when it cannot, the summary prints them as NOT RUN with the reason, in colour, under a
+ * line saying so. They never read as passed. `--migrations` adds the ~5 minute migration
+ * replay; without it that gate is listed as NOT RUN with the reminder, not dropped.
+ *
+ * `--no-db` is the `--no-container` of this family: CI's `verify` job passes it because its
+ * `schema` and `endpoints` jobs run the same scripts against a service container, and
+ * running them here too would pay for them twice. Not a habit for a developer's terminal.
+ */
+const NO_DB = process.argv.includes('--no-db');
+const WITH_MIGRATIONS = process.argv.includes('--migrations');
+const dbPlan = planDbGates({ noDb: NO_DB, migrations: WITH_MIGRATIONS });
 
 /**
  * Serve a gate from cache when its inputs have not changed since it last passed.
@@ -210,6 +229,9 @@ const GATES = [
   'lint',
   'typecheck',
   'unit',
+  'schema',
+  'endpoints',
+  'migrations',
   'e2e',
   'build',
   'pack',
@@ -244,7 +266,7 @@ const gate = async (name, command, args, options) => {
  * passed, and the two were indistinguishable in this summary — which is much of why a
  * failing `deadcode` went unnoticed for as long as it did.
  */
-const report = ({ bailed = false, skipped = [] } = {}) => {
+const report = ({ bailed = false, skipped = [], notRun = [] } = {}) => {
   process.stdout.write('\n');
   for (const { name, code, seconds, cached } of results) {
     // A cached gate gets its own mark and the word, never the tick. It did not run, and
@@ -259,6 +281,19 @@ const report = ({ bailed = false, skipped = [] } = {}) => {
   }
   for (const name of skipped) {
     process.stdout.write(`  [2m· ${name.padEnd(12)} skipped[0m\n`);
+  }
+  // Not "skipped": these are gates that were *wanted* and could not run, so each says why,
+  // and the line under them says what that means. Never a tick, never dim.
+  for (const { name, reason } of notRun) {
+    process.stdout.write(
+      `  \x1b[1;33m! ${name.padEnd(12)} NOT RUN\x1b[0m \x1b[33m${reason}\x1b[0m\n`
+    );
+  }
+  if (notRun.length > 0) {
+    process.stdout.write(
+      `\n\x1b[1;33m${notRun.length} gate(s) NOT RUN: ${notRun.map((n) => n.name).join(', ')}` +
+        ' -- that is not a pass; CI will run them.\x1b[0m\n'
+    );
   }
 
   const failed = results.filter((r) => r.code !== 0).map((r) => r.name);
@@ -325,6 +360,13 @@ const main = async () => {
   if (!stop()) await gate('typecheck', 'pnpm', ['typecheck']);
   if (!stop()) await gate('unit', 'pnpm', ['test:unit']);
 
+  // MICA-465: the repositories and the shipped handlers against a real MariaDB, which the
+  // unit suite above mocks away. Docker is needed (or MICA_DB_*); planDbGates says which of
+  // these can run and which are printed as NOT RUN. Before e2e: ~1 minute, not minutes.
+  for (const g of dbPlan.run) {
+    if (!stop()) await gate(g.name, 'pnpm', [g.script]);
+  }
+
   // e2e is the only gate `--quick` drops, and the only one that costs minutes rather than
   // seconds. `build` and `deadcode` stay: between them they are about fifteen seconds, and
   // `deadcode` is exactly the gate that rode main red for four commits precisely because
@@ -368,7 +410,11 @@ const main = async () => {
   // and a gate cut short by `--bail` are reported the same way and in the same order they
   // would have run.
   const ran = new Set(results.map((r) => r.name));
-  const skipped = GATES.filter((name) => !ran.has(name));
+  const notRunNames = new Set(dbPlan.notRun.map((n) => n.name));
+  const skipped = GATES.filter((name) => !ran.has(name) && !notRunNames.has(name));
+  // A DB gate cut short by --bail is skipped like any other; one the plan could not run is
+  // NOT RUN with its reason. `notRun` keeps plan order.
+  const notRun = dbPlan.notRun;
 
   const failed = results.some((r) => r.code !== 0);
 
@@ -377,7 +423,7 @@ const main = async () => {
   // just because something else was red. A gate that failed was never added to `nextGates`.
   saveCache();
 
-  report({ bailed: BAIL && failed, skipped });
+  report({ bailed: BAIL && failed, skipped, notRun });
   return failed ? 1 : 0;
 };
 

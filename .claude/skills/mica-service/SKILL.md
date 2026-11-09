@@ -175,10 +175,12 @@ applies the versioned migrations through the real `runPendingMigrations`, and
 shapes. A migration, a new column or index, or a changed repository query runs
 the one that covers it before it is called done — MICA-153 passed every mocked
 assertion and aborted half-way through `ADD UNIQUE KEY` on the first real
-database. Neither is a `pnpm verify` gate, and neither skips quietly: no Docker
-is a failure, and the report says it could not run. What only a live FXServer
-shows — oxmysql's actual answer, `micaschema apply` from the console — is the
-in-server suite under `integration/` (MICA-302).
+database. `pnpm verify` runs `test:schema` whenever Docker answers and prints
+NOT RUN otherwise (MICA-465); `test:migrations` joins it only with
+`--migrations`. Run on its own, neither skips quietly: no Docker is a failure,
+and the report says it could not run. What only a live FXServer shows —
+oxmysql's actual answer, `micaschema apply` from the console — is the in-server
+suite under `integration/` (MICA-302).
 
 **In a lane, run the gates the brief names and never `pnpm verify`** — two
 verify runs collide on port 4173 and `web/dist`, and the lead runs it once over

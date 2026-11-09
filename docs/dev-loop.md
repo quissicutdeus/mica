@@ -194,12 +194,42 @@ something that eagerly does (the app registry is the one to watch for). If you
 guess wrong, the test fails immediately and obviously — add the docblock and
 move on.
 
+## The database gates: `schema`, `endpoints`, and opt-in `migrations`
+
+The unit suites mock `Database`, so a server change used to meet real SQL for
+the first time in CI, after the push (MICA-465). `pnpm verify` now brings that
+forward. Between `unit` and `e2e` it runs `pnpm test:schema` (~47s measured on a
+warm image) and `pnpm test:endpoints` (~9s) whenever a database can be had:
+`docker info` answers, or any of `MICA_DB_HOST`, `MICA_DB_PORT`, `MICA_DB_USER`
+and `MICA_DB_PASSWORD` is set (`scripts/lib/db-gates.js`). `--quick` keeps them.
+They are never cached, since a green run says nothing about the next database.
+
+**NOT RUN is not a pass.** When no database can be had, each gate is printed in
+yellow as `NOT RUN` with its reason, under a line saying that is not a pass and
+that CI will run it. It is never omitted and never ticked: a gate that stays
+silent when it cannot run reads as green, which is the failure this exists to
+prevent. If you changed `server/` and saw NOT RUN, you have not run those gates.
+
+`test:migrations` costs ~300s on a warm image and pulls `mariadb:11`, so it is
+opt-in: `pnpm verify --migrations` runs it, and without the flag it is listed as
+NOT RUN with that reminder. Run it when you touched `server/migrations/` or
+anything a migration reads.
+
+`--no-db` drops all three and lists them as skipped. It is for CI's `verify`
+job, whose `schema` and `endpoints` jobs run the same scripts against a service
+container; a developer's terminal should not pass it.
+
+**`pnpm check:fast` and the pre-push hook run none of this.** They are the
+unit-level loop; a change to a repository, a handler's SQL or a migration wants
+`pnpm verify` (or the one script) before it is pushed.
+
+The sections below describe the harnesses themselves.
+
 ## `pnpm test:migrations` — the versioned migrations, against a real database
 
-Opt-in, and **not part of `pnpm verify`**. It needs Docker and pulls
-`mariadb:11`, which is not a cost every gate should carry; leaving it out is
-what keeps `verify` runnable anywhere. Whether it ever joins the gate is a
-separate decision.
+Opt-in under `pnpm verify` (`--migrations`, above), and the one database gate
+CI's `schema` job runs alongside the others. It needs Docker and pulls
+`mariadb:11`.
 
 ```sh
 pnpm test:migrations
@@ -243,8 +273,8 @@ they connect there; leave them unset and they start the throwaway container as
 before. Neither has a "no database, nothing to do" branch — unreachable is
 exit 1. That is what lets the `schema` job in `.github/workflows/build-test.yml`
 run both against a MariaDB service container on every push, so each path is one
-script rather than a local one and a CI copy. Still not part of `pnpm verify`,
-for the reason above.
+script rather than a local one and a CI copy. `pnpm verify` runs `test:schema`
+by default and `test:migrations` under `--migrations`.
 
 ### It drives the real module, deliberately
 
