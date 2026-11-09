@@ -56,3 +56,4 @@ in its own file and gets a line here.
 - [Gating an implicit hook](gating-an-implicit-hook.md) — in-tree add-on
   callers, three Store entries, changelog gate passes by accident (MICA-433)
 - [A `Pick` parameter rejects an inline literal](narrowing-a-parameter-trips-excess-property.md)
+- [Checker union order is not stable text](checker-union-order-is-not-stable.md)

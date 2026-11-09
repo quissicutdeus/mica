@@ -41,7 +41,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  * eleven breaking SDK changes in this project's life, a name-level snapshot would have
  * caught six, and none of the three most recent.
  *
- * So this file captures seven things, and only the first two are lists of names:
+ * So this file captures eight things, and only the first two are lists of names:
  *
  *   1. the exported **values** of each entry point an app can actually call, read by
  *      importing the real modules,
@@ -53,9 +53,12 @@ import { SDK_CONTRACT_VERSION } from './version';
  *      hook's call signature through the same typechecker,
  *   6. the **fields of every exported object type and the members of every exported
  *      literal union** (MICA-185), read off the declared type through the same
- *      typechecker, and
+ *      typechecker,
  *   7. **parity between `index.ts` and `addon.ts`** — the two files `@mica/sdk`
- *      resolves to depending on who is building. See that section for why.
+ *      resolves to depending on who is building. See that section for why, and
+ *   8. the **signature of every published function and hook** (MICA-460) — parameters,
+ *      return type and overloads, as the same typechecker prints them. Unlike the arms
+ *      above it fails on any change, widenings included; `BASELINE_SIGNATURES` says why.
  *
  * The first two are deliberately two arms and not one, because they answer different
  * questions. `import * as sdk from './index'` proves a name **exists at runtime** — a
@@ -543,6 +546,16 @@ interface TypedEntry {
    * distinguishable.
    */
   shapes: Record<string, string[]>;
+  /**
+   * MICA-460. Every exported value with a call signature that is not a component, and its
+   * signatures as `callSignatures` prints them — hooks and plain functions alike, `const`
+   * arrows (`isBrowser`, `fade`) as much as declarations. `null` marks one that is callable
+   * and would not print back as a type, so "unreadable" stays distinguishable from "not a
+   * function".
+   */
+  signatures: Record<string, string[] | null>;
+  /** The values left out of `signatures` for being components; held to the barrel parse. */
+  components: string[];
 }
 
 /**
@@ -578,8 +591,10 @@ interface TypedEntry {
  *   removed rather than as nothing.
  * - Anything else yields `null`. A **callable** — `PageReader`, `Translate`, `CancelTimer`,
  *   and `AppComponent`, which is Svelte's `Component` and has a call signature — has a
- *   signature rather than fields, and freezing a signature is the type-text increment this
- *   ticket deliberately does not take. An **index signature** (`M3Tokens`, `Messages`) has
+ *   signature rather than fields, and freezing a callable type alias's signature is the
+ *   type-text increment this ticket deliberately did not take. MICA-460 later froze the
+ *   signatures of exported *functions* (`BASELINE_SIGNATURES`); these aliases are still
+ *   outside it. An **index signature** (`M3Tokens`, `Messages`) has
  *   no named members at all.
  *
  * Optionality is carried in the encoding and **not compared**, matching the hook arm: a
@@ -669,6 +684,100 @@ const returnMembers = (checker: any, symbol: any): string[] | null => {
 };
 
 /**
+ * MICA-460. How a signature is printed: in full, with nothing elided, arrows rather than
+ * method syntax. `NoTruncation` is the one that matters — without it the checker cuts a long
+ * type to `...` and two different signatures print the same.
+ */
+const SIGNATURE_FORMAT =
+  ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.WriteArrowStyleSignature;
+
+/** One printer for every signature, so the canonical text never depends on which call made it. */
+const signaturePrinter = ts.createPrinter({ removeComments: true });
+
+/**
+ * MICA-460. A printed signature in canonical form, or `null` if the text does not parse back
+ * as a type.
+ *
+ * ## Why not compare the checker's text as it comes
+ *
+ * Because it is not a function of the signature alone. The checker orders a union's members by
+ * an internal type id, assigned in the order types happen to be created while checking, so the
+ * same declaration prints differently when the program is built in a different order. Measured
+ * on `5e384216`: building this file's program with its roots reversed reprints
+ * `useAppRegistryWrite` with the 41-member permission union in another order, and nothing else
+ * changes. A sibling editing an unrelated file can shift that order too, and a gate that turns
+ * red over an edit to something else teaches a lane to re-freeze without reading.
+ *
+ * So the text is parsed back as a type and every union is sorted by its members' own canonical
+ * text, innermost first, then printed once more and its whitespace collapsed. Measured: zero
+ * difference between all roots in order, all roots reversed, and each published entry built
+ * alone. **Only unions are sorted.** An intersection keeps the order it was written in, and so
+ * does an overload list, because resolution reads both in order — reordering either is a change
+ * an add-on can feel.
+ */
+const canonicalSignature = (printed: string): string | null => {
+  const source = ts.createSourceFile(
+    'signature.ts',
+    `type __ = ${printed};`,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS
+  );
+  if (source.parseDiagnostics.length > 0 || source.statements.length !== 1) return null;
+  const print = (node: any, file: any): string =>
+    signaturePrinter.printNode(ts.EmitHint.Unspecified, node, file);
+
+  const [result] = ts.transform(source, [
+    (context: any) => (root: any) => {
+      const visit = (node: any): any => {
+        const next = ts.visitEachChild(node, visit, context);
+        if (!ts.isUnionTypeNode(next)) return next;
+        const sorted = next.types
+          .map((member: any) => [print(member, source), member] as const)
+          .sort(([a]: readonly [string, unknown], [b]: readonly [string, unknown]) =>
+            a < b ? -1 : a > b ? 1 : 0
+          )
+          .map(([, member]: readonly [string, unknown]) => member);
+        return context.factory.updateUnionTypeNode(next, context.factory.createNodeArray(sorted));
+      };
+      return ts.visitNode(root, visit);
+    }
+  ]).transformed;
+  return print(result.statements[0].type, result).replace(/\s+/g, ' ').trim();
+};
+
+/**
+ * Whether a resolved value is a component: the `default` of an ambient
+ * `declare module '*.svelte'`, which is all this program can see of a `.svelte` file.
+ *
+ * Its printed signature is Svelte's own `Component` type, identical for all ninety, so it says
+ * nothing about the component — its props are what `BASELINE_PROPS` freezes. Decided off the
+ * declaration rather than off the barrel parse, and `froze the signature of every published
+ * function` holds the two to the same list, so neither can quietly drop a name.
+ */
+const isAmbientComponent = (declaration: any): boolean => {
+  for (let node = declaration; node !== undefined; node = node.parent) {
+    if (ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) {
+      return node.name.text === '*.svelte';
+    }
+  }
+  return false;
+};
+
+/**
+ * MICA-460. Every call signature of one exported value, canonical and in declaration order, or
+ * `null` when it is callable and one of them would not read back. A value with no call
+ * signature is not asked — see `TypedEntry.signatures`.
+ */
+const callSignatures = (checker: any, symbol: any, declaration: any): string[] | null => {
+  const signatures = checker.getTypeOfSymbolAtLocation(symbol, declaration).getCallSignatures();
+  const printed = signatures.map((signature: any) =>
+    canonicalSignature(checker.signatureToString(signature, undefined, SIGNATURE_FORMAT))
+  );
+  return printed.some((text: string | null) => text === null) ? null : printed;
+};
+
+/**
  * Every entry point's exports as the typechecker resolves them, classified.
  *
  * **One program for the whole file.** `ts.createProgram` over these four roots costs about
@@ -737,6 +846,8 @@ const typecheckerExports = (): Record<string, TypedEntry> => {
     const types: string[] = [];
     const hooks: Record<string, string[]> = {};
     const shapes: Record<string, string[]> = {};
+    const signatures: Record<string, string[] | null> = {};
+    const components: string[] = [];
     for (const exported of checker.getExportsOfModule(symbol)) {
       if (exported.name === 'default') continue;
       const typeOnlySpecifier = (exported.declarations ?? []).some(
@@ -759,6 +870,17 @@ const typecheckerExports = (): Record<string, TypedEntry> => {
         const members = returnMembers(checker, resolved);
         if (members !== null) hooks[exported.name] = members;
       }
+      if (isValue) {
+        // MICA-460. Same program again; a signature is one more question of the symbol.
+        const declaration = resolved.valueDeclaration ?? resolved.declarations[0];
+        if (isAmbientComponent(declaration)) {
+          components.push(exported.name);
+        } else if (
+          checker.getTypeOfSymbolAtLocation(resolved, declaration).getCallSignatures().length > 0
+        ) {
+          signatures[exported.name] = callSignatures(checker, resolved, declaration);
+        }
+      }
       if (!isValue) {
         // MICA-185. Same program, no second `createProgram`: the checker already holds the
         // resolved symbol, and the declared type is one more question of it.
@@ -766,7 +888,14 @@ const typecheckerExports = (): Record<string, TypedEntry> => {
         if (members !== null) shapes[exported.name] = members;
       }
     }
-    out[id] = { values: values.sort(), types: types.sort(), hooks, shapes };
+    out[id] = {
+      values: values.sort(),
+      types: types.sort(),
+      hooks,
+      shapes,
+      signatures,
+      components: components.sort()
+    };
   }
   return out;
 };
@@ -2657,6 +2786,319 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
   WidgetSize: ['|2x1', '|2x2']
 };
 
+/**
+ * MICA-460. The signature of every function and hook each published entry point exports, as
+ * the checker prints it — parameter types, optionality, type parameters and their constraints,
+ * the return type, and every overload in declaration order — in the canonical form
+ * `canonicalSignature` describes.
+ *
+ * ## Why names and shapes were not enough
+ *
+ * Every arm above stops at a name: an export, a prop, a hook's return member, a type's field.
+ * A parameter narrowed from `string` to `'a' | 'b'`, a parameter that became required, a
+ * return type that gained `| null` — each keeps every one of those names where it was, passes
+ * all of them, and stops an outside add-on compiling at its next build. MICA-449 widened
+ * `bootAddOn`'s parameter, which is the safe direction, and showed nothing would have noticed
+ * the other one.
+ *
+ * ## The rules
+ *
+ * - **Scope** is the four published subpaths, `SUBPATH_OF_ENTRY`'s keys, and nothing else.
+ *   `index.ts` is unpublished (`UNPUBLISHED_BY_DESIGN`); a core app that builds against it is
+ *   rebuilt with the phone, so `typecheck` already answers for it.
+ * - **Every callable value that is not a component**, hooks and plain functions alike. A
+ *   component's printed type is Svelte's `Component`, the same for all of them, and its
+ *   contract is its props (`BASELINE_PROPS`). A `.svelte.ts` module (`usePagedList`,
+ *   `useDeepLink`) is plain TypeScript to the checker and prints like any other file. A named
+ *   function exported from a `.svelte` file itself cannot be read: this program sees a `.svelte`
+ *   file only through `declare module '*.svelte'`, which has a default and nothing else. No
+ *   barrel does that today, and one that did would already fail `classifies value against type
+ *   the way the module loader does` by exactly that name.
+ * - **Not frozen**, said plainly: a class's constructor (`AppPermissionError`), a method on an
+ *   exported object, a store's `subscribe`. Each is a signature an add-on calls; none is a
+ *   call signature of an exported value, which is what this reads. Nor is the inside of a
+ *   **named type** a signature mentions: `AppManifestInput`, `DeclaredService<D>`,
+ *   `Writable<boolean>` print by name, so a change behind the name is seen only as far as
+ *   `BASELINE_TYPE_SHAPES` reads field names. A callable type alias (`PageReader`,
+ *   `Translate`, `CancelTimer`) is a type, not a value, and stays unfrozen too. An anonymous
+ *   type prints in full — a hook's return object with every member's own signature — so a
+ *   change to any of those is a changed line here.
+ * - **Total, in both directions.** A published function with no row here fails, because an
+ *   addition this arm never recorded is one whose later narrowing it would never see — the trap
+ *   `BASELINE_EXPORTS` describes for `focusTrap`. A row whose function is no longer exported is
+ *   already an `export removed` line, and is not reported a second time.
+ * - **Compared as exact text, all overloads at once, in order.** Unlike the arms above, any
+ *   change fails, widenings included, because whether a signature change is a widening is a
+ *   question about assignability that two strings cannot answer. The failure message carries
+ *   the rule for answering it, and only a widening may be accepted here.
+ * - **Generics print with their type parameters**, constraints and defaults included, so a
+ *   tightened constraint is a changed line. A renamed type parameter or parameter is a changed
+ *   line too, and breaks nobody; it is accepted like a widening.
+ *
+ * The printer is TypeScript 6 through `typescript-ast-parser`, the version `svelte-check`
+ * runs over this package. TypeScript 7, which `tsc` runs over the SDK's pure core, ships no
+ * compiler API before 7.1 and cannot be asked, so TS 6 is authoritative here; `prints with the
+ * compiler svelte-check uses` holds the two pins together, and says what to do when one moves.
+ *
+ * Captured once from the tree at `5e384216`. An entry is edited for a **widening only**, with
+ * a comment above it naming the ticket and why every existing call still compiles. A
+ * narrowing is never re-frozen here: it is a `SDK_CONTRACT_VERSION` bump, which only the owner
+ * makes (`sdk/version.test.ts`).
+ */
+const BASELINE_SIGNATURES: Record<string, Record<string, string[]>> = {
+  '@mica/sdk (add-on bundle)': {
+    addonError: ['(message: string) => AddonErrorAnswer'],
+    addonOutput: ['<T>() => AddonOutput<T>'],
+    appStorageBytes: ['(appId: string) => number'],
+    availableLocales: ['() => string[]'],
+    bootAddOn: [
+      '<M extends Pick<AppManifest, "id">>(manifest: M, App: AppComponent, roots?: BootRoots) => Promise<void>'
+    ],
+    byNewest: ['<T>(field: keyof T) => (a: T, b: T) => number'],
+    clearAppStorage: ['(appId: string) => void'],
+    computeThumbnailSize: [
+      '(naturalWidth: number, naturalHeight: number) => null | { width: number; height: number; }'
+    ],
+    createCrudStore: [
+      '<const D extends AddonServiceDeclaration, L extends AddonActionName<D>, C extends AddonActionName<D> = never, U extends AddonActionName<D> = never, R extends AddonActionName<D> = never>(declaration: D, events: { list: ListEvent<D, L>; create?: CreateEvent<D, C, ListedRow<D, L>> | undefined; update?: UpdateEvent<D, U, ListedRow<D, L>> | undefined; remove?: RemoveEvent<D, R> | undefined; }, options?: Omit<CrudOptions<ListedRow<D, L>, DraftOf<D, C>>, "service"> | undefined) => { subscribe: (this: void, run: Subscriber<ListedRow<D, L>[]>, invalidate?: (() => void) | undefined) => Unsubscriber; loaded: { subscribe: (this: void, run: Subscriber<boolean>, invalidate?: (() => void) | undefined) => Unsubscriber; }; error: { subscribe: (this: void, run: Subscriber<null | string>, invalidate?: (() => void) | undefined) => Unsubscriber; }; load: () => Promise<void>; add: (draft: DraftOf<D, C>) => Promise<ListedRow<D, L>>; update: (row: ListedRow<D, L>) => Promise<void>; delete: (id: number) => Promise<void>; set: (rows: ListedRow<D, L>[]) => void; patch: (id: number, changes: Partial<ListedRow<D, L>>) => void; }',
+      '<T extends { id: number; }, TDraft = Omit<T, "id">>(name: string, events: CrudEvents, options?: CrudOptions<T, TDraft> | undefined) => { subscribe: (this: void, run: Subscriber<T[]>, invalidate?: (() => void) | undefined) => Unsubscriber; loaded: { subscribe: (this: void, run: Subscriber<boolean>, invalidate?: (() => void) | undefined) => Unsubscriber; }; error: { subscribe: (this: void, run: Subscriber<null | string>, invalidate?: (() => void) | undefined) => Unsubscriber; }; load: () => Promise<void>; add: (draft: TDraft) => Promise<T>; update: (row: T) => Promise<void>; delete: (id: number) => Promise<void>; set: (rows: T[]) => void; patch: (id: number, changes: Partial<T>) => void; }'
+    ],
+    createPagedStore: [
+      '<const D extends AddonServiceDeclaration, A extends AddonActionName<D>>(declaration: D, action: PageEvent<D, A>, options?: undefined | { pageSize?: ("limit" extends Exclude<keyof D["actions"][A]["input"], OptionalKeys<D["actions"][A]["input"]>> | OptionalKeys<D["actions"][A]["input"]> ? number : `\'${A}\' must declare a \'limit\' field to take a pageSize`) | undefined; }) => PagedStore<PageRow<AddonActionOutput<D, A>>>',
+      '<T extends { id: number; }>(action: PageReader<T> | string, options?: PagedOptions | undefined) => PagedStore<T>'
+    ],
+    createReactionStore: ['(transport: ReactionTransport) => ReactionStore'],
+    defineAddonService: ['<const D extends AddonServiceDeclaration>(declaration: D) => D'],
+    defineApp: ['(manifest: AppManifestInput) => AppManifest'],
+    encodeCanvas: ['(canvas: HTMLCanvasElement, quality: number) => string'],
+    fade: ['(node: Element, params?: FadeParams | undefined) => TransitionConfig'],
+    filterByQuery: [
+      '<T>(items: readonly T[], query: string, fields: (item: T) => (null | string | undefined)[]) => T[]'
+    ],
+    flattenTile: ['(tile: AppTile) => string'],
+    fly: ['(node: Element, params?: FlyParams | undefined) => TransitionConfig'],
+    focusTrap: [
+      '(node: HTMLElement, options?: FocusTrapOptions | boolean) => { update(next: FocusTrapOptions | boolean): void; destroy(): void; }'
+    ],
+    formatCurrency: ['(amount: number) => string'],
+    formatDate: ['(isoString?: Date | number | string | undefined) => string'],
+    formatDuration: ['(totalSeconds: number) => string'],
+    formatRelativeTime: ['(dateStr: Date | string, t?: Translate | undefined) => string'],
+    formatTime: [
+      '(isoString?: Date | number | string | undefined, override24Hour?: boolean | undefined) => string'
+    ],
+    formatTimestamp: ['(timestamp: number) => string'],
+    hostRuntime: ['() => HostRuntime'],
+    initialsOf: ['(name: null | string | undefined, fallback?: string) => string'],
+    isBrowser: ['() => boolean'],
+    isRefusal: ['(error: unknown, key?: string | undefined) => error is ServiceRefusal'],
+    loadImage: [
+      '(src: string, { timeoutMs, crossOrigin }: { timeoutMs: number; crossOrigin?: "anonymous" | "use-credentials" | undefined; }) => Promise<HTMLImageElement>'
+    ],
+    makeThumbnail: ['(src: string) => Promise<null | string>'],
+    measureDragRatio: ['(element: HTMLElement) => number'],
+    messageOf: ['(error: unknown, fallback: string) => string'],
+    onAppForeground: ['(appId: string, handler: () => void) => () => void'],
+    onAppUnmount: ['(handler: () => void) => void'],
+    placeholderAvatar: ['(seed: string) => string'],
+    placeholderPhoto: ['(seed: string) => string'],
+    placeholderPhotos: ['(seed: string, count: number) => string[]'],
+    plural: [
+      '(key: string, count: number, params?: Readonly<Record<string, number | string>> | undefined) => string'
+    ],
+    pointerDrag: [
+      '(node: HTMLElement, options: PointerDragOptions) => { update(next: PointerDragOptions): void; destroy(): void; }'
+    ],
+    registerMessages: [
+      '(namespace: string, catalog: Readonly<Record<string, Readonly<Record<string, string>>>>) => void'
+    ],
+    releaseCanvas: ['(canvas: HTMLCanvasElement) => void'],
+    renderMarkdown: ['(text: string) => string'],
+    sourceUrlForBuild: ['(base?: string) => string'],
+    thumbnailFromImage: ['(img: HTMLImageElement) => null | string'],
+    tileFromColorClasses: ['(color: string) => AppTile | null'],
+    tokenizeRichText: ['(input: string) => RichTextToken[]'],
+    useAccount: [
+      '() => { myPhoneNumber: Writable<string>; bankBalance: Writable<number>; transactions: Writable<Transaction[]>; transactionsLoaded: Writable<boolean>; historySource: Writable<BankHistorySource>; fetchPhoneNumber: () => Promise<string>; fetchBalance: () => Promise<void>; fetchTransactions: () => Promise<void>; }'
+    ],
+    useAccounts: [
+      '(appId?: string | undefined) => { getMyAccounts: (app: string) => Promise<{ rows: Account[]; limit: number; }>; getAccounts: (query: { app: string; handle?: string | undefined; limit?: number | undefined; }) => Promise<{ rows: Account[]; }>; createAccount: (input: { app: string; handle: string; display_name?: string | undefined; }) => Promise<Account>; updateAccount: (input: { id: number; } & Partial<Account>) => Promise<unknown>; getFollowStats: (input: { app: string; account_id: number; viewer_account_id?: number | undefined; }) => Promise<FollowStats>; getFollowers: (query: FollowListQuery) => Promise<FollowPage>; getFollowing: (query: FollowListQuery) => Promise<FollowPage>; searchAccounts: (query: AccountSearchQuery) => Promise<{ rows: Account[]; nextCursor: null | number; }>; followAccount: (input: { app: string; follower_account_id: number; followee_account_id: number; }) => Promise<unknown>; unfollowAccount: (input: { app: string; follower_account_id: number; followee_account_id: number; }) => Promise<unknown>; blockAccount: (input: { app: string; blocker_account_id: number; blocked_account_id: number; }) => Promise<unknown>; unblockAccount: (input: { app: string; blocker_account_id: number; blocked_account_id: number; }) => Promise<unknown>; getReactionsFor: (target: ReactionTarget) => Promise<Record<number, ReactionSummary>>; reactToTarget: (payload: { app: string; account_id: number; target_table: string; target_id: number; emoji: string; }) => Promise<unknown>; unreactToTarget: (payload: { app: string; account_id: number; target_table: string; target_id: number; emoji: string; }) => Promise<unknown>; }'
+    ],
+    useAdmin: [
+      '() => Omit<{ isAdmin: Writable<boolean>; refreshAdmin: () => Promise<void>; }, "isAdmin" | "refreshAdmin">'
+    ],
+    useAppAction: [
+      '(appId?: string | undefined) => { busy: Writable<boolean>; run: (work: () => unknown, options?: AppActionOptions | undefined) => Promise<boolean>; notify: (n: { type: "error" | "success"; title?: string | undefined; message: string; }) => string; }'
+    ],
+    useAppEvents: [
+      '(appId: string) => { on: <T = Record<string, unknown>>(event: string, handler: (e: AppEvent<T>) => void) => () => void; onAny: (handler: (e: AppEvent<Record<string, unknown>>) => void) => () => void; clear: () => void; }'
+    ],
+    useAppLevels: [
+      '(config: AppLevelsConfig) => { back: () => void; release: () => void; readonly title: string; }'
+    ],
+    useAppRegistry: [
+      '() => { registryStore: { subscribe: (this: void, run: Subscriber<AppManifest[]>, invalidate?: (() => void) | undefined) => Unsubscriber; registerApp: (manifest: AppManifest, component: AppComponent) => void; registerAddOn: (manifest: AppManifest, source?: string | undefined) => void; unregisterApp: (appId: string) => void; getComponent: (appId: string) => AppComponent | undefined; isKnownApp: (appId: string) => boolean; loadComponent: (appId: string) => Promise<AppComponent | undefined>; getAddOnSource: (appId: string) => Promise<string | undefined>; isInstalled: (appId: string) => boolean; getManifest: (appId: string) => AppManifest | undefined; installFromCatalog: (entry: CatalogEntry) => Promise<{ manifest: AppManifest; }>; rehydrateSavedRemoteApps: () => Promise<void>; }; bundledAddOns: AppManifest[]; getFirstBootTime: () => string; updatesStore: Readable<AppUpdate[]>; updateCount: Readable<number>; }'
+    ],
+    useAppRegistryWrite: [
+      '() => Omit<{ refreshUpdates: () => Promise<AppUpdate[]>; fetchRemoteCatalog: () => Promise<{ status: "off"; } | { status: "ok"; entries: CatalogEntry[]; } | { status: "unavailable"; }>; recordConsent: (appId: string, permissions: readonly ("account" | "admin" | "app-events" | "app-registry" | "app-registry-write" | "bank" | "call" | "camera" | "clock" | "clock-write" | "contacts" | "control-center" | "devtools" | "display" | "display-write" | "highscores" | "jobs" | "keybinds" | "keybinds-write" | "location" | "lock-screen" | "lock-screen-write" | "mail" | "marketplace" | "media" | "messages" | "music" | "navigation" | "notification-settings" | "notification-settings-write" | "notifications" | "reports" | "search" | "social" | "storage" | "system-hardware" | "system-hardware-write" | "theme" | "theme-write" | "wallpaper" | "wallpaper-write")[]) => void; grantedPermissions: (appId: string) => readonly ("account" | "admin" | "app-events" | "app-registry" | "app-registry-write" | "bank" | "call" | "camera" | "clock" | "clock-write" | "contacts" | "control-center" | "devtools" | "display" | "display-write" | "highscores" | "jobs" | "keybinds" | "keybinds-write" | "location" | "lock-screen" | "lock-screen-write" | "mail" | "marketplace" | "media" | "messages" | "music" | "navigation" | "notification-settings" | "notification-settings-write" | "notifications" | "reports" | "search" | "social" | "storage" | "system-hardware" | "system-hardware-write" | "theme" | "theme-write" | "wallpaper" | "wallpaper-write")[] | undefined; updateApp: (appId: string) => Promise<AppManifest>; installFromCatalog: (entry: CatalogEntry) => Promise<{ manifest: AppManifest; }>; registerApp: (manifest: AppManifest, component: AppComponent) => void; registerAddOn: (manifest: AppManifest, source?: string | undefined) => void; unregisterApp: (appId: string) => void; }, "fetchRemoteCatalog" | "grantedPermissions" | "installFromCatalog" | "recordConsent" | "refreshUpdates" | "registerAddOn" | "registerApp" | "unregisterApp" | "updateApp">'
+    ],
+    useAppVisible: ['(appId: string) => Readable<boolean>'],
+    useBank: [
+      '() => Omit<{ sendMoney: (input: SendMoneyInput) => Promise<SendMoneyOutcome>; invoices: Writable<Invoice[]>; invoicesLoaded: Writable<boolean>; fetchInvoices: () => Promise<void>; payInvoice: (id: number) => Promise<InvoiceActionOutcome>; declineInvoice: (id: number) => Promise<InvoiceActionOutcome>; }, "declineInvoice" | "fetchInvoices" | "invoices" | "invoicesLoaded" | "payInvoice" | "sendMoney">'
+    ],
+    useCall: [
+      '() => { callStore: { subscribe: (this: void, run: Subscriber<CallState>, invalidate?: (() => void) | undefined) => Unsubscriber; startCall: (number: string, name?: string | undefined) => Promise<void>; endCall: () => Promise<void>; answerCall: () => Promise<void>; toggleMute: () => Promise<void>; toggleSpeaker: () => Promise<void>; setIncoming: (number: string, name?: string | undefined) => void; setStatus: (status: CallStatus) => void; }; startCall: (number: string, name?: string | undefined) => Promise<void>; endCall: () => Promise<void>; answerCall: () => Promise<void>; toggleSpeaker: () => Promise<void>; callLog: Writable<PhoneCallLogEntry[]>; loadCallLog: () => Promise<void>; }'
+    ],
+    useCamera: [
+      '() => { isTakingPhoto: Writable<boolean>; isPreviewingPhoto: Writable<boolean>; }'
+    ],
+    useClock: [
+      '() => { time: Writable<TimeState>; is24Hour: Writable<boolean>; formattedTime: Readable<string>; }'
+    ],
+    useClockWrite: ['() => { setIs24Hour: (value: boolean) => void; }'],
+    useContacts: [
+      '() => { contactsStore: { share: (payload: Partial<Contact> & { name?: string | undefined; phone: string; }) => Promise<void>; getDeleted: () => Promise<Contact[]>; restore: (id: number) => Promise<boolean>; subscribe: (this: void, run: Subscriber<Contact[]>, invalidate?: (() => void) | undefined) => Unsubscriber; loaded: { subscribe: (this: void, run: Subscriber<boolean>, invalidate?: (() => void) | undefined) => Unsubscriber; }; load: () => Promise<void>; add: (draft: Omit<Contact, "citizenid" | "created_at" | "id" | "updated_at">) => Promise<Contact>; update: (row: Contact) => Promise<void>; delete: (id: number) => Promise<void>; set: (rows: Contact[]) => void; patch: (id: number, changes: Partial<Contact>) => void; }; favoriteContacts: Readable<Contact[]>; addContact: (firstname: string, phone: string, lastname?: string | undefined, avatar?: string | undefined, favorite?: boolean | undefined) => Promise<Contact>; shareContact: (firstname: string, phone: string, lastname?: string | undefined) => Promise<void>; getDeletedContacts: () => Promise<Contact[]>; restoreContact: (id: number) => Promise<boolean>; }'
+    ],
+    useControlCenter: ['(appId: string) => ControlCenter'],
+    useDeepLink: ['(appId: string, handle: () => boolean) => void'],
+    useDevTools: [
+      '() => { devToolsUnlocked: Writable<boolean>; unlock: () => void; lock: () => void; }'
+    ],
+    useDirectMessages: [
+      '(appId: string) => { threads: () => Promise<DirectMessageThread[]>; thread: (query: { account_id: number; peer_account_id: number; cursor?: null | number | undefined; limit?: number | undefined; }) => Promise<{ rows: DirectMessage[]; nextCursor: null | number; }>; send: (input: { account_id: number; peer_account_id: number; body: string; }) => Promise<DirectMessage>; markRead: (input: { account_id: number; peer_account_id: number; }) => Promise<boolean>; }'
+    ],
+    useDisplay: [
+      '() => { device: Readable<"phone" | "tablet">; frame: Readable<{ width: number; height: number; }>; displaySize: Writable<number>; displaySizeDefault: number; phoneScale: Readable<number>; phoneBox: Readable<{ width: number; height: number; }>; isSizeLimited: Readable<boolean>; motionPreference: Writable<MotionPreference>; motionPreferenceDefault: MotionPreference; reducedMotion: Readable<boolean>; homeGridColumns: Writable<number>; homeGridRows: Writable<number>; homeGridColumnsDefault: number; homeGridColumnsMin: number; homeGridColumnsMax: number; homeGridRowsDefault: number; homeGridRowsMin: number; homeGridRowsMax: number; }'
+    ],
+    useDisplayWrite: [
+      '() => Omit<{ setDisplaySize: (size: number) => void; setFrame: (id: string) => void; setFrameColor: (id: string) => void; setMotionPreference: (preference: MotionPreference) => void; setHomeGridSize: (columns: number, rows: number) => void; }, "setFrame" | "setFrameColor">'
+    ],
+    useHighscores: [
+      '() => { submitScore: (app: string, score: number) => Promise<void>; getLeaderboard: (app: string) => Promise<LeaderboardEntry[]>; }'
+    ],
+    useJobs: [
+      '() => { jobs: Writable<JobView[]>; jobsLoaded: Writable<boolean>; fetchJobs: () => Promise<void>; setActiveJob: (name: string) => Promise<JobActionOutcome>; setDuty: (name: string, onDuty: boolean) => Promise<JobActionOutcome>; }'
+    ],
+    useKeybinds: [
+      '() => { onKeybind: (actionId: string, handler: () => void, appId?: string | undefined) => () => void; bindings: Readable<Record<string, string>>; groups: Readable<KeybindGroup[]>; findConflict: (actionId: string, key: string) => KeybindAction | undefined; }'
+    ],
+    useKeybindsWrite: [
+      '() => Omit<{ setBinding: (actionId: string, key: string) => void; resetBindings: () => void; }, "resetBindings" | "setBinding">'
+    ],
+    useLocale: [
+      '() => Omit<{ locale: Readable<string>; setLocale: (next: string) => void; t: Readable<Translate>; plural: (key: string, count: number, params?: Readonly<Record<string, number | string>> | undefined) => string; availableLocales: () => string[]; }, "setLocale">'
+    ],
+    useLocation: [
+      '() => { shareLocation: () => Promise<{ id: number; media: MediaPreview; }>; setWaypoint: (x: number, y: number) => Promise<void>; }'
+    ],
+    useLockScreen: [
+      '() => { hasPasscode: Writable<boolean>; autoLockPolicy: Writable<AutoLockPolicy>; autoLockPolicyChoices: Readable<readonly AutoLockPolicyChoice[]>; }'
+    ],
+    useLockScreenWrite: [
+      '() => Omit<{ setAutoLockPolicy: (policy: AutoLockPolicy) => void; setPasscode: (digits: string) => Promise<void>; clearPasscode: () => Promise<void>; }, "clearPasscode" | "setAutoLockPolicy" | "setPasscode">'
+    ],
+    useMail: [
+      '() => Omit<{ mailStore: { markAsRead: (id: number) => Promise<void>; archive: (id: number, archive?: boolean | undefined) => Promise<void>; addReceivedMail: (incoming: Mail) => void; subscribe: (this: void, run: Subscriber<Mail[]>, invalidate?: (() => void) | undefined) => Unsubscriber; loaded: { subscribe: (this: void, run: Subscriber<boolean>, invalidate?: (() => void) | undefined) => Unsubscriber; }; load: () => Promise<void>; add: (draft: Omit<Mail, "id">) => Promise<Mail>; update: (row: Mail) => Promise<void>; delete: (id: number) => Promise<void>; set: (rows: Mail[]) => void; patch: (id: number, changes: Partial<Mail>) => void; }; unreadMailCount: Readable<number>; deleteMail: (id: number) => Promise<void>; markAsRead: (id: number) => Promise<void>; archiveMail: (id: number, archiveState?: boolean | undefined) => Promise<void>; addReceivedMail: (newMail: Mail) => void; }, "addReceivedMail">'
+    ],
+    useMarketplace: [
+      '() => { feedStore: Writable<ListingPage>; mineStore: Writable<ListingPage>; loadFeed: () => Promise<void>; searchListings: (q: string) => Promise<ListingPage>; loadMine: () => Promise<void>; viewListing: (id: number) => Promise<(Listing & { contactPhone: null | string; isOwn: boolean; }) | null>; postListing: (input: CreateListingInput) => Promise<Listing>; markSold: (id: number) => Promise<boolean>; removeListing: (id: number) => Promise<boolean>; }'
+    ],
+    useMedia: [
+      '() => { media: { full: (mediaId: number) => Promise<MediaItem>; hydrate: (item: MediaPreview) => void; receive: (mediaId?: number | undefined) => Promise<void>; load: (filter?: Record<string, unknown> | undefined) => Promise<void>; add: (draft: Omit<MediaItem, "citizenid" | "created_at" | "id" | "updated_at">) => Promise<MediaItem>; setThumbnail: (mediaId: number, thumbnail: string) => Promise<boolean>; delete: (mediaId: number) => Promise<void>; dropNearby: (mediaId: number) => Promise<{ count: number; }>; shareLocation: () => Promise<{ id: number; media: MediaPreview; }>; setWaypoint: (x: number, y: number) => Promise<void>; getDeleted: () => Promise<DeletedMediaItem[]>; restore: (mediaId: number) => Promise<boolean>; loaded: Readable<boolean>; hasMore: Readable<boolean>; loadMore(): Promise<boolean>; prepend(row: MediaItem): void; replace(row: MediaItem): void; remove(id: number): void; subscribe(this: void, run: Subscriber<MediaItem[]>, invalidate?: (() => void) | undefined): Unsubscriber; }; capturePhoto: (data: string, thumbnail?: string | undefined) => Promise<MediaItem>; deletePhoto: (id: number) => Promise<void>; dropNearby: (mediaId: number) => Promise<{ count: number; }>; fullMedia: (mediaId: number) => Promise<MediaItem>; getDeletedMedia: () => Promise<DeletedMediaItem[]>; restoreMedia: (mediaId: number) => Promise<boolean>; }'
+    ],
+    useMessages: [
+      '() => Omit<{ conversationsStore: { subscribe: (this: void, run: Subscriber<UIConversation[]>, invalidate?: (() => void) | undefined) => Unsubscriber; loaded: { subscribe: (this: void, run: Subscriber<boolean>, invalidate?: (() => void) | undefined) => Unsubscriber; }; hasMore: { subscribe: (this: void, run: Subscriber<boolean>, invalidate?: (() => void) | undefined) => Unsubscriber; }; messages: { subscribe: (this: void, run: Subscriber<Record<number, UIMessage[]>>, invalidate?: (() => void) | undefined) => Unsubscriber; }; activeConversationId: { subscribe: (this: void, run: Subscriber<null | number>, invalidate?: (() => void) | undefined) => Unsubscriber; }; setActiveConversationId: (id: null | number) => void; loadConversations: () => Promise<void>; loadMoreConversations: () => Promise<boolean>; loadMessages: (conversationId: number) => Promise<void>; hasOlderMessages: { subscribe: (this: void, run: Subscriber<Record<number, boolean>>, invalidate?: (() => void) | undefined) => Unsubscriber; }; loadOlderMessages: (conversationId: number) => Promise<boolean>; sendMessage: (conversationId: number, message: string, attachments?: undefined | { photo_id: number; attachment?: string | undefined; }[], replyToId?: null | number | undefined) => Promise<Message | null>; editMessage: (conversationId: number, messageId: number, message: string) => Promise<null | { message: string; edited?: boolean | undefined; }>; deleteMessage: (conversationId: number, messageId: number) => Promise<boolean>; startConversation: (phone: string, isGroup?: boolean | undefined) => Promise<UIConversation | null>; markAsRead: (conversationId: number) => Promise<void>; archiveConversation: (conversationId: number, archive?: boolean | undefined) => Promise<void>; deleteConversation: (conversationId: number) => Promise<void>; renameConversation: (conversationId: number, name: string) => Promise<void>; addReceivedMessage: (incoming: IncomingMessage) => void; }; unreadMessagesCount: Readable<number>; sendMessage: (conversationId: number, text: string) => Promise<Message | null>; addReceivedMessage: (message: IncomingMessage) => void; startText: (phone: string) => void; messageReactions: ReactionStore; loadMessageReactions: (ids: number[]) => Promise<void>; toggleMessageReaction: (messageId: number, emoji: string) => Promise<void>; }, "addReceivedMessage">'
+    ],
+    useMusic: [
+      '() => { musicSource: Readable<MusicSource | null>; musicQueue: Readable<QueueEntry[]>; musicIndex: Readable<number>; musicNowPlaying: Readable<MusicNowPlaying | null>; musicError: Readable<MusicError | null>; musicPosition: Readable<MusicPosition>; musicRepeat: Readable<MusicRepeat>; musicShuffle: Readable<boolean>; musicHasNext: Readable<boolean>; musicHasPrevious: Readable<boolean>; musicStatus: Readable<MusicStatus>; musicVolume: Writable<number>; musicMuted: Writable<boolean>; canPlay: (input: string) => boolean; playSource: (input: string) => void; enqueue: (input: string) => void; playQueueIndex: (index: number) => void; removeFromQueue: (key: string) => void; clearQueue: () => void; nextTrack: () => void; previousTrack: () => void; seekMusic: (to: number) => void; cycleRepeat: () => void; setRepeat: (mode: MusicRepeat) => void; toggleShuffle: () => void; thumbnailUrlFor: (videoId: null | string | undefined) => null | string; describeMusicError: (reason: MusicErrorReason, translate?: Translate) => string; pauseMusic: () => void; resumeMusic: () => void; stopMusic: () => void; setMusicVolume: (value: number) => void; setMusicMuted: (muted: boolean) => void; toggleMusicMute: () => void; nearbyBroadcasts: Readable<NearbyBroadcast[]>; audibleBroadcasts: Readable<AudibleBroadcast[]>; maxAudibleBroadcasts: number; mutedBroadcasters: Readable<string[]>; muteAllNearby: Readable<boolean>; muteBroadcaster: (token: string) => void; unmuteBroadcaster: (token: string) => void; toggleBroadcasterMute: (token: string) => void; clearMutedBroadcasters: () => void; setMuteAllNearby: (on: boolean) => void; toggleMuteAllNearby: () => void; }'
+    ],
+    useNavigation: [
+      '() => { currentApp: Writable<RunningApp>; openApp: (appName: string, props?: Record<string, unknown> | undefined) => void; goHome: () => void; closePhone: () => void; }'
+    ],
+    useNotifications: [
+      '(appId?: string | undefined) => { notificationsStore: Readable<NotificationItem[]>; unreadCount: Readable<number>; totalUnread: Readable<number>; loaded: Writable<boolean>; load: () => Promise<void>; markRead: (ids: number[]) => Promise<void>; clear: (ids: number[]) => Promise<void>; clearAll: (targetAppId?: string | undefined) => Promise<void>; }'
+    ],
+    useNotificationSettings: [
+      '() => { toastsEnabled: Writable<boolean>; notificationSoundEnabled: Writable<boolean>; badgesEnabled: Writable<boolean>; dndEnabled: Writable<boolean>; appNotificationPolicies: Writable<{ [x: string]: AppNotificationPolicy; }>; customisedNotificationApps: Readable<string[]>; appPolicyStore: (appId: string) => Readable<AppNotificationPolicy>; }'
+    ],
+    useNotificationSettingsWrite: [
+      '() => Omit<{ setToastsEnabled: (value: boolean) => void; setNotificationSoundEnabled: (value: boolean) => void; setBadgesEnabled: (value: boolean) => void; setDndEnabled: (value: boolean) => void; setAppNotificationPolicy: (appId: string, patch: Partial<AppNotificationPolicy>) => void; clearAppNotificationPolicy: (appId: string) => void; }, "clearAppNotificationPolicy" | "setAppNotificationPolicy" | "setBadgesEnabled" | "setDndEnabled" | "setNotificationSoundEnabled" | "setToastsEnabled">'
+    ],
+    usePagedList: [
+      '<T>(options: PagedListOptions<T>) => { readonly visible: T[]; readonly hiddenCount: number; readonly offset: number; readonly loading: boolean; loadMore: () => Promise<void>; onScroll: (event: Event) => void; reset: () => void; }'
+    ],
+    usePersisted: [
+      '<T>(appId: string, key: string, initial: T, options?: PersistedOptions<T>) => Writable<T>'
+    ],
+    usePhoneNotification: [
+      '(appId?: string | undefined) => { sendNotification: (options: SendNotificationOptions) => string; dismissNotification: (id: string) => void; toast: { subscribe: (this: void, run: Subscriber<ToastMessage[]>, invalidate?: (() => void) | undefined) => Unsubscriber; show: (options: Partial<ToastMessage> & { message: string; soundHandled?: boolean | undefined; }) => string; dismiss: (id: string) => void; archive: (id: string) => Promise<void>; pauseDismiss: (id: string) => void; resumeDismiss: (id: string, delay?: number | undefined) => void; clear: () => void; showIncomingMessage: (options: { sender: string; message: string; avatar?: string | undefined; onReply: (replyText: string) => Promise<void> | void; onClick?: (() => Promise<void> | void) | undefined; }) => string; showContactShare: (options: { name: string; phone: string; avatar?: string | undefined; senderLabel: string; onAccept: () => Promise<void> | void; onDecline?: (() => Promise<void> | void) | undefined; onClick?: (() => Promise<void> | void) | undefined; }) => string; showCall: (options: { name?: string | undefined; number: string; breakThrough?: boolean | undefined; onAccept: () => Promise<void> | void; onDecline?: (() => Promise<void> | void) | undefined; onExpire?: (() => Promise<void> | void) | undefined; }) => string; showMail: (options: { sender: string; subject: string; onClick?: (() => void) | undefined; }) => string; }; }'
+    ],
+    useReport: ['() => { submit: (input: SubmitReportInput) => Promise<void>; }'],
+    useReports: [
+      '() => Omit<{ pendingReports: Writable<Report[]>; resolvedReports: Writable<Report[]>; pendingReportCount: Readable<number>; loadPendingReports: () => Promise<void>; loadReportHistory: () => Promise<void>; resolveReport: (id: number, action: "dismiss" | "moderate") => Promise<void>; reopenReport: (id: number) => Promise<void>; loadReportVersions: (id: number) => Promise<ObjectOutput<{ id: MicaSchema<number>; reason: MicaSchema<"edit" | "handover" | "rejoin" | "rename" | "revive">; replaced_at: MicaSchema<string>; written_at: MicaSchema<null | string>; by_owner: MicaSchema<boolean | null>; values: MicaSchema<ObjectOutput<{ column: MicaSchema<string>; value: MicaSchema<null | string>; }>[]>; }>[]>; }, "loadPendingReports" | "loadReportHistory" | "loadReportVersions" | "pendingReportCount" | "pendingReports" | "reopenReport" | "resolveReport" | "resolvedReports">'
+    ],
+    useScrollDetect: ['(setter: (scrolled: boolean) => void, threshold?: number) => void'],
+    useSearchProvider: ['(appId: string, search: (needle: string) => ProvidedHit[]) => () => void'],
+    useService: [
+      '<const D extends AddonServiceDeclaration>(declaration: D) => DeclaredService<D>',
+      '(serviceId: string) => { id: string; call: <T = unknown>(action: string, data?: unknown, defaultValue?: T | undefined) => Promise<T>; }'
+    ],
+    useSound: ['() => { play: (effect: SoundEffect) => void; }'],
+    useSourceUrl: ['() => { sourceUrl: Writable<string>; refreshSourceUrl: () => Promise<void>; }'],
+    useStorage: [
+      '(appId: string) => { getItem: <T = unknown>(key: string, defaultValue?: T | undefined) => T | null; setItem: <T = unknown>(key: string, value: T) => void; removeItem: (key: string) => void; markUnsynced: (key: string) => void; clear: () => void; }'
+    ],
+    useStreamerMode: [
+      '() => Omit<{ streamerMode: Readable<boolean>; revealGeneration: Readable<number>; setStreamerMode: (on: boolean) => void; }, "setStreamerMode">'
+    ],
+    useSystemHardware: [
+      '() => { charge: Writable<number>; signalLevel: Writable<number>; cellServiceEnabled: Writable<boolean>; bluetoothEnabled: Writable<boolean>; isBluetoothDiscoverable: Readable<boolean>; soundVolume: Writable<number>; soundMuted: Writable<boolean>; volumeStep: Writable<number>; volumeStepChoices: readonly [ 1, 2, 5, 10, 20 ]; ringMode: Writable<RingMode>; ringModeChoices: Readable<readonly RingModeChoice[]>; ringtone: Writable<string>; ringtoneChoices: Readable<readonly RingtoneOption[]>; notificationTone: Writable<string>; notificationToneChoices: Readable<readonly RingtoneOption[]>; }'
+    ],
+    useSystemHardwareWrite: [
+      '() => Omit<{ setCharge: (level: number) => void; setSignal: (level: number) => void; toggleCellService: () => void; toggleBluetooth: () => void; setVolume: (val: number) => void; toggleMute: () => void; setVolumeStep: (percent: number) => void; setRingMode: (mode: RingMode) => void; setRingtone: (id: string) => void; previewRingtone: (id: string) => void; setNotificationTone: (id: string) => void; previewNotificationTone: (id: string) => void; }, "setCharge" | "setNotificationTone" | "setRingtone" | "setSignal" | "setVolumeStep" | "toggleBluetooth" | "toggleCellService" | "toggleMute">'
+    ],
+    useTheme: [
+      '() => { themeStore: Writable<ThemeState>; schemeStore: Readable<M3Tokens>; isLightMode: Readable<boolean>; defaultTheme: ThemeState; seedFromRgbString: (value: string) => null | string; sanitizeSeed: (value: unknown) => string; }'
+    ],
+    useThemeWrite: [
+      '() => { setThemeSeed: (seed: string) => void; setThemeMode: (mode: ThemeMode) => void; resetTheme: () => void; }'
+    ],
+    useTimer: [
+      '() => { after: (ms: number, handler: () => void) => CancelTimer; every: (ms: number, handler: () => void) => CancelTimer; clearAll: () => void; }'
+    ],
+    useWallpaper: [
+      '() => { wallpaperStore: Writable<WallpaperState>; wallpaperBackground: Readable<string>; wallpaperNeedsContrast: Readable<boolean>; activeSeed: Readable<string>; backgroundForSeed: (seed: string, mode: ThemeMode) => string; seedFromImage: (source: string) => Promise<null | string>; presets: readonly WallpaperPreset[]; defaultWallpaper: WallpaperState; }'
+    ],
+    useWallpaperWrite: [
+      '() => { setWallpaperSeed: (seed: string) => void; setPresetWallpaper: (preset: WallpaperPreset) => void; setWallpaperImage: (image: string, seed?: string | undefined) => void; resetWallpaper: () => void; }'
+    ]
+  },
+  '@mica/sdk/app': {
+    defineApp: ['(manifest: AppManifestInput) => AppManifest'],
+    lazyBadge: ['(compose: () => Promise<Readable<number>> | Readable<number>) => Readable<number>']
+  },
+  '@mica/sdk/core': {
+    backgroundForScheme: ['(tokens: M3Tokens) => string'],
+    buildSchemes: ['(seedHex: string) => { light: M3Tokens; dark: M3Tokens; }'],
+    cssVarBlock: ['(tokens: M3Tokens) => string'],
+    sanitizeSeed: ['(value: unknown) => string'],
+    seedFromRgbString: ['(value: string) => null | string'],
+    useCapabilities: ['() => Readable<CapabilityAnswer> & CapabilityAnswer'],
+    useCaptureZoomBoost: ['() => Writable<boolean>'],
+    useNuiBridge: [
+      '() => { fetchNui: <T = unknown>(eventName: string, data?: unknown, options?: undefined | { defaultValue?: T | undefined; }) => Promise<T>; useNuiEvent: <T = unknown>(action: string, handler: (data: T) => void) => () => void; }'
+    ]
+  },
+  '@mica/sdk/dev': {
+    defineAddonMock: [
+      '<const D extends AddonServiceDeclaration>(declaration: D, handlers: (tools: AddonMockTools) => AddonHandlers<D>) => AddonMockDefinition<D>'
+    ],
+    installAddonMock: [
+      '<D extends AddonServiceDeclaration>(mock: AddonMockDefinition<D>, manifest: ServiceOwner) => AddonMockTools'
+    ]
+  }
+};
+
 // ---------------------------------------------------------------------------
 // The difference that matters
 // ---------------------------------------------------------------------------
@@ -2940,6 +3382,117 @@ const undeclaredAdditions = (
 };
 
 const describeAddition = (a: Addition): string => `${a.where}: ${a.what} (${a.kind} added)`;
+
+/** MICA-460. One published signature that is not the frozen one. */
+interface SignatureChange {
+  entry: string;
+  name: string;
+  kind:
+    | 'signature changed'
+    | 'signature not frozen'
+    | 'signature could not be read'
+    | 'no longer callable';
+  was: string[];
+  now: string[];
+}
+
+/**
+ * MICA-460. Every difference between the published signatures and `BASELINE_SIGNATURES`.
+ *
+ * Unlike `breakingChanges` this reports **any** change, widenings included, and reports a
+ * function the baseline has no row for: see `BASELINE_SIGNATURES` for why the comparison is
+ * text and the baseline total. Scoped to the entry points the baseline names, which
+ * `froze the signature of every published function` holds to the published ones.
+ *
+ * Pure, like its neighbours, so the probes at the bottom can drive it with input this repo
+ * does not have.
+ */
+const signatureChanges = (
+  live: Record<string, Record<string, string[] | null>>,
+  baseline: Record<string, Record<string, string[]>>,
+  exports: Record<string, string[]>
+): SignatureChange[] => {
+  const changes: SignatureChange[] = [];
+  for (const [entry, frozenRows] of Object.entries(baseline)) {
+    const frozen = new Map(Object.entries(frozenRows));
+    const now = new Map(Object.entries(live[entry] ?? {}));
+    const exported = new Set(exports[entry] ?? []);
+
+    for (const [name, was] of frozen) {
+      const current = now.get(name);
+      // Gone from the entry point entirely: already an `export removed` line.
+      if (!exported.has(name)) continue;
+      if (current === undefined) {
+        // Still exported and no longer callable: a function turned into a constant, say.
+        // Every call an add-on wrote is now a type error.
+        changes.push({ entry, name, kind: 'no longer callable', was, now: [] });
+      } else if (current === null) {
+        changes.push({ entry, name, kind: 'signature could not be read', was, now: [] });
+      } else if (current.join('\n') !== was.join('\n')) {
+        changes.push({ entry, name, kind: 'signature changed', was, now: current });
+      }
+    }
+
+    for (const [name, current] of now) {
+      if (frozen.has(name)) continue;
+      changes.push(
+        current === null
+          ? { entry, name, kind: 'signature could not be read', was: [], now: [] }
+          : { entry, name, kind: 'signature not frozen', was: [], now: current }
+      );
+    }
+  }
+  return changes;
+};
+
+/**
+ * Where two printed signatures first part, with about forty characters either side. Several
+ * frozen signatures run past two thousand characters, and a `was`/`now` pair that long cannot
+ * be compared by eye.
+ */
+const firstDifference = (was: string, now: string): string => {
+  let start = 0;
+  while (start < was.length && start < now.length && was[start] === now[start]) start++;
+  let end = 0;
+  while (
+    end < was.length - start &&
+    end < now.length - start &&
+    was[was.length - 1 - end] === now[now.length - 1 - end]
+  ) {
+    end++;
+  }
+  const excerpt = (text: string): string => {
+    const from = Math.max(0, start - 40);
+    const to = Math.min(text.length, text.length - end + 40);
+    return `${from > 0 ? '…' : ''}${text.slice(from, to)}${to < text.length ? '…' : ''}`;
+  };
+  return `at character ${start}: was «${excerpt(was)}» now «${excerpt(now)}»`;
+};
+
+const describeSignatureChange = (c: SignatureChange): string => {
+  const head = `${c.entry} › ${c.name}: ${c.kind}`;
+  if (c.kind === 'signature not frozen') {
+    return [head, ...c.now.map((s) => `    now: ${s}`)].join('\n');
+  }
+  if (c.kind !== 'signature changed') {
+    return [head, ...c.was.map((s) => `    was: ${s}`)].join('\n');
+  }
+  const lines = [head];
+  const overloads = Math.max(c.was.length, c.now.length);
+  if (c.was.length !== c.now.length) {
+    lines.push(`  overloads: was ${c.was.length}, now ${c.now.length}`);
+  }
+  for (let i = 0; i < overloads; i++) {
+    const was = c.was[i];
+    const now = c.now[i];
+    if (was === now) continue;
+    lines.push(`  overload ${i + 1} of ${overloads}`);
+    lines.push(`    was: ${was ?? '(none)'}`);
+    lines.push(`    now: ${now ?? '(none)'}`);
+    if (was !== undefined && now !== undefined) lines.push(`    ${firstDifference(was, now)}`);
+  }
+  return lines.join('\n');
+};
 
 // ---------------------------------------------------------------------------
 // `index.ts` against `addon.ts`
@@ -3263,6 +3816,10 @@ describe('the SDK public surface (MICA-125)', () => {
   // MICA-185. Scoped to `@mica/sdk` on the same terms as `hooksNow`; see `reads the shape
   // of every published type` for the assertion that this still covers `addon.ts`.
   const shapesNow = typedNow['@mica/sdk'].shapes;
+  // MICA-460. Every published entry point, not `index.ts`: see `BASELINE_SIGNATURES`.
+  const signaturesNow = Object.fromEntries(
+    Object.keys(SUBPATH_OF_ENTRY).map((entry) => [entry, typedNow[entry].signatures])
+  );
 
   describe('the gate can actually run', () => {
     // Every assertion below compares two lists. If either side comes back empty — a
@@ -3414,6 +3971,75 @@ describe('the SDK public surface (MICA-125)', () => {
       expect(Object.keys(shapesNow).length).toBeGreaterThanOrEqual(60);
       expect(Object.values(shapesNow).flat().length).toBeGreaterThanOrEqual(400);
     });
+
+    it('froze the signature of every published function', () => {
+      // MICA-460. Scope first: the baseline names exactly the published entry points, so a
+      // subpath added to the map without a row here is loud rather than unchecked.
+      expect(
+        Object.keys(BASELINE_SIGNATURES).sort(),
+        'BASELINE_SIGNATURES and SUBPATH_OF_ENTRY name different entry points, so a published ' +
+          'one has signatures nobody froze, or an unpublished one is being held to them'
+      ).toEqual(Object.keys(SUBPATH_OF_ENTRY).sort());
+
+      // Floors on both sides, for the reason every other arm has them: a reader that went
+      // blind returns `{}`, and the differ would then report every row as not callable —
+      // loud — but a half-deleted baseline would check nothing. 104, 2, 8 and 2 today.
+      const floors: Record<string, number> = {
+        '@mica/sdk (add-on bundle)': 100,
+        '@mica/sdk/app': 2,
+        '@mica/sdk/core': 8,
+        '@mica/sdk/dev': 2
+      };
+      for (const [entry, floor] of Object.entries(floors)) {
+        expect(
+          Object.keys(BASELINE_SIGNATURES[entry] ?? {}).length,
+          `${entry}: the frozen signature baseline is missing rows — restore it rather than ` +
+            'letting the gate go quiet'
+        ).toBeGreaterThanOrEqual(floor);
+        expect(Object.keys(signaturesNow[entry] ?? {}).length).toBeGreaterThanOrEqual(floor);
+      }
+
+      // The component exclusion cannot fail open: what the reader set aside as components
+      // is exactly the barrel parse's components on that entry point, no more and no fewer.
+      for (const entry of Object.keys(SUBPATH_OF_ENTRY)) {
+        const parsed = exportsNow[entry].filter((name) => name in propsNow).sort();
+        expect(
+          typedNow[entry].components,
+          `${entry}: the signature arm set aside as components a different list from the ` +
+            'barrels, so a function is going unfrozen or a component is being printed'
+        ).toEqual(parsed);
+      }
+
+      // And the reader reads the real program: two literals, one overloaded.
+      expect(signaturesNow['@mica/sdk/app'].defineApp).toEqual([
+        '(manifest: AppManifestInput) => AppManifest'
+      ]);
+      expect(signaturesNow['@mica/sdk (add-on bundle)'].useService).toEqual([
+        '<const D extends AddonServiceDeclaration>(declaration: D) => DeclaredService<D>',
+        '(serviceId: string) => { id: string; call: <T = unknown>(action: string, data?: ' +
+          'unknown, defaultValue?: T | undefined) => Promise<T>; }'
+      ]);
+    });
+
+    it('prints signatures with the compiler svelte-check uses', () => {
+      // MICA-460. `BASELINE_SIGNATURES` is text a compiler printed, so it is only comparable
+      // with text the same compiler prints. `typescript-ast-parser` is the copy this file can
+      // ask; `sdk/`'s own `typescript` is what `svelte-check` runs. TypeScript 7 has no API
+      // to ask before 7.1, so TS 6 is the authoritative printer — and when either pin moves,
+      // a printer change is not an SDK change.
+      const sdkTypescript = createRequire(join(SDK_DIR, 'package.json'))(
+        'typescript/package.json'
+      ).version;
+      const minor = (version: string): string => version.split('.').slice(0, 2).join('.');
+      expect(
+        minor(ts.version),
+        `typescript-ast-parser is ${ts.version} and sdk/'s typescript is ${sdkTypescript}. ` +
+          'BASELINE_SIGNATURES was printed by the first and must read the way the second ' +
+          'checks this package. When the compiler moves, re-capture it in its own commit and ' +
+          'confirm the diff is printing only — the same functions, the same parameters and ' +
+          'returns, spelled differently — before anything else lands on top'
+      ).toBe(minor(sdkTypescript));
+    });
   });
 
   it('has a baseline frozen at the version it is pinned to', () => {
@@ -3460,9 +4086,12 @@ describe('the SDK public surface (MICA-125)', () => {
       found,
       `this changes the shape of \`@mica/sdk\` under every published \`core: false\` ` +
         `add-on, which compiled against v${SDK_CONTRACT_VERSION} and cannot be recompiled ` +
-        'by you. If the change is intended: bump SDK_CONTRACT_VERSION, re-capture the two ' +
-        'baselines below it in the same commit, and write the CHANGELOG entry under ' +
-        '"Action required" naming what an add-on author has to change. That applies to a ' +
+        'by you. A removal like this is a contract break, and the contract version moves ' +
+        'only on the owner’s explicit go-ahead (owner rule, 2026-11-09) — see ' +
+        'sdk/version.test.ts. Restore the source and return it to the lead as a finding; ' +
+        'do not edit the baselines, SDK_CONTRACT_VERSION or sdk/version.ts to match. The ' +
+        'owner’s own bump re-captures the baselines and writes the CHANGELOG entry under ' +
+        '"Action required" in the same commit; it is not a step a lane takes. That applies to a ' +
         '`type export removed` line exactly as it does to a value: an add-on that writes ' +
         '`import type { Note }` is as broken by the name going away as one that calls a ' +
         'deleted hook — and so is a `type field removed` or `type union member removed` ' +
@@ -3502,8 +4131,11 @@ describe('the SDK public surface (MICA-125)', () => {
     expect(
       found,
       'an add-on compiled against these hook members and `addon.ts` no longer types them. ' +
-        'If that is intended, it is a contract break: bump SDK_CONTRACT_VERSION, write the ' +
-        'CHANGELOG entry, and add the member to ADD_ON_HOOK_OMISSIONS.'
+        'That is a contract break, and the contract version moves only on the owner’s ' +
+        'explicit go-ahead (owner rule, 2026-11-09) — see sdk/version.test.ts. Restore the ' +
+        'source and return it to the lead as a finding; do not add the member to ' +
+        'ADD_ON_HOOK_OMISSIONS or edit SDK_CONTRACT_VERSION to match. The owner’s own bump ' +
+        'adds it there and writes the CHANGELOG entry in the same commit.'
     ).toEqual([]);
 
     const drift: string[] = [];
@@ -3529,6 +4161,43 @@ describe('the SDK public surface (MICA-125)', () => {
     expect(
       drift,
       'ADD_ON_HOOK_OMISSIONS no longer describes the difference between the two barrels'
+    ).toEqual([]);
+  });
+
+  /**
+   * MICA-460. Every published function and hook still has exactly the signature an add-on
+   * compiled against. The arms above see names; this sees what is passed and what comes back.
+   */
+  it('changes the signature of no published function or hook', () => {
+    const found = signatureChanges(signaturesNow, BASELINE_SIGNATURES, exportsNow).map(
+      describeSignatureChange
+    );
+    expect(
+      found,
+      'a published function or hook does not have the signature frozen in ' +
+        'BASELINE_SIGNATURES, so an add-on compiled against the old one may not compile ' +
+        'against this, and nothing in this repo builds one to find out. Read the was/now ' +
+        'lines, then decide which this is before touching the baseline. ' +
+        'WIDENING — every call that compiled before still compiles, and every use of what ' +
+        'comes back still type-checks: a parameter accepts more than it did, a required ' +
+        'parameter became optional, an optional parameter was appended, an overload was ' +
+        'appended after the existing ones, the return type became more specific or gained ' +
+        'a member; or the change is cosmetic, a parameter or type parameter renamed. Accept ' +
+        'it by copying the `now` line into BASELINE_SIGNATURES with a comment above it ' +
+        'naming the ticket and why every existing call still compiles. ' +
+        'NARROWING — anything else: a parameter accepts less, became required, was added ' +
+        'without `?` or removed; an overload removed or reordered; a type parameter ' +
+        'constraint tightened; the return type wider, different, or missing a member. A ' +
+        'callback parameter counts the other way round: one that is now handed less is a ' +
+        'narrowing. If you cannot show every existing call and every use of the result ' +
+        'still compiles, treat it as a narrowing. A narrowing is not re-frozen here: it ' +
+        'breaks published add-ons and needs SDK_CONTRACT_VERSION to move, which happens ' +
+        'only on the owner’s explicit go-ahead — see sdk/version.test.ts. Restore the ' +
+        'source and return it to the lead as a finding; do not edit BASELINE_SIGNATURES ' +
+        'or sdk/version.ts to match. ' +
+        '`signature not frozen` is a function nobody recorded: copy its `now` line in with ' +
+        'the ticket that published it — an addition breaks nobody, and recording it is ' +
+        'what makes its later narrowing visible.'
     ).toEqual([]);
   });
 
@@ -4247,6 +4916,109 @@ describe('the SDK public surface (MICA-125)', () => {
         'a type reaches the add-on barrel and not `index.ts`, so scoping this arm to ' +
           '`index.ts` no longer covers what an add-on can name'
       ).toEqual([]);
+    });
+
+    // MICA-460. The signature arm, driven the same way: literals through the pure differ,
+    // and `froze the signature of every published function` for the live reader.
+    describe('a published signature', () => {
+      const entry = '@mica/sdk (add-on bundle)';
+      const frozen = { [entry]: { formatTime: ['(at: number) => string'] } };
+      const changes = (now: Record<string, string[] | null>, exported = Object.keys(now)) =>
+        signatureChanges({ [entry]: now }, frozen, { [entry]: exported }).map(
+          describeSignatureChange
+        );
+
+      it('sees a parameter narrowed, and says where', () => {
+        expect(changes({ formatTime: ['(at: 1 | 2) => string'] })).toEqual([
+          [
+            '@mica/sdk (add-on bundle) › formatTime: signature changed',
+            '  overload 1 of 1',
+            '    was: (at: number) => string',
+            '    now: (at: 1 | 2) => string',
+            '    at character 5: was «(at: number) => string» now «(at: 1 | 2) => string»'
+          ].join('\n')
+        ]);
+      });
+
+      it('sees a return type changed', () => {
+        expect(changes({ formatTime: ['(at: number) => string | null'] })).toEqual([
+          [
+            '@mica/sdk (add-on bundle) › formatTime: signature changed',
+            '  overload 1 of 1',
+            '    was: (at: number) => string',
+            '    now: (at: number) => string | null',
+            '    at character 22: was «(at: number) => string» now «(at: number) => string | null»'
+          ].join('\n')
+        ]);
+      });
+
+      it('sees an overload removed, and an overload appended', () => {
+        const two = { [entry]: { useService: ['(a: string) => void', '(b: number) => void'] } };
+        const removed = signatureChanges(
+          { [entry]: { useService: ['(a: string) => void'] } },
+          two,
+          { [entry]: ['useService'] }
+        );
+        expect(removed.map((c) => c.kind)).toEqual(['signature changed']);
+        expect(describeSignatureChange(removed[0])).toContain('overloads: was 2, now 1');
+        expect(describeSignatureChange(removed[0])).toContain('now: (none)');
+        // Appended is a widening, and still a change: only a person can say so, with a comment.
+        const appended = signatureChanges(
+          { [entry]: { useService: ['(a: string) => void', '(b: number) => void', '() => void'] } },
+          two,
+          { [entry]: ['useService'] }
+        );
+        expect(appended.map((c) => c.kind)).toEqual(['signature changed']);
+      });
+
+      it('sees overloads reordered', () => {
+        const two = { [entry]: { f: ['(a: string) => void', '(b: number) => void'] } };
+        expect(
+          signatureChanges(
+            { [entry]: { f: ['(b: number) => void', '(a: string) => void'] } },
+            two,
+            { [entry]: ['f'] }
+          ).map((c) => c.kind)
+        ).toEqual(['signature changed']);
+      });
+
+      it('sees a published function nobody froze', () => {
+        expect(
+          changes({ formatTime: ['(at: number) => string'], formatYear: ['() => string'] })
+        ).toEqual([
+          '@mica/sdk (add-on bundle) › formatYear: signature not frozen\n    now: () => string'
+        ]);
+      });
+
+      it('sees a function still exported that stopped being callable, or being readable', () => {
+        expect(changes({}, ['formatTime'])).toEqual([
+          '@mica/sdk (add-on bundle) › formatTime: no longer callable\n' +
+            '    was: (at: number) => string'
+        ]);
+        expect(changes({ formatTime: null })).toEqual([
+          '@mica/sdk (add-on bundle) › formatTime: signature could not be read\n' +
+            '    was: (at: number) => string'
+        ]);
+      });
+
+      it('leaves a function that is gone entirely to `export removed`', () => {
+        expect(changes({}, [])).toEqual([]);
+      });
+
+      it('passes an unchanged signature', () => {
+        expect(changes({ formatTime: ['(at: number) => string'] })).toEqual([]);
+      });
+
+      it('sorts every union, at every depth, and nothing else', () => {
+        expect(canonicalSignature('(a: "b" | "a") => readonly ("y" | "x")[] | null')).toBe(
+          '(a: "a" | "b") => null | readonly ("x" | "y")[]'
+        );
+        // Intersection and parameter order are what the declaration says, not the printer.
+        expect(canonicalSignature('(b: B & A, a: string) => void')).toBe(
+          '(b: B & A, a: string) => void'
+        );
+        expect(canonicalSignature('(a: string => void')).toBeNull();
+      });
     });
 
     it('reads a vocabulary out of the real module, not just out of a literal', () => {
