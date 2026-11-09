@@ -20,6 +20,50 @@ import {
   sealRow
 } from './contentCipher';
 import type { ColumnRule, ResolvedMembership } from './defineService';
+import { SchemaError } from '@mica/shared/schema';
+
+/**
+ * What a non-null value's JS type must be for each column type (MICA-463), before any rule
+ * about its length or its members is asked.
+ *
+ * `ServiceEndpoint.pickColumns` admits any scalar, so a number or a boolean for a `varchar`
+ * reached this class, and nothing here looked at the type: a plain column stored the coercion
+ * (`42` for a bio, `'not-a-boolean'` for `favorite`), and an encrypted one reached the seal's
+ * `TypeError`, logged with the table's name once per request and answered generically. Refused
+ * here instead, as a `SchemaError` naming the field — the same answer and wording a contract's
+ * `s.string()` gives a custom action, and never the table.
+ *
+ * What is accepted is what the callers send, read off every one of them: text for the text
+ * types and for an `enum` (a member check follows), a JS boolean for `bool` — oxmysql hands a
+ * `TINYINT(1)` back as one, so a row edited and sent back carries a boolean too, never `0`/`1` —
+ * and a finite number for `int` and `float`. `null` is not reached: it returns early above, as it
+ * always has, because clearing a nullable column (`ringtone`, `bio`, `caption`) is a write callers
+ * make, and a `ColumnRule` does not say which columns are nullable. `timestamp` and `blob` are not
+ * checked; no column of either type is client-writable (`hostilePayloads.test.ts` pins that).
+ */
+function assertScalarFits(column: string, rule: ColumnRule, value: unknown): void {
+  const refuse = (message: string): never => {
+    throw new SchemaError([{ message: `${column} ${message}`, path: [column] }]);
+  };
+  switch (rule.type) {
+    case 'string':
+    case 'text':
+    case 'mediumtext':
+    case 'json':
+    case 'enum':
+      if (typeof value !== 'string') refuse('must be text.');
+      return;
+    case 'bool':
+      if (typeof value !== 'boolean') refuse('must be true or false.');
+      return;
+    case 'int':
+    case 'float':
+      if (typeof value !== 'number' || !Number.isFinite(value)) refuse('must be a number.');
+      return;
+    default:
+      return;
+  }
+}
 
 /**
  * Columns no client payload may ever write, on any table.
@@ -193,6 +237,8 @@ export abstract class Repository<T> {
   public assertWritableValue(column: string, value: unknown): void {
     const rule = this.columnRules[column];
     if (!rule || value === null || value === undefined) return;
+
+    assertScalarFits(column, rule, value);
 
     /**
      * These messages reach **players**, not developers, which is easy to miss.

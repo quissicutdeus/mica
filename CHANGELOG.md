@@ -1624,6 +1624,15 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A write with the wrong kind of value for its column is refused, with a message
+naming the field (MICA-463).** A generic create or update that sent text for a
+yes/no column, a number for a text one, or text for a number used to be stored
+as sent, or to fail with a line in the server log naming the table and a generic
+answer to the player. The server now refuses it before it reaches the database,
+and the player's toast says which field was wrong, never the table. Clearing a
+nullable field still works. Nothing to do on the server; an add-on or a script
+of your own that sends the wrong type will now see the refusal.
+
 **On ESX, a new character in a deleted character's slot gets a phone of its own
 (MICA-440).** esx_multicharacter gives the next character in a slot the deleted
 one's identifier, `char<slot>:<license>`, and micaOS kept a deleted character's
@@ -2021,6 +2030,12 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**A value of the wrong type for a column is now refused (MICA-463).** An add-on
+that calls a generic create or update with `favorite: 1` for a yes/no field, or
+a number for a text one, now gets the refusal a custom action's schema already
+gave, naming the field, where before the server stored the coercion. No exported
+name or type moved, so `v1` does not move; send the type the field declares.
 
 **An add-on's frame no longer runs its manifest (MICA-449).** The template's
 generated entry used to import `src/manifest.ts` into the frame, and a badge

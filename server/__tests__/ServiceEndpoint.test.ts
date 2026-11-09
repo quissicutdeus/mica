@@ -193,6 +193,91 @@ describe('ServiceEndpoint — payload field allowlist', () => {
   });
 });
 
+/**
+ * A scalar of the wrong type for its column is refused before SQL (MICA-463), on create and
+ * update alike, with a `SchemaError` a player may read — not written as its coercion, and not
+ * left to reach a seal that throws and logs the table's name.
+ */
+describe('ServiceEndpoint — a scalar must fit its column type', () => {
+  const typedRule = (type: 'string' | 'text' | 'bool' | 'int') => ({
+    type,
+    maxLength: type === 'string' ? 50 : type === 'text' ? 65535 : null,
+    citizenId: false,
+    values: null,
+    min: type === 'int' ? -2147483648 : null,
+    max: type === 'int' ? 2147483647 : null,
+    accepts: null,
+    ascii: false
+  });
+
+  class TypedRepo extends Repository<TestRow> {
+    protected tableName = 'mica_test';
+    protected columns = ['id', 'citizenid', 'title', 'content', 'pinned', 'rank', 'status'];
+    protected clientWritable = ['title', 'content', 'pinned', 'rank'];
+    protected columnRules = {
+      title: typedRule('string'),
+      content: typedRule('text'),
+      pinned: typedRule('bool'),
+      rank: typedRule('int')
+    };
+  }
+
+  const mountTyped = () => {
+    mount();
+    new ServiceEndpoint<TestRow>('test', new TypedRepo());
+  };
+
+  let errors: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    errors.mockRestore();
+  });
+
+  it.each([
+    ['create', 'string', { title: 42 }, 'title must be text.'],
+    ['update', 'string', { id: 7, title: true }, 'title must be text.'],
+    ['create', 'text', { content: 9 }, 'content must be text.'],
+    ['update', 'text', { id: 7, content: false }, 'content must be text.'],
+    ['create', 'bool', { pinned: 'not-a-boolean' }, 'pinned must be true or false.'],
+    ['update', 'bool', { id: 7, pinned: 1 }, 'pinned must be true or false.'],
+    ['create', 'int', { rank: 'not-a-number' }, 'rank must be a number.'],
+    ['update', 'int', { id: 7, rank: true }, 'rank must be a number.']
+  ])('%s refuses a wrong type for a %s column', async (action, _type, payload, message) => {
+    mountTyped();
+
+    await call(action, payload);
+
+    expect(dbMock.insert).not.toHaveBeenCalled();
+    expect(dbMock.update).not.toHaveBeenCalled();
+    expect(lastReply()).toEqual({ error: message, key: undefined, params: undefined });
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['string', { title: 'Groceries' }],
+    ['text', { content: 'milk, eggs' }],
+    ['bool', { pinned: true }],
+    ['int', { rank: 3 }]
+  ])('create writes the right type for a %s column', async (_type, payload) => {
+    mountTyped();
+
+    await call('create', payload);
+
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([...Object.values(payload), OWNER]);
+  });
+
+  it('update writes null for every nullable column, which is how a caller clears one', async () => {
+    mountTyped();
+
+    await call('update', { id: 7, title: null, content: null, pinned: null, rank: null });
+
+    expect(dbMock.update.mock.calls[0][1]).toEqual([null, null, null, null, 7, OWNER]);
+  });
+});
+
 describe('ServiceEndpoint — row id validation', () => {
   it.each([
     ['a missing id', {}],

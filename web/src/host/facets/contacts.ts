@@ -24,7 +24,7 @@ export function contacts() {
         lastname: lastname || '',
         phone,
         avatar,
-        favorite: favorite ?? false
+        favorite: favorite === true
       });
     },
     shareContact: (firstname: string, phone: string, lastname?: string) => {

@@ -79,3 +79,5 @@ after the link — `lane-protocol` has why.
 - [clearAllMocks keeps a mockReturnValue](clear-all-mocks-keeps-return-values.md)
 - [A test-schema variant is one long scope](test-schema-variants-are-one-scope.md)
 - [A deleted ESX citizenid comes back](deleted-citizenid-comes-back.md)
+- [Top-level await in a server test fails typecheck:tests](top-level-await-fails-test-typecheck.md)
+- [The bash guard reads a quoted `|` as a pipe](bash-guard-reads-a-quoted-bar-as-a-pipe.md)

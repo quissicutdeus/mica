@@ -17,6 +17,8 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { Repository } from '../lib/Repository';
+import { SchemaError } from '@mica/shared/schema';
+import type { ColumnRule } from '../lib/defineService';
 
 interface TestRow {
   id: number;
@@ -474,6 +476,89 @@ describe('Repository — declared client policy', () => {
 
   it('exposes the column list for callers that need to reason about the table', () => {
     expect(new TestRepo().tableColumns).toContain('citizenid');
+  });
+});
+
+/**
+ * A value's JS type against its column's (MICA-463). `pickColumns` admits any scalar, so this is
+ * the only place a number for a `varchar` or text for a `bool` is refused before SQL.
+ */
+const rule = (type: ColumnRule['type'], extra: Partial<ColumnRule> = {}): ColumnRule => ({
+  type,
+  maxLength: type === 'string' ? 50 : type === 'text' ? 65535 : null,
+  citizenId: false,
+  values: null,
+  min: type === 'int' ? -2147483648 : null,
+  max: type === 'int' ? 2147483647 : null,
+  accepts: null,
+  ascii: false,
+  ...extra
+});
+
+class TypedRepo extends Repository<TestRow> {
+  protected tableName = 'mica_typed';
+  protected columns = ['id', 'citizenid', 'name', 'body', 'flag', 'count', 'kind'];
+  protected clientWritable = ['name', 'body', 'flag', 'count', 'kind'];
+  protected columnRules = {
+    name: rule('string'),
+    body: rule('text'),
+    flag: rule('bool'),
+    count: rule('int'),
+    kind: rule('enum', { values: ['photo', 'video'] })
+  };
+}
+
+describe("Repository — a value's type must fit its column", () => {
+  const refusal = (column: string, value: unknown): unknown => {
+    try {
+      new TypedRepo().assertWritableValue(column, value);
+      return null;
+    } catch (error) {
+      return error;
+    }
+  };
+
+  it.each([
+    ['string', 'name', 42, 'name must be text.'],
+    ['string', 'name', true, 'name must be text.'],
+    ['text', 'body', 7, 'body must be text.'],
+    ['text', 'body', false, 'body must be text.'],
+    ['bool', 'flag', 'not-a-boolean', 'flag must be true or false.'],
+    ['bool', 'flag', 1, 'flag must be true or false.'],
+    ['bool', 'flag', 0, 'flag must be true or false.'],
+    ['int', 'count', 'not-a-number', 'count must be a number.'],
+    ['int', 'count', true, 'count must be a number.'],
+    ['int', 'count', Number.NaN, 'count must be a number.'],
+    ['enum', 'kind', 1, 'kind must be text.']
+  ])('refuses a wrong type for a %s column (%s = %j)', (_type, column, value, message) => {
+    const error = refusal(column, value);
+    expect(error).toBeInstanceOf(SchemaError);
+    expect((error as SchemaError).message).toBe(message);
+    // A player reads this: it names the field and never the table.
+    expect((error as SchemaError).message).not.toMatch(/mica_typed/);
+  });
+
+  it.each([
+    ['string', 'name', 'Ada'],
+    ['text', 'body', 'a longer body'],
+    ['bool', 'flag', true],
+    ['bool', 'flag', false],
+    ['int', 'count', 5],
+    ['enum', 'kind', 'photo']
+  ])('accepts the right type for a %s column (%s = %j)', (_type, column, value) => {
+    expect(refusal(column, value)).toBeNull();
+  });
+
+  it.each(['name', 'body', 'flag', 'count', 'kind'])(
+    'accepts null for %s, which is how a caller clears a column',
+    (column) => {
+      expect(refusal(column, null)).toBeNull();
+    }
+  );
+
+  it('still applies the width once the type fits', () => {
+    expect(refusal('name', 'a'.repeat(51))).toBeInstanceOf(Error);
+    expect(refusal('name', 'a'.repeat(50))).toBeNull();
   });
 });
 
