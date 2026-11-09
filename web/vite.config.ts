@@ -5,6 +5,8 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { Plugin } from 'vite';
 import path from 'path';
 import { execSync } from 'child_process';
+import fs from 'node:fs';
+import { addonsOutDir, shellOutDir, BUILD_DIR_ENV } from './scripts/addon-build.js';
 
 function getGitInfo() {
   const envBranch = process.env.GITHUB_REF_NAME;
@@ -150,13 +152,31 @@ function getCalVer() {
  */
 const MARKDOWN_MODULES = /node_modules\/(marked|dompurify)\/|\/sdk\/lib\/markdown\.ts$/;
 
+/**
+ * MICA-471: a scratch build (`MICA_BUILD_DIR` set) keeps its add-on bundles under its own
+ * folder, not `public/addons/`, so the shell's default `publicDir` copy cannot carry them.
+ * Copy that folder in once the bundle is written. Clearing `addons/` first drops anything the
+ * `publicDir` copy brought along from the checkout's own default, so the scratch output is
+ * only what the scratch run built. Does nothing without the variable.
+ */
+const scratchAddons = (): Plugin => ({
+  name: 'mica-scratch-addons',
+  apply: 'build',
+  closeBundle() {
+    if (!process.env[BUILD_DIR_ENV]) return;
+    const target = path.join(shellOutDir(import.meta.dirname), 'addons');
+    fs.rmSync(target, { recursive: true, force: true });
+    fs.cpSync(addonsOutDir(import.meta.dirname), target, { recursive: true });
+  }
+});
+
 const gitInfo = getGitInfo();
 const version = getCalVer();
 const buildInfo = `v${version} (${gitInfo.branch}@${gitInfo.commit})`;
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [trimFonts(), svelte(), licenseBanner()],
+  plugins: [trimFonts(), svelte(), licenseBanner(), scratchAddons()],
   base: './',
   define: {
     __MICA_VERSION__: JSON.stringify(version),
@@ -183,7 +203,7 @@ export default defineConfig({
     conditions: ['browser']
   },
   build: {
-    outDir: '../dist/web',
+    outDir: shellOutDir(import.meta.dirname),
     emptyOutDir: true,
     target: 'chrome103',
     cssTarget: 'chrome103',

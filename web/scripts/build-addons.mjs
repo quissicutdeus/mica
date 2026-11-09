@@ -12,20 +12,57 @@
 // than mirrored in both. The note that used to sit here said the dedupe had been tried and
 // abandoned over `TS7016`, and that the fix if they drifted was proper JS module type
 // support — `addon-ids.d.ts` is that.
+//
+// MICA-471: output directory and lock. The folder this script deletes and rewrites is
+// `web/public/addons/` unless `MICA_BUILD_DIR=<dir>` is set, in which case it is
+// `<dir>/addons` and the shell build (`vite.config.ts` reads the same variable) writes
+// `<dir>/web`, so a scratch run shares nothing with the checkout. Whatever folder it is, the
+// run holds an exclusive lock on it (`addon-build.js`): a second run aimed at the same
+// folder waits and names the holder, or fails after `MICA_ADDONS_LOCK_TIMEOUT_MS` (default
+// 300000). A `--watch` run holds the lock for its whole life, so a one-shot build that meets
+// one fails at once instead of waiting. Everything after `--then` is a command run while the
+// lock is still held (`pnpm build` puts the shell build there), so the folder cannot be
+// emptied between the add-ons being built and the shell copying them.
+//
+//   MICA_BUILD_DIR=/tmp/scratch pnpm --filter ./web build
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, spawnSync } from 'child_process';
 import { addOnIds } from './addon-ids.js';
+import { acquireLock, addonsOutDir } from './addon-build.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(here, '..');
 const appsDir = path.join(webDir, 'src/apps');
 
-const outDir = path.join(webDir, 'public/addons');
-fs.rmSync(outDir, { recursive: true, force: true });
+const argv = process.argv.slice(2);
+const thenAt = argv.indexOf('--then');
+const thenCommand = thenAt === -1 ? [] : argv.slice(thenAt + 1);
+const ownArgs = thenAt === -1 ? argv : argv.slice(0, thenAt);
+const watch = ownArgs.includes('--watch');
 
-const watch = process.argv.includes('--watch');
+const outDir = addonsOutDir(webDir);
+const lock = await acquireLock(outDir, {
+  mode: watch ? 'watch' : 'build',
+  command: `${path.basename(process.argv[1])} ${argv.join(' ')}`.trim(),
+  timeoutMs: Number(process.env.MICA_ADDONS_LOCK_TIMEOUT_MS) || 300_000
+}).catch((err) => {
+  console.error(err.message);
+  process.exit(1);
+});
+// `exit` fires on every path out of this process, a `process.exit(n)` included; the signal
+// handlers turn a kill into an `exit`. Only SIGKILL skips them, and a dead pid is how the
+// next run knows to clear what it left.
+process.once('exit', () => lock.release());
+for (const [signal, code] of [
+  ['SIGINT', 130],
+  ['SIGTERM', 143]
+]) {
+  process.once(signal, () => process.exit(code));
+}
+
+fs.rmSync(outDir, { recursive: true, force: true });
 const ids = addOnIds(appsDir);
 
 if (watch) {
@@ -72,5 +109,14 @@ if (watch) {
     // not a nonzero status — `result.status !== 0` still catches that (`null !== 0`), and
     // `?? 1` gives `process.exit` a real code instead of `null` for it.
     if (result.status !== 0) process.exit(result.status ?? 1);
+  }
+  if (thenCommand.length > 0) {
+    const [cmd, ...cmdArgs] = thenCommand;
+    const result = spawnSync(cmd, cmdArgs, {
+      cwd: webDir,
+      stdio: 'inherit',
+      shell: process.platform === 'win32'
+    });
+    process.exit(result.status ?? 1);
   }
 }

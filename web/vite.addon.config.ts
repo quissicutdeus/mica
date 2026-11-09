@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 // MICA-190: one discovery, shared with `scripts/build-addons.mjs`, that strips comments
 // before reading `core`. The old copy here grepped raw text, which a doc comment can fool.
 import { addOnIds, withoutComments } from './scripts/addon-ids.js';
+import { addonsOutDir } from './scripts/addon-build.js';
 // MICA-205: the one derivation of "what does this code need declared", shared with
 // `sdk/permissions.test.ts` and with the out-of-tree template's own copy of this build.
 // It imports nothing itself, which is what lets both this config and the template's load it.
@@ -570,7 +571,7 @@ export default defineConfig({
     conditions: ['browser']
   },
   build: {
-    outDir: 'public/addons',
+    outDir: addonsOutDir(here),
     // `build-addons.mjs` runs this config once per id and would otherwise wipe the
     // previous iteration's bundle on every pass; it does its own single `rm -rf` up front
     // instead. Only empty here when nothing set `ADDON_ID` (a one-off manual invocation).

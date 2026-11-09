@@ -79,7 +79,14 @@
       // `*.config.ts` above are already explicit entries, so the plugin bought nothing
       // this repo doesn't already cover, at the cost of `deadcode` failing to even start
       // in CI. Disabled rather than weakening the throw.
-      "playwright": false
+      "playwright": false,
+      // MICA-471: `build:e2e` runs `build-addons.mjs --then cross-env NODE_ENV=development
+      // vite build ...`. `cross-env` has to sit after `--then`, not in front of the script,
+      // because the add-on bundles must not be built with NODE_ENV=development; the script
+      // runs it as a child once the lock is held. knip only credits a binary that starts a
+      // script command, so it cannot see this use. Named rather than switching the check
+      // off, so a devDependency that really goes unused is still reported.
+      "ignoreDependencies": ["cross-env"]
     },
     // MICA-172: its own workspace now that `sdk/` is a root-level package. Same entry
     // reasoning as when these lines lived under `web`:

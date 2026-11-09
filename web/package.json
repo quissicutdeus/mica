@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -c \"green,yellow\" -n \"shell,addons\" \"vite\" \"node scripts/build-addons.mjs --watch\"",
-    "build": "node scripts/build-addons.mjs && vite build",
+    "build": "node scripts/build-addons.mjs --then vite build",
     "build:addons": "node scripts/build-addons.mjs",
-    "build:e2e": "node scripts/build-addons.mjs && cross-env NODE_ENV=development vite build --mode development",
+    "build:e2e": "node scripts/build-addons.mjs --then cross-env NODE_ENV=development vite build --mode development",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json",
     "lint": "eslint . --cache --cache-strategy content --cache-location node_modules/.cache/eslint/",

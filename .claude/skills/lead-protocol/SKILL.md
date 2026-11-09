@@ -117,13 +117,16 @@ resolving, and `check:fast` refused a push.
 `grep -l <tree-name> node_modules/.bin/*` finds it; a reinstall in the main
 checkout repairs it.
 
-**One lane at a time builds the add-ons in a shared checkout.**
-`web/scripts/build-addons.mjs` always deletes and rewrites `web/public/addons/`,
-whatever outDir the lane's own build then uses, so a scratch outDir does not
-isolate it. On 2026-11-09 one teammate's run emptied it under another's
-measurement build mid-copy; the lane caught it by hash. Name the lane that owns
-the add-on build in each brief, Playwright's runs included, since the e2e build
-runs it too.
+**A lane that builds for its own measurement builds into its own folder.**
+`web/scripts/build-addons.mjs` deletes and rewrites its output folder, and on
+2026-11-09 one teammate's run emptied `web/public/addons/` under another's
+measurement build mid-copy. Since MICA-471 the default folder is locked, so a
+second build there waits its turn, and fails at once while `pnpm dev` holds it.
+A lane that needs a build it can trust for minutes runs
+`MICA_BUILD_DIR=<its scratchpad>/build pnpm --filter ./web build`, which writes
+`<dir>/addons` and `<dir>/web` and touches neither `web/public/addons/` nor
+`dist/web`. Playwright's runs still build the default, so they stay with the one
+`verify` lane.
 
 ## Brief a lane
 
