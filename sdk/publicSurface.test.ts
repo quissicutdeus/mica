@@ -144,9 +144,9 @@ import { SDK_CONTRACT_VERSION } from './version';
  *
  * The pin itself — `SDK_CONTRACT_VERSION` — is imported from `sdk/version.ts` above, and
  * this literal is what it is checked against. **They must stay equal**, which is the whole
- * mechanism: landing a break means bumping the exported constant *and* re-freezing the
- * baselines here in the same commit, so the break is a deliberate, reviewable line in a
- * diff rather than a silence.
+ * mechanism: landing a break means bumping the exported constant, on the owner's explicit
+ * word only (see `version.test.ts`), *and* re-freezing the baselines here in the same
+ * commit, so the break is a deliberate, reviewable line in a diff rather than a silence.
  *
  * This half stays a literal in this file on purpose. It is not a second copy of the pin —
  * it is the record of what the lists underneath it were captured at, and importing it too
@@ -3419,12 +3419,17 @@ describe('the SDK public surface (MICA-125)', () => {
   it('has a baseline frozen at the version it is pinned to', () => {
     // The two move together or not at all. Bumping the pin without re-freezing would
     // leave a stale list that agrees with nothing, and re-freezing without bumping the pin
-    // would let a break through as a quiet edit.
+    // would let a break through as a quiet edit. Neither is a lane's to do: the pin moves
+    // only on the owner's explicit go-ahead (MICA-459, `version.test.ts`), and the
+    // re-freeze is part of the owner's own bump, not a way to finish one.
     expect(
       BASELINE_VERSION,
       `the baseline was frozen at v${BASELINE_VERSION} but the contract is pinned to ` +
-        `v${SDK_CONTRACT_VERSION} — re-capture BASELINE_EXPORTS and BASELINE_PROPS in the ` +
-        'same commit that bumps the pin'
+        `v${SDK_CONTRACT_VERSION}. SDK_CONTRACT_VERSION moves only on the owner's explicit ` +
+        'go-ahead — see sdk/version.test.ts; if a change seems to call for moving it, ' +
+        'restore sdk/version.ts and return it to the lead as a finding. Re-capturing ' +
+        'BASELINE_EXPORTS and BASELINE_PROPS at the new version is what the owner’s own ' +
+        'bump also does, in the same commit; it is not a step a lane takes on its own'
     ).toBe(SDK_CONTRACT_VERSION);
   });
 

@@ -37,10 +37,11 @@
  * same terms as adding an export.
  *
  * `publicSurface.test.ts` pins its frozen baselines to this value and imports it from here
- * rather than declaring a copy — landing a break means bumping this *and* re-freezing those
- * baselines in the same commit, so the break is a reviewable line in a diff. It lived as a
- * `const` inside that test file until MICA-173, where nobody outside this repo could
- * import it; the file said as much itself.
+ * rather than declaring a copy — landing a break means bumping this, on the owner's explicit
+ * word only (see `version.test.ts`), *and* re-freezing those baselines in the same commit,
+ * so the break is a reviewable line in a diff. It lived as a `const` inside that test file
+ * until MICA-173, where nobody outside this repo could import it; the file said as much
+ * itself.
  *
  * **Not** `MICA_VERSION` below, which is a CalVer build stamp computed from `git log` and
  * moves on every push to `main` (eleven tags on 2026-08-27 alone) — an add-on branching on
@@ -77,6 +78,7 @@
  * never been released and nothing outside this repo builds against it, so a bump would buy
  * only its costs — the catalog path moving to `addons/sdk-2/` and every add-on stamped `'1'`
  * refused. The frozen shapes in `publicSurface.test.ts` record the removal under `'1'`.
+ * `version.test.ts` holds it there: it moves only on the owner's explicit word (MICA-459).
  */
 export const SDK_CONTRACT_VERSION: string = '1';
 

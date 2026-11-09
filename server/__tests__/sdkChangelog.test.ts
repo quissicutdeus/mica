@@ -425,9 +425,12 @@ describe('the SDK half of the changelog (MICA-125)', () => {
       expect(
         isNamed(`v${SDK_CONTRACT_VERSION}`, spans),
         `the SDK publishes contract v${SDK_CONTRACT_VERSION} and no "${SDK_HEADING}" ` +
-          `section names it. Bumping \`SDK_CONTRACT_VERSION\` means a published add-on has ` +
-          `stopped compiling against something — write \`v${SDK_CONTRACT_VERSION}\` in that ` +
-          `section, in backticks, and say what broke.`
+          `section names it. If \`SDK_CONTRACT_VERSION\` moved: it moves only on the ` +
+          `owner's explicit go-ahead — see sdk/version.test.ts; restore sdk/version.ts and ` +
+          `return it to the lead as a finding. Writing \`v${SDK_CONTRACT_VERSION}\` in that ` +
+          `section, in backticks, saying what broke, is what the owner's own bump also ` +
+          `does; it is not a step a lane takes on its own. If the pin did not move, the ` +
+          `section that named it was lost — restore it.`
       ).toBe(true);
     });
   });
