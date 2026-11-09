@@ -23,6 +23,9 @@ every code-writing agent type preloads; do not repeat it in a brief.
   background worktree lane is the exception, taken only for the two cases under
   "Spawn mode decides what can collide", and the owner is told which lane and
   why.
+- **`SDK_CONTRACT_VERSION` moves only on the owner's explicit word**
+  (2026-11-09). A change that would need a bump is a finding for the owner, not
+  a decision for the lead; find a non-breaking shape or hold the change.
 - **The lead owns the record.** `README.md`, `CHANGELOG.md`, `docs/`, Jira
   transitions and every update to the owner come from the lead. Lanes build code
   and tests, report to the lead only, and report a gap rather than close it — a

@@ -133,3 +133,7 @@ Per `lane-protocol`. Within your ten lines, also state:
   beyond what was asked: **stop and return that as a finding rather than doing
   it.** An export is a one-way door, so the default on ambiguity is to not take
   it.
+- If the change seems to call for moving `SDK_CONTRACT_VERSION`, even where the
+  rule in `sdk/version.ts` says a break needs it: **stop and return that as a
+  finding.** The owner moves the contract version himself, only on his explicit
+  word (2026-11-09), so a lane never edits it.
