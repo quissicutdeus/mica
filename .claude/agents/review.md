@@ -63,11 +63,16 @@ means, by area:
   hook with no `permissions.ts` row; a shell piece reaching the public surface;
   `SDK_CONTRACT_VERSION` unmoved by a type-only break.
 - **`client/`**: a value the client now decides that the server used to; a focus
-  set with no path that releases it; a native whose effect reaches past the
-  phone's own prop, animation and camera.
+  set with no path that releases it, or a release sequence where one throwing
+  native skips the next; a native whose effect reaches past the phone's own
+  prop, animation and camera.
 - **Tests**: a test that cannot fail — a scan that never asserts it found
   something, a regression test never shown red without its fix, a fixed
-  `waitForTimeout` against an animation in a suite that runs with `retries: 0`.
+  `waitForTimeout` against an animation in a suite that runs with `retries: 0`;
+  a static scan that drops a call it cannot open instead of pinning it; a
+  cross-citizen check that reads the reply and the rows but not the pushes, or
+  whose leak markers miss the victim's identity and a public table's private
+  columns.
 - **The pipeline**: a gate that skips instead of failing, a check piped into a
   filter, a hook at a path that does not exist.
 

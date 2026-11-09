@@ -9,6 +9,7 @@ import esbuild from 'esbuild';
 import { createRuntime } from './lib/fivem-server-runtime.js';
 import { IMAGE, openDatabase, step } from './lib/mariadb-harness.js';
 import { connectAsOxmysql, createOxmysql } from './lib/oxmysql-shim.js';
+import { runAccessMatrix } from './lib/access-matrix.js';
 
 /**
  * The real net-event handlers, for several players at once, against a real database (MICA-304).
@@ -27,6 +28,9 @@ import { connectAsOxmysql, createOxmysql } from './lib/oxmysql-shim.js';
  * is asserted as the arguments a phone would have been handed. The database is a throwaway
  * MariaDB with the shipped schema imported, reached through an oxmysql stand-in that returns
  * what oxmysql returns (`lib/oxmysql-shim.js`). Nothing in `server/` knows it is under test.
+ * One thing rides along that the shipped bundle lacks: MICA-463's schema recorder, imported
+ * first, which notes what each contract's input was declared as for the access matrix. Every
+ * schema is still the builder's own object and validates as it does in production.
  *
  * **Two shapes.** Standalone (`mica_standalone`, identity from each player's `license:`
  * identifier, `mica.esx.sql`), and qb (`mica.sql`, a seeded `players` table, and a fake qb-core
@@ -47,8 +51,13 @@ import { connectAsOxmysql, createOxmysql } from './lib/oxmysql-shim.js';
  * of a player's text and replying into the same thread (MICA-275); `SendMessage` to a player
  * online and offline (MICA-223); qb-phone's mail events (MICA-222); and a player's own data
  * exported and deleted with another's untouched (MICA-168); and a report or a reaction refused,
- * exactly as a missing id is, on a DM, a text or a photo its sender cannot see (MICA-339). qb-phone's `CustomNotification` is
- * a client event with no server half, so it is not here.
+ * exactly as a missing id is, on a DM, a text or a photo its sender cannot see (MICA-339). Last,
+ * the cross-citizen access matrix (MICA-464, `lib/access-matrix.js`): every action that takes a
+ * row id, generated from the declarations and contracts the server registered, sent by a second
+ * citizen against a row the first earned through the shipped handlers, refused with every
+ * `mica_*` row unchanged, and paired with the owner or a member doing the same and being
+ * answered. qb-phone's `CustomNotification` is a client event with no server half, so it is not
+ * here.
  *
  * **What this does not prove, and nothing in this repo can:** the client relay (`client/`)
  * and whether a phone acts on what it is sent; CEF and NUI; voice; a real `GetPlayerIdentifiers`
@@ -90,7 +99,8 @@ const FLOW_CHECKS = {
   reports: { standalone: 14, qb: 14 },
   privacy: { standalone: 30, qb: 30 },
   leftThread: { standalone: 15, qb: 15 },
-  characterSwitch: { standalone: 0, qb: 18 }
+  characterSwitch: { standalone: 0, qb: 18 },
+  matrix: { standalone: 8, qb: 8 }
 };
 const MINIMUM_CHECKS = Object.values(FLOW_CHECKS).reduce(
   (sum, perShape) => sum + perShape.standalone + perShape.qb,
@@ -110,6 +120,32 @@ const check = (label, actual, expected) => {
 const BUNDLE = path.join(root, 'node_modules', '.cache', 'mica-endpoints-server.mjs');
 
 /**
+ * MICA-463's schema recorder, installed before any contract is evaluated: a module of its own,
+ * imported first, because an import is evaluated before any statement of the module importing
+ * it. It wraps the builders on `s` so the access matrix can read each contract's input shape;
+ * every schema is still the builder's own object and validates exactly as it does in production
+ * (`server/__tests__/schemaShapes.ts`).
+ */
+const RECORD_SHAPES = {
+  name: 'mica-record-shapes',
+  setup(build) {
+    build.onResolve({ filter: /^mica-record-shapes$/ }, () => ({
+      path: 'mica-record-shapes',
+      namespace: 'mica-record-shapes'
+    }));
+    build.onLoad({ filter: /.*/, namespace: 'mica-record-shapes' }, () => ({
+      contents: [
+        `import { s } from '${root}/shared/schema.ts';`,
+        `import { recordSchemaShapes } from '${root}/server/__tests__/schemaShapes.ts';`,
+        'recordSchemaShapes(s);'
+      ].join('\n'),
+      resolveDir: root,
+      loader: 'ts'
+    }));
+  }
+};
+
+/**
  * `server/server.ts`, bundled with `build/build-bundle.js`'s options for the server target, as
  * an ES module rather than a script: Node gives a CommonJS module its own `exports`, which
  * would shadow the global FXServer provides. `shared/rpc.ts` rides along so the harness names
@@ -121,10 +157,19 @@ const buildBundle = async () => {
   await esbuild.build({
     stdin: {
       contents: [
+        // First, so every contract is built by a recorded `s` (see `RECORD_SHAPES`).
+        `import 'mica-record-shapes';`,
         `import '${root}/server/server.ts';`,
         `export { requestEventFor, responseEventFor } from '${root}/shared/rpc.ts';`,
         `export { __resetPhoneNumberState } from '${root}/server/services/PhoneNumbers.ts';`,
-        `export { __resetAssignedNumbers } from '${root}/server/lib/phoneNumbers.ts';`
+        `export { __resetAssignedNumbers } from '${root}/server/lib/phoneNumbers.ts';`,
+        // What the access matrix derives its cases from (MICA-464).
+        `export { declaredServices } from '${root}/server/lib/defineService.ts';`,
+        `export { registeredCustomActions } from '${root}/server/lib/services.ts';`,
+        `export { dispatcherFor } from '${root}/server/lib/ServiceEndpoint.ts';`,
+        `export { contractFor } from '${root}/shared/contract.ts';`,
+        `export { shapeOf, synthesize } from '${root}/server/__tests__/schemaShapes.ts';`,
+        `export { __resetRateLimits } from '${root}/server/lib/rateLimit.ts';`
       ].join('\n'),
       resolveDir: root,
       loader: 'ts'
@@ -135,7 +180,8 @@ const buildBundle = async () => {
     charset: 'utf8',
     format: 'esm',
     outfile: BUNDLE,
-    logLevel: 'warning'
+    logLevel: 'warning',
+    plugins: [RECORD_SHAPES]
   });
 };
 
@@ -440,6 +486,8 @@ const startShape = async ({ db, kind }) => {
     kind,
     runtime,
     qb,
+    /** The bundle as currently loaded; a restart replaces it. */
+    bundle: () => bundle,
     call,
     fire,
     raise,
@@ -2828,6 +2876,7 @@ const runShape = async (db, kind) => {
     await flow(shape, 'reports', () => runReports(shape, live));
     await flow(shape, 'privacy', () => runPrivacy(shape, live));
     await flow(shape, 'leftThread', () => runLeftThread(shape, live));
+    await flow(shape, 'matrix', () => runAccessMatrix(shape, { check, step }));
     // Qb only: a standalone source is one license until it drops, so nothing there switches.
     // Last, because it restarts the resource.
     if (kind === 'qb') {

@@ -81,3 +81,6 @@ after the link — `lane-protocol` has why.
 - [A deleted ESX citizenid comes back](deleted-citizenid-comes-back.md)
 - [Top-level await in a server test fails typecheck:tests](top-level-await-fails-test-typecheck.md)
 - [The bash guard reads a quoted `|` as a pipe](bash-guard-reads-a-quoted-bar-as-a-pipe.md)
+- [A taint scan counts Repository.delete and guard verdicts as state](taint-scan-delete-is-a-repository.md)
+- [A whole-database diff flakes on second-resolution timestamps](whole-db-diff-flakes-on-timestamps.md)
+- [A dropped guard can fail closed downstream](a-dropped-guard-can-fail-closed.md)

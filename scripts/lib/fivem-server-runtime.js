@@ -35,7 +35,8 @@ import path from 'path';
  *
  * **What is not:** the event loop's scheduling, msgpack's exact encoding, cross-resource
  * function references (an export handed a function gets the function), voice, entities and
- * coordinates (answered as nobody, nowhere), and anything a client does with what it is sent.
+ * coordinates (answered as nobody, nowhere, unless `placePlayer` stood a player's ped
+ * somewhere — a position and nothing else), and anything a client does with what it is sent.
  */
 
 /** A deep copy through JSON: the network carries data, not references. */
@@ -60,6 +61,9 @@ export const createRuntime = ({ root, resourceName = 'mica', convars = {}, resou
   const convarValues = { ...convars };
   /** src -> the aces granted to that player. Nobody holds any until `grantAce`. */
   const aces = new Map();
+  /** src -> [x, y, z], for a player `placePlayer` stood somewhere. Nobody else has a ped. */
+  const placed = new Map();
+  const PED_BASE = 100000;
   let invoking = null;
 
   const register = (event, fn) => {
@@ -146,10 +150,11 @@ export const createRuntime = ({ root, resourceName = 'mica', convars = {}, resou
     GetNumPlayerIndices: () => players.size,
     GetPlayerFromIndex: (index) => String([...players.keys()].sort((a, b) => a - b)[index] ?? -1),
     GetPlayers: () => [...players.keys()].sort((a, b) => a - b).map(String),
-    // Nobody, nowhere: no entity exists in a server with no clients.
-    GetPlayerPed: () => 0,
-    DoesEntityExist: () => false,
-    GetEntityCoords: () => [0, 0, 0],
+    // Nobody, nowhere: no entity exists in a server with no clients — unless `placePlayer`
+    // stood one somewhere, which is all a player's position is to the server.
+    GetPlayerPed: (src) => (placed.has(Number(src)) ? PED_BASE + Number(src) : 0),
+    DoesEntityExist: (ped) => placed.has(Number(ped) - PED_BASE),
+    GetEntityCoords: (ped) => placed.get(Number(ped) - PED_BASE) ?? [0, 0, 0],
     GetEntityHealth: () => 0,
     GetPlayerRoutingBucket: () => 0
   };
@@ -245,6 +250,11 @@ export const createRuntime = ({ root, resourceName = 'mica', convars = {}, resou
     grantAce(src, ace) {
       if (!aces.has(src)) aces.set(src, new Set());
       aces.get(src).add(ace);
+    },
+
+    /** Give a player a ped standing at `coords`, so a position read from the server finds one. */
+    placePlayer(src, coords) {
+      placed.set(Number(src), [...coords]);
     },
 
     /**
