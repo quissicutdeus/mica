@@ -28,15 +28,30 @@ lists, picked by the directory their files live in.
 
 ## Callsigns
 
-Lanes take Star Wars clone callsigns that fit the work, drawn from a pool rather
-than a fixed roster: the lane count and agent types come from the work first,
-then the names. The callsign is also the `SendMessage` address, so it is unique
-within a session and never `Rex`.
+Each agent type has one iconic clone, chosen for what the work needs, so the
+owner can tell from a pane's name what is running. The lane count and agent
+types come from the work first, then the names.
 
-Over a hundred names have been spawned in earlier sessions, and the list of
-never-spawned clones kept here since 2026-10-01 ran out on 2026-10-06. Reuse
-across sessions is normal: pick any clone name not yet used **in this session**,
-and recover a dead lead from the newest transcript that spawned the name.
+| Agent    | Callsign  | Why                                                                |
+| -------- | --------- | ------------------------------------------------------------------ |
+| `server` | Cody      | commander of the 212th, the steady backbone the rest stands on     |
+| `client` | Echo      | wired into machines he does not control, as this code is           |
+| `web`    | Hunter    | senses what everyone else misses, as a 103 regression is           |
+| `sdk`    | Fox       | Coruscant Guard: decides who gets in, as the permission table does |
+| `ci`     | Tech      | the one who reads the systems and rewires them                     |
+| `e2e`    | Wrecker   | a trial only counts if something can break                         |
+| `review` | Crosshair | one shot, aimed; misses nothing he is pointed at                   |
+| `verify` | 99        | does the unglamorous rounds, every time, and counts them           |
+| `docs`   | Gree      | the 41st's expert on other cultures, keeper of what is known       |
+
+A second lane of a type in one session, alongside the first or after it, takes
+the next free name from this reserve, in order: Wolffe, Bly, Gregor, Boss, Sev,
+Scorch, Fixer, Bacara, Neyo, Thire, Howzer, Appo. A built-in type (`Explore`,
+`Plan`, `general-purpose`) takes from the reserve too.
+
+The callsign is also the `SendMessage` address, so it is unique within a session
+and never `Rex`. Names recur across sessions by design: recover a dead lead from
+the newest transcript that spawned the name.
 
 ## What only you do
 

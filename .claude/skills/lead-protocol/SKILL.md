@@ -18,6 +18,11 @@ every code-writing agent type preloads; do not repeat it in a brief.
 - **One ticket at a time when building.** Implement, gate, commit and land a
   ticket before starting the next; do not open several tickets' worth of changes
   in one tree. Filing tickets in bulk is fine.
+- **The team stays in the foreground.** The owner watches the lanes work, so
+  every lane is a teammate in its own pane, spawned with no `isolation`. A
+  background worktree lane is the exception, taken only for the two cases under
+  "Spawn mode decides what can collide", and the owner is told which lane and
+  why.
 - **The lead owns the record.** `README.md`, `CHANGELOG.md`, `docs/`, Jira
   transitions and every update to the owner come from the lead. Lanes build code
   and tests, report to the lead only, and report a gap rather than close it — a
@@ -79,9 +84,9 @@ then do the lanes spawn, each briefed with that sha and the contract as
 read-only. A change to it mid-wave stops the wave: the lead amends it and
 re-briefs every lane that reads it.
 
-Callsigns come from a pool and fit the work (`lead.md` has it). Never reuse one
-within a session, and never give a lane the lead's name; either makes the
-transcript ambiguous about who decided what.
+Callsigns come from the roster in `lead.md`: one clone per agent type, then a
+reserve in order. Never reuse one within a session, and never give a lane the
+lead's name; either makes the transcript ambiguous about who decided what.
 
 ## Spawn mode decides what can collide
 
