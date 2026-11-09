@@ -90,3 +90,29 @@ is read by more than its own app — Messages resolves names through `contacts`,
 the shell raises a toast from `mail`. They are not app state; they are the
 client half of a service, which is why they sit beside the SDK hooks that expose
 them rather than inside `apps/`.
+
+## App residency
+
+An opened app stays mounted and hidden, so its state survives a trip elsewhere,
+scroll offsets and half-typed fields included. Two least-recently-used pools in
+`web/src/shell/state/navigation.ts` bound it: `MAX_RESIDENT_APPS` (5) for core
+apps and `MAX_RESIDENT_ADDONS` (3) for `core: false` add-ons. Neither pool
+evicts from the other (MICA-447).
+
+They are separate because eviction costs the two kinds very differently. A core
+app's chunk stays cached, so reopening an evicted one costs a remount, 20-90 ms
+at Chromium 103 with 4x CPU throttling. An evicted add-on loses its sandboxed
+iframe, and reopening it re-parses and recompiles the bundle: 770 ms against 410
+ms for a resident reopen. With one shared cap, a burst of core apps pushed
+add-ons out. Preferring core apps under that same cap would have let three
+add-ons squeeze the core pool down to two.
+
+The ceiling is eight resident apps. Measured at Chromium 103 with five core apps
+and three add-ons resident, the JS heap is 16.7 MB holding 28 documents, against
+5.8 MB and 2 documents at home, and 16.2 MB and 19 documents for five resident
+apps. Raising either cap raises that ceiling, so re-measure and update this
+paragraph when you change one.
+
+A resident app keeps its DOM slot for life. Moving an add-on's iframe reloads
+it, and the host then refuses the new window as a stranger; the comment in
+`openApp` has the history.

@@ -29,13 +29,54 @@ import { openDevice } from './phoneOpen';
 import type { RunningApp } from '@mica/sdk';
 
 /**
- * How many apps stay resident. Beyond this the least recently used is unmounted.
+ * How many core apps stay resident. Beyond this the least recently used core app is
+ * unmounted.
  *
  * Unbounded residency is a slow leak: every app ever opened would keep its component
  * tree, subscriptions and timers alive for the whole session. A cap makes the cost
  * knowable, and matches what a phone does when memory runs short.
  */
 export const MAX_RESIDENT_APPS = 5;
+
+/**
+ * MICA-447: how many `core: false` add-ons stay resident, counted apart from core apps.
+ *
+ * One shared cap evicted by recency alone, so the sixth app of any kind pushed out
+ * whatever was oldest — and the two kinds pay very differently for it. A core app's chunk
+ * stays cached, so coming back to an evicted one costs a remount (21-90 ms at Chromium
+ * 103, 4x CPU). An add-on's sandboxed iframe goes with it, and coming back re-parses the
+ * srcdoc and recompiles the bundle: about 375 ms more than a resident re-open, every time.
+ *
+ * Two pools, each LRU within itself, so a burst of core apps can no longer push out an
+ * add-on and a player with several add-ons does not starve the core apps either. Each
+ * still has a bound: the ceiling is `MAX_RESIDENT_APPS + MAX_RESIDENT_ADDONS` apps, at
+ * roughly 1.1 MB of heap each. Change either with that ceiling in mind, and with
+ * `docs/architecture.md`, which records it.
+ */
+export const MAX_RESIDENT_ADDONS = 3;
+
+/**
+ * Whether an id counts against the add-on pool. A manifest the registry cannot resolve
+ * yet counts as core — the pool whose eviction is cheap — rather than as an add-on.
+ */
+const isAddOn = (id: string): boolean => appRegistryStore.getManifest(id)?.core === false;
+
+/**
+ * Which resident ids to evict so each pool is back under its cap, least recently used
+ * first and never `keep`, the app being opened. `ids` is in recency order.
+ */
+const overCap = (ids: readonly string[], keep: string): Set<string> => {
+  const evicted = new Set<string>();
+  for (const [inPool, cap] of [
+    [(id: string) => !isAddOn(id), MAX_RESIDENT_APPS],
+    [isAddOn, MAX_RESIDENT_ADDONS]
+  ] as const) {
+    const pool = ids.filter(inPool);
+    if (pool.length <= cap) continue;
+    for (const id of pool.filter((r) => r !== keep).slice(0, pool.length - cap)) evicted.add(id);
+  }
+  return evicted;
+};
 
 /** Resident apps, least recently active first. */
 export const runningApps = writable<RunningApp[]>([]);
@@ -286,13 +327,12 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
     recency = [...recency.filter((r) => r !== id), id];
 
     const next = existing ? apps.map((a) => (a.id === id ? resolved : a)) : [...apps, resolved];
-    if (next.length <= MAX_RESIDENT_APPS) return next;
 
-    // Evict the least recently active, never what was just opened. Dropping entries does
-    // not disturb the relative order of the ones that stay, so no surviving node moves.
-    const evicted = new Set(
-      recency.filter((r) => r !== id).slice(0, next.length - MAX_RESIDENT_APPS)
-    );
+    // Evict the least recently active of whichever pool is over its cap, never what was
+    // just opened. Dropping entries does not disturb the relative order of the ones that
+    // stay, so no surviving node moves.
+    const evicted = overCap(recency, id);
+    if (evicted.size === 0) return next;
     recency = recency.filter((r) => !evicted.has(r));
     return next.filter((a) => !evicted.has(a.id));
   });

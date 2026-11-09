@@ -28,7 +28,8 @@ import {
   mountedApps,
   mountResidentApps,
   RESIDENT_MOUNT_DELAY_MS,
-  MAX_RESIDENT_APPS
+  MAX_RESIDENT_APPS,
+  MAX_RESIDENT_ADDONS
 } from './navigation';
 import { setActiveDevice } from './device';
 import { openDevice } from './phoneOpen';
@@ -130,9 +131,22 @@ describe('residency cap', () => {
    * which is also what it is really about.
    */
   const REAL = ['notes', 'media', 'camera', 'calculator', 'bank', 'store', 'admin'];
+  /** `core: true`, so all in the core pool. */
+  const CORE = ['media', 'camera', 'calculator', 'bank', 'store', 'admin', 'mail'];
+  /** `core: false` in their manifests, so all in the add-on pool. */
+  const ADDONS = ['notes', 'blabber', 'glimpse', 'snek', 'spark'];
 
-  it('evicts the least recently used', () => {
-    const opened = REAL.slice(0, MAX_RESIDENT_APPS + 2);
+  it('sorts the fixture ids into the pools they are meant to exercise', () => {
+    // Every case below leans on these lists being what they say; a manifest flipping
+    // `core` would otherwise turn them into tests of the wrong pool, and still pass.
+    for (const id of CORE) expect(appRegistryStore.getManifest(id)?.core, id).toBe(true);
+    for (const id of ADDONS) expect(appRegistryStore.getManifest(id)?.core, id).toBe(false);
+    expect(CORE.length).toBeGreaterThanOrEqual(MAX_RESIDENT_APPS + 2);
+    expect(ADDONS.length).toBeGreaterThanOrEqual(MAX_RESIDENT_ADDONS + 2);
+  });
+
+  it('evicts the least recently used core app', () => {
+    const opened = CORE.slice(0, MAX_RESIDENT_APPS + 2);
     for (const id of opened) openApp(id);
 
     const resident = names();
@@ -140,6 +154,54 @@ describe('residency cap', () => {
     expect(resident).not.toContain(opened[0]);
     expect(resident).not.toContain(opened[1]);
     expect(resident[resident.length - 1]).toBe(opened[opened.length - 1]);
+  });
+
+  it('evicts the least recently used add-on once the add-on pool is full', () => {
+    const opened = ADDONS.slice(0, MAX_RESIDENT_ADDONS + 2);
+    for (const id of opened) openApp(id);
+
+    const resident = names();
+    expect(resident).toHaveLength(MAX_RESIDENT_ADDONS);
+    expect(resident).not.toContain(opened[0]);
+    expect(resident).not.toContain(opened[1]);
+    expect(resident[resident.length - 1]).toBe(opened[opened.length - 1]);
+  });
+
+  it('keeps an add-on resident through a run of core apps (MICA-447)', () => {
+    // The case the shared cap got wrong: six core apps after an add-on pushed it out, and
+    // re-opening it cost a fresh iframe — about 375 ms more than a resident re-open.
+    openApp('notes');
+    for (const id of CORE) openApp(id);
+
+    expect(names()).toContain('notes');
+    expect(names().filter((id) => id !== 'notes')).toHaveLength(MAX_RESIDENT_APPS);
+  });
+
+  it('keeps core apps resident through a run of add-ons', () => {
+    // And the other way: a player with several add-ons does not starve the core apps.
+    const core = CORE.slice(0, MAX_RESIDENT_APPS);
+    for (const id of core) openApp(id);
+    for (const id of ADDONS) openApp(id);
+
+    expect(names().filter((id) => core.includes(id))).toEqual(core);
+  });
+
+  it('bounds residency at both caps together, never more', () => {
+    // The ceiling `docs/architecture.md` records the heap cost against.
+    for (const id of [...CORE, ...ADDONS]) openApp(id);
+    expect(names()).toHaveLength(MAX_RESIDENT_APPS + MAX_RESIDENT_ADDONS);
+  });
+
+  it('evicts by recency within a pool, not by mount order', () => {
+    // Mount order is the DOM's and never changes for a resident app; eviction must still
+    // follow use. `notes` is mounted first but used last, so `blabber` goes.
+    const filled = ADDONS.slice(0, MAX_RESIDENT_ADDONS);
+    for (const id of filled) openApp(id);
+    openApp('notes');
+    openApp(ADDONS[MAX_RESIDENT_ADDONS]);
+
+    expect(names()).toContain('notes');
+    expect(names()).not.toContain(filled[1]);
   });
 
   it('re-opening refreshes recency without duplicating or moving the app', () => {

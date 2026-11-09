@@ -117,3 +117,6 @@ its one-line summary.
 - [The boot overlay's fly-in wait has no slack](boot-overlay-fly-in-has-no-slack.md)
   — overlay shows ~65 ms after the frame lands; tune `BOOT_MIN_MS`, not
   `OPEN_FLY_MS`; A/B cold start interleaved, gated on loadavg
+- [`pkill -f` kills its own shell](pkill-f-matches-its-own-shell.md) — the Bash
+  tool's zsh argv holds the pattern; exit 144, batch lost. `TaskStop` or
+  `kill $pid`

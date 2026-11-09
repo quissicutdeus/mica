@@ -121,7 +121,8 @@ test.describe('App residency', () => {
   });
 
   test('evicts the least recently used app past the residency cap', async ({ page }) => {
-    // MAX_RESIDENT_APPS is 5. Unbounded residency would keep every app ever opened
+    // MAX_RESIDENT_APPS is 5 for core apps (add-ons have their own pool of 3,
+    // MICA-447). Unbounded residency would keep every app ever opened
     // alive for the session, timers and subscriptions included.
     const apps = ['Calculator', 'Mail', 'Contacts', 'Settings', 'Store', 'Bank'];
     for (const name of apps) {
