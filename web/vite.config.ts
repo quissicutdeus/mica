@@ -196,6 +196,9 @@ export default defineConfig({
     // (`docs/dev-loop.md`) because it broke DOMPurify's sanitization without any test
     // noticing on its own.
     environment: 'node',
+    // Gives jsdom's `crypto` the `subtle` member it lacks, which `pool: 'vmThreads'` below
+    // exposes; the file says why it is safe.
+    setupFiles: ['./src/test/setup.ts'],
     // MICA-172: `../sdk/**` mirrors the `../shared/**` entry beside it. The SDK is its
     // own workspace package now, but it deliberately does NOT get a third Vitest project:
     // that would mean a second copy of the Svelte plugin, the jsdom opt-in convention, the
@@ -228,6 +231,42 @@ export default defineConfig({
      * costs the other minute.
      */
     fileParallelism: true,
+    /**
+     * Each file runs in a fresh VM context inside a long-lived worker thread, instead of
+     * a fresh child process per file. Isolation per file is kept; what goes is paying for a
+     * new Node process and a cold module graph every time — `environment` was 44% of the
+     * forks run's Duration and is 7-11% of this one's.
+     *
+     * Measured on the 16-core dev box, all 305 files / 3792 tests, sibling work running so
+     * wall time is noisy (the forks run measured anywhere from 35s to 86s):
+     *
+     *                          wall         CPU-s (user+sys)   peak RSS
+     *   forks (the default)    35.6s        487                ~3.1GB (15 processes)
+     *   vmThreads, no limit    18.0s        198                 7.6GB (one process)
+     *   vmThreads, 512MB       16.3-22.8s   197-207             4.6-6.6GB
+     *
+     * and with `--maxWorkers=3`, the shape of a 4-core CI runner: forks 87s at ~750MB;
+     * vmThreads unbounded 23-42s at 3.6-3.8GB; vmThreads at 512MB 27-29s at 2.0GB.
+     *
+     * The memory is the cost, and `vmMemoryLimit` is what bounds it. A VM context is never
+     * collected once a file has run in it, so a worker accumulates every file it has run
+     * until its heap reaches the limit and it is recycled — and the default limit is
+     * 1/maxWorkers of the machine's memory, i.e. the workers together may grow to all of
+     * it, on a CI runner that also hosts game servers. With fifteen workers each runs ~20
+     * files and the limit barely bites; with three each runs ~100, and it halves the peak.
+     * 512MB costs nothing measurable against the noise above.
+     *
+     * The price is realm boundaries. A jsdom file's `globalThis` IS jsdom's window, while
+     * some globals Vitest lends it (`structuredClone`, `setImmediate`'s queue as jsdom's own
+     * module sees it) are Node's — so a Map out of `structuredClone` is another realm's Map,
+     * and jsdom's `crypto` has no `subtle`. `src/test/setup.ts` covers the second;
+     * `IframeHostServer.test.ts` and `nui/transport.test.ts` say how they handle the first.
+     * A new failure that only appears under this pool and names a prototype, `instanceof`,
+     * a missing global or a fake timer that never fires is that boundary, not flake:
+     * `--pool=forks` on the one file confirms it.
+     */
+    pool: 'vmThreads',
+    vmMemoryLimit: '512MB',
     /**
      * Four times the default 5s. The timeout is a guard against a hung test, not a
      * budget for a fast one, and the default was sized for neither: nine suites here

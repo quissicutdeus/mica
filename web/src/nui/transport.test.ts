@@ -212,7 +212,7 @@ describe('Transport Abstraction Module', () => {
       await expect(sendPromise).rejects.toThrow("WebSocket request timeout for event 'slowEvent'");
     });
 
-    it('receives broadcast events and dispatches to listeners & window', () => {
+    it('receives broadcast events and dispatches to listeners & window', async () => {
       const adapter = new WebSocketTransportAdapter({
         url: 'ws://localhost:9001',
         dispatchWindowMessages: true
@@ -232,12 +232,19 @@ describe('Transport Abstraction Module', () => {
 
       expect(listenerSpy).toHaveBeenCalledWith({ caller: '555-0199' });
 
-      // Advance timers to allow jsdom postMessage queue to dispatch
-      vi.advanceTimersByTime(10);
-      expect(windowSpy).toHaveBeenCalledWith({
-        action: 'incomingCall',
-        data: { caller: '555-0199' }
-      });
+      // jsdom's `window.postMessage` delivers on a `setImmediate` that jsdom's own module
+      // reads off the HOST realm's global. Under `pool: 'forks'` that is the global
+      // `vi.useFakeTimers()` patched, so advancing the faked clock delivers it; under
+      // `pool: 'vmThreads'` the test's global is jsdom's window inside a VM context, the
+      // fake patches that one, and the message rides Node's real `setImmediate` instead.
+      // `vi.waitFor` serves both: it polls on real timers and advances the faked clock on
+      // every check, so whichever queue holds the message gets to drain it.
+      await vi.waitFor(() =>
+        expect(windowSpy).toHaveBeenCalledWith({
+          action: 'incomingCall',
+          data: { caller: '555-0199' }
+        })
+      );
 
       unsubscribe();
     });

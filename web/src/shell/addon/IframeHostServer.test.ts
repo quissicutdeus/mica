@@ -13,6 +13,7 @@ import '../../host/registerFacets';
 import { ServiceRefusal, type AppPermission } from '@mica/sdk';
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { get, writable } from 'svelte/store';
+import { types } from 'node:util';
 import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
 import { registerFacet, resetHostsForTest } from '../../../../sdk/host/current';
 import { ADDON_HELLO_TIMEOUT_MS, ADDON_LIMITS, createIframeHostServer } from './IframeHostServer';
@@ -47,6 +48,36 @@ import '../../../../sdk/host/useTheme';
 
 /** A namespaced storage key. Built, not quoted: a `mica:` literal reads as a net event to `server/__tests__/eventNames.test.ts`. */
 const storageKey = (app: string, key: string) => `mica:${app}:${key}`;
+
+/**
+ * A Map or Set out of `structuredClone` equals one built here when their entries do,
+ * whichever realm built each.
+ *
+ * Under `pool: 'vmThreads'` this file's globals are jsdom's window in a VM context, but
+ * `structuredClone` is Node's, lent in by Vitest because jsdom has none — so every Map, Set
+ * and plain object the stand-in `postMessage` below hands back belongs to Node's realm.
+ * Plain objects still compare by keys; Vitest's iterable equality first requires
+ * `a.constructor === b.constructor`, which two realms' `Map` never are, and fails the
+ * comparison before looking at an entry. So only the constructor check is answered here:
+ * both sides are rebuilt as this realm's Map or Set (`util.types` recognizes either realm's,
+ * by internal slot rather than by prototype) and handed back to Vitest's own comparison,
+ * which then checks size and every entry — recursing through this tester for nested ones —
+ * exactly as before. A Map still never equals a Set, an array or a plain object.
+ */
+const crossRealmCollections: Parameters<typeof expect.addEqualityTesters>[0][number] = function (
+  a,
+  b,
+  customTesters
+) {
+  if (types.isMap(a) && types.isMap(b) && a.constructor !== b.constructor) {
+    return this.equals(new Map(a), new Map(b), customTesters);
+  }
+  if (types.isSet(a) && types.isSet(b) && a.constructor !== b.constructor) {
+    return this.equals(new Set(a), new Set(b), customTesters);
+  }
+  return undefined;
+};
+expect.addEqualityTesters([crossRealmCollections]);
 
 const manifest = defineApp({
   id: 'probe',
@@ -750,7 +781,10 @@ describe('IframeHostServer', () => {
       expect(Object.getOwnPropertyDescriptor(value, '__proto__')?.value).toEqual({
         polluted: true
       });
-      expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+      // The prototype a clone gives any plain object — `Object.prototype` of the realm that
+      // cloned it. That is this file's own under `pool: 'forks'`, and Node's under
+      // `pool: 'vmThreads'`, where `structuredClone` is lent in from outside jsdom's realm.
+      expect(Object.getPrototypeOf(value)).toBe(Object.getPrototypeOf(structuredClone({})));
       expect((value as { polluted?: unknown }).polluted).toBeUndefined();
     });
 
