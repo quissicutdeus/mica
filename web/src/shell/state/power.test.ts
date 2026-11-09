@@ -10,7 +10,17 @@ import { charge, chargeOf } from './charge';
 import { setActiveDevice } from './device';
 import { setMotionPreference } from './motion';
 import { openDevice } from './phoneOpen';
-import { BOOT_MS, OPEN_FLY_MS, POWER_OFF_MS, observePower, powerState } from './power';
+import {
+  BOOT_EXIT_MS,
+  BOOT_IN_MS,
+  BOOT_MIN_MS,
+  BOOT_MS,
+  OPEN_FLY_MS,
+  POWER_OFF_MS,
+  observePower,
+  powerState
+} from './power';
+import { shellReady } from './shellReady';
 import { callStore } from '../../services/call';
 
 /**
@@ -36,6 +46,7 @@ beforeEach(() => {
   chargeOf.tablet.set(100);
   callStore.setStatus('idle');
   setMotionPreference('full');
+  shellReady.set(false);
   stop = observePower();
 });
 
@@ -95,6 +106,102 @@ describe('boot', () => {
     expect(phase()).toBe('idle');
     charge.set(10);
     expect(phase()).toBe('boot');
+  });
+});
+
+/**
+ * MICA-450: a boot ends when the phone is ready, between a floor and a ceiling, and always
+ * by fading out (`leaving`) rather than by cutting.
+ */
+describe('boot ends on readiness', () => {
+  const leaving = () => get(powerState).leaving === true;
+
+  it('keeps its floor and ceiling in an order that can hold', () => {
+    expect(BOOT_MIN_MS).toBeGreaterThanOrEqual(BOOT_IN_MS);
+    expect(BOOT_MIN_MS).toBeGreaterThanOrEqual(400);
+    expect(BOOT_MIN_MS + BOOT_EXIT_MS).toBeLessThan(BOOT_MS);
+  });
+
+  it('holds for the minimum when ready before it, then fades out', () => {
+    shellReady.set(true);
+    open();
+    vi.advanceTimersByTime(OPEN_FLY_MS + BOOT_MIN_MS - 1);
+    expect(phase()).toBe('boot');
+    expect(leaving()).toBe(false);
+
+    vi.advanceTimersByTime(1);
+    expect(get(powerState)).toEqual({ phase: 'boot', delayMs: OPEN_FLY_MS, leaving: true });
+    vi.advanceTimersByTime(BOOT_EXIT_MS - 1);
+    expect(phase()).toBe('boot');
+    vi.advanceTimersByTime(1);
+    expect(phase()).toBe('idle');
+  });
+
+  it('ends as soon as it is ready when that comes after the minimum', () => {
+    open();
+    vi.advanceTimersByTime(OPEN_FLY_MS + BOOT_MIN_MS + 100);
+    expect(leaving()).toBe(false);
+
+    shellReady.set(true);
+    expect(leaving()).toBe(true);
+    vi.advanceTimersByTime(BOOT_EXIT_MS);
+    expect(phase()).toBe('idle');
+  });
+
+  it('ends at the ceiling when readiness never comes, fade included', () => {
+    open();
+    vi.advanceTimersByTime(OPEN_FLY_MS + BOOT_MS - BOOT_EXIT_MS - 1);
+    expect(leaving()).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(leaving()).toBe(true);
+    vi.advanceTimersByTime(BOOT_EXIT_MS);
+    expect(phase()).toBe('idle');
+  });
+
+  it('is cancelled by a close before it is ready, and readiness later plays nothing', () => {
+    open();
+    vi.advanceTimersByTime(OPEN_FLY_MS + 100);
+    close();
+    expect(phase()).toBe('idle');
+
+    shellReady.set(true);
+    vi.advanceTimersByTime(5000);
+    expect(phase()).toBe('idle');
+    open();
+    expect(phase()).toBe('idle');
+  });
+
+  it('does not restart its fade-out when readiness flickers mid-fade', () => {
+    shellReady.set(true);
+    open();
+    vi.advanceTimersByTime(OPEN_FLY_MS + BOOT_MIN_MS + 100);
+    shellReady.set(false);
+    shellReady.set(true);
+    vi.advanceTimersByTime(BOOT_EXIT_MS - 100);
+    expect(phase()).toBe('idle');
+  });
+
+  it('runs a revival boot on a phone already ready for the minimum', () => {
+    shellReady.set(true);
+    open();
+    vi.advanceTimersByTime(5000);
+    charge.set(0);
+    vi.advanceTimersByTime(5000);
+    charge.set(30);
+    expect(phase()).toBe('boot');
+    vi.advanceTimersByTime(BOOT_MIN_MS + BOOT_EXIT_MS);
+    expect(phase()).toBe('idle');
+  });
+
+  it('leaves the power-off screen on its own fixed time, ready or not', () => {
+    shellReady.set(true);
+    open();
+    vi.advanceTimersByTime(5000);
+    charge.set(0);
+    vi.advanceTimersByTime(POWER_OFF_MS - 1);
+    expect(get(powerState)).toEqual({ phase: 'off', delayMs: 0 });
+    vi.advanceTimersByTime(1);
+    expect(phase()).toBe('idle');
   });
 });
 

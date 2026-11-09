@@ -30,6 +30,7 @@ import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 import { manifestSupportsDevice } from '../../lib/phone/appVisibility';
 import { currentApp } from './navigation';
 import { forgetCharacterStores } from '../../../../sdk/characterStores';
+import { shellReady } from './shellReady';
 
 let isBootstrapped = false;
 let running = false;
@@ -153,7 +154,9 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
     // read for anything else is skipped on any other device rather than sent to be refused.
     const onPhone = device === DEFAULT_DEVICE;
     try {
-      await Promise.allSettled([
+      // The shell's own reads, which decide what home draws. When they settle, home is ready
+      // and the boot screen may end (MICA-450, `state/shellReady.ts`).
+      const shellReads = Promise.allSettled([
         // Asked here so the home screen knows whether to draw the Administration app
         // before it renders, rather than having it appear a beat later.
         refreshAdmin(),
@@ -173,7 +176,12 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         refreshOwnerConfig(),
         // MICA-243: where hosted photos live, before an add-on frame is built with a CSP
         // that has to let them in.
-        refreshImageHost(),
+        refreshImageHost()
+      ]).then(() => {
+        if (run === runId) shellReady.set(true);
+      });
+      await Promise.allSettled([
+        shellReads,
         // The Bank's balance, and the Bank is a phone app with no tablet layout.
         ...(onPhone ? [fetchBalance()] : []),
         // The launcher badges' unread counts, from the `notifications` service, which is the
@@ -247,6 +255,7 @@ export function forgetCharacterData(): void {
 export function resetBootstrapState(): void {
   pendingPreloads?.cancel();
   runId += 1;
+  shellReady.set(false);
   isBootstrapped = false;
   running = false;
   bootstrapPromise = null;

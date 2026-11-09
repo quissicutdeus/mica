@@ -114,3 +114,6 @@ its one-line summary.
 - [`content-visibility` still builds the nodes](content-visibility-does-not-skip-node-creation.md)
   — node creation dominated Contacts; window the rows instead; no `bind:` sizes
   (jsdom), read `scrollTop` on `focusin`
+- [The boot overlay's fly-in wait has no slack](boot-overlay-fly-in-has-no-slack.md)
+  — overlay shows ~65 ms after the frame lands; tune `BOOT_MIN_MS`, not
+  `OPEN_FLY_MS`; A/B cold start interleaved, gated on loadavg

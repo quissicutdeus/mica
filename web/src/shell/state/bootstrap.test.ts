@@ -27,6 +27,7 @@ import { registeredApps } from './registry';
 import { setActiveDevice } from './device';
 import * as notificationsModule from '../../services/notifications';
 import { currentApp, openApp } from './navigation';
+import { shellReady } from './shellReady';
 
 vi.mock('../../nui/fetchNui', () => ({
   fetchNui: vi.fn(() => Promise.resolve([]))
@@ -258,6 +259,45 @@ describe('bootstrapStores', () => {
       // One run: the shell reads were asked once, not once per open.
       expect(shellRead).toHaveBeenCalledOnce();
       expect(preload).toHaveBeenCalledOnce();
+    });
+
+    /** MICA-450: the boot screen ends on this, so it must not wait for the preloads. */
+    it('is ready once the shell reads settle, before the app preloads have run', async () => {
+      const { shellRead, contactsLoad } = spies();
+      let answer!: () => void;
+      shellRead.mockReturnValue(new Promise<void>((resolve) => (answer = resolve)));
+      expect(get(shellReady)).toBe(false);
+
+      void bootstrapStores();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(get(shellReady)).toBe(false);
+
+      answer();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(get(shellReady)).toBe(true);
+      expect(contactsLoad).not.toHaveBeenCalled();
+    });
+
+    it('is not ready again until a reset run settles, and a superseded run cannot say so', async () => {
+      const { shellRead } = spies();
+      let answerOld!: () => void;
+      shellRead.mockReturnValueOnce(new Promise<void>((resolve) => (answerOld = resolve)));
+      let answerNew!: () => void;
+      shellRead.mockReturnValueOnce(new Promise<void>((resolve) => (answerNew = resolve)));
+
+      void bootstrapStores();
+      resetBootstrapState();
+      void bootstrapStores();
+      answerOld();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(get(shellReady)).toBe(false);
+
+      answerNew();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(get(shellReady)).toBe(true);
+
+      resetBootstrapState();
+      expect(get(shellReady)).toBe(false);
     });
 
     it("leaves the open's unread counts to the shade it mounts, and asks on a forced run", async () => {

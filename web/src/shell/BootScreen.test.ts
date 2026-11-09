@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { tick } from 'svelte';
 import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import BootScreen from './BootScreen.svelte';
-import { powerState } from './state/power';
+import { BOOT_EXIT_MS, BOOT_IN_MS, POWER_OFF_MS, powerState } from './state/power';
 import { ownerConfig } from './state/ownerConfig';
 import { setActiveDevice } from './state/device';
 
@@ -63,6 +63,30 @@ describe('BootScreen', () => {
     await tick();
     expect(container.querySelector('img')).toBeNull();
     expect(getByTestId('boot-mark')).toBeTruthy();
+  });
+
+  /** MICA-450: a boot fades in and holds; it fades out only when `power.ts` says it leaves. */
+  it('fades a boot in after the fly-in delay, and out at once when it leaves', async () => {
+    powerState.set({ phase: 'boot', delayMs: 500 });
+    const { getByTestId } = render(BootScreen);
+    const el = getByTestId('boot-screen');
+    expect(el.style.animationDuration).toBe(`${BOOT_IN_MS}ms`);
+    expect(el.style.animationDelay).toBe('500ms');
+    expect(el.hasAttribute('data-leaving')).toBe(false);
+
+    powerState.set({ phase: 'boot', delayMs: 500, leaving: true });
+    await tick();
+    expect(el.getAttribute('data-leaving')).toBe('true');
+    expect(el.style.animationDuration).toBe(`${BOOT_EXIT_MS}ms`);
+    expect(el.style.animationDelay).toBe('0ms');
+    // The logo keeps the open's delay, so the fade-out cannot retime its scale-in.
+    expect((el.firstElementChild as HTMLElement).style.animationDelay).toBe('500ms');
+  });
+
+  it('runs the power-off screen for its fixed time', () => {
+    powerState.set({ phase: 'off', delayMs: 0 });
+    const { getByTestId } = render(BootScreen);
+    expect(getByTestId('boot-screen').style.animationDuration).toBe(`${POWER_OFF_MS}ms`);
   });
 
   it('insets by the device bezel so it stays inside the screen', () => {

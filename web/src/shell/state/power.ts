@@ -8,6 +8,7 @@ import { ALL_DEVICES, type DeviceId } from '@mica/shared/devices';
 import { deadByDevice } from './charge';
 import { reducedMotion } from './motion';
 import { openDevice } from './phoneOpen';
+import { shellReady } from './shellReady';
 
 /**
  * When the phone plays its boot and power-off screens (MICA-236), decided in one place.
@@ -35,6 +36,12 @@ import { openDevice } from './phoneOpen';
  *   client-side and simply keeps the frame from opening, so the next open is the ordinary
  *   open above (a boot only if it is the session's first).
  *
+ * **How long a boot lasts (MICA-450)** is the phone's readiness, not a timer of its own: it
+ * ends once `shellReady` says home has what it needs, but never before `BOOT_MIN_MS` (so the
+ * logo never merely flashes) and never after `BOOT_MS` (so a readiness answer that never
+ * comes cannot hold the overlay). Ending is a `BOOT_EXIT_MS` fade, `leaving` below, then
+ * idle. The power-off screen keeps its fixed `POWER_OFF_MS`: nothing is waited for there.
+ *
  * What suppresses it: reduced motion (nothing plays at all -- a logo that merely blinks in
  * and out is still motion, and the player asked for none), and any call that is not idle
  * (a ringing phone shows the ring toast, never a splash over it). Closing the phone
@@ -47,11 +54,27 @@ export interface PowerState {
   phase: PowerPhase;
   /** How long the overlay waits before it appears, so it can follow the frame's fly-in. */
   delayMs: number;
+  /** A boot that is fading out (`BOOT_EXIT_MS`), before it goes idle. Absent otherwise. */
+  leaving?: true;
 }
 
 /** The frame's `transition:fly` in `PhoneFrame.svelte`; boot on open starts after it. */
 export const OPEN_FLY_MS = 500;
+/**
+ * The boot's ceiling, from the overlay's start to its last frame, fade-out included: what a
+ * boot lasted before it waited for readiness, so a signal that never arrives costs no more
+ * than it always did.
+ */
 export const BOOT_MS = 1100;
+/** The overlay's fade-in. */
+export const BOOT_IN_MS = 220;
+/**
+ * The least a boot shows before it may start leaving, from the overlay's start: the logo's
+ * own 400 ms scale-in (`BootScreen.svelte`) and a beat of it still, so it never flashes.
+ */
+export const BOOT_MIN_MS = 500;
+/** The fade-out once a boot ends, early or at the ceiling. */
+export const BOOT_EXIT_MS = 250;
 export const POWER_OFF_MS = 900;
 
 const IDLE: PowerState = { phase: 'idle', delayMs: 0 };
@@ -64,6 +87,8 @@ interface Inputs {
   dead: Readonly<Record<DeviceId, boolean>>;
   reduced: boolean;
   inCall: boolean;
+  /** `shellReady`: home has what it needs, so a boot may end. */
+  ready: boolean;
 }
 
 /**
@@ -76,27 +101,53 @@ export function observePower(): () => void {
   let wasDead: Partial<Record<DeviceId, boolean>> = {};
   /** Devices that came back from dead while not on screen, so boot on their next open. */
   const bootOnOpen = new Set<DeviceId>();
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timers: ReturnType<typeof setTimeout>[] = [];
+  /** A running boot has shown for `BOOT_MIN_MS`, so readiness alone may now end it. */
+  let minShown = false;
+  let ready = false;
 
   const clear = () => {
-    if (timer !== undefined) clearTimeout(timer);
-    timer = undefined;
+    for (const t of timers) clearTimeout(t);
+    timers = [];
+    minShown = false;
     if (get(powerState).phase !== 'idle') powerState.set(IDLE);
+  };
+
+  const after = (ms: number, fn: () => void) => {
+    timers.push(setTimeout(fn, ms));
+  };
+
+  const leave = () => {
+    const state = get(powerState);
+    if (state.phase !== 'boot' || state.leaving) return;
+    for (const t of timers) clearTimeout(t);
+    timers = [];
+    powerState.set({ ...state, leaving: true });
+    after(BOOT_EXIT_MS, () => {
+      timers = [];
+      powerState.set(IDLE);
+    });
   };
 
   const start = (phase: 'boot' | 'off', delayMs: number) => {
     clear();
     powerState.set({ phase, delayMs });
-    timer = setTimeout(
-      () => {
-        timer = undefined;
+    if (phase === 'off') {
+      after(delayMs + POWER_OFF_MS, () => {
+        timers = [];
         powerState.set(IDLE);
-      },
-      delayMs + (phase === 'boot' ? BOOT_MS : POWER_OFF_MS)
-    );
+      });
+      return;
+    }
+    after(delayMs + BOOT_MIN_MS, () => {
+      minShown = true;
+      if (ready) leave();
+    });
+    after(delayMs + BOOT_MS - BOOT_EXIT_MS, leave);
   };
 
-  const update = ({ device, dead: deadNow, reduced, inCall }: Inputs) => {
+  const update = ({ device, dead: deadNow, reduced, inCall, ready: readyNow }: Inputs) => {
+    ready = readyNow;
     const opened = device !== null && device !== wasDevice;
     wasDevice = device;
     const revivedOffScreen = ALL_DEVICES.filter(
@@ -127,11 +178,18 @@ export function observePower(): () => void {
       return;
     }
     if (phase) start(phase, opened ? OPEN_FLY_MS : 0);
+    else if (ready && minShown) leave();
   };
 
   const inputs: Readable<Inputs> = derived(
-    [openDevice, deadByDevice, reducedMotion, callStore],
-    ([device, dead, reduced, call]) => ({ device, dead, reduced, inCall: call.status !== 'idle' })
+    [openDevice, deadByDevice, reducedMotion, callStore, shellReady],
+    ([device, dead, reduced, call, ready]) => ({
+      device,
+      dead,
+      reduced,
+      inCall: call.status !== 'idle',
+      ready
+    })
   );
   const unsubscribe = inputs.subscribe(update);
 
