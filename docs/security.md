@@ -1496,6 +1496,30 @@ by this list until someone re-weighs it.
 
 ---
 
+## Both boundaries have a generated hostile-payload sweep
+
+Two suites hold the rules above without anyone remembering to extend them. Both
+build their list of targets from what registers, so a new action or callback is
+swept the moment it exists, and one the suite cannot describe fails a pinned
+list until somebody looks (MICA-463, MICA-466).
+
+- **Server:** `server/__tests__/hostilePayloads.test.ts` sends every registered
+  `mica:server:*` action the payloads a modified client would. Fields and their
+  types come from each `defineService` declaration or contract schema, never a
+  list in the test. It proves a hostile payload is refused before any SQL, that
+  a stolen row id changes nothing, and that nothing names a table to a player.
+  It runs against a mocked `Database`, so it does not prove what MariaDB does
+  with a row another citizen owns; that is MICA-464.
+- **Client:** `client/__tests__/hostileNuiPayloads.test.ts` loads the real
+  client with every native stubbed and sends every NUI callback hostile JSON. It
+  proves the page is always answered, no prototype gains a property, and no
+  hostile value reaches a native, an export, or an event except one the server
+  sweep covers. It cannot show whether CEF's decoder hands the runtime an own
+  `__proto__` key at all, or what a native really does; both are unverified.
+
+A scalar of the wrong type for its column is refused in `Repository`
+(`assertScalarFits`) with a message naming the field and never the table.
+
 ## What the test suite cannot tell you
 
 Every test here drives the **server** directly. That proves the server refuses —

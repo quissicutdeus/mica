@@ -115,6 +115,35 @@ describe('NUI callbacks', () => {
     expect(result).toEqual({ status: 'dialing' });
   });
 
+  it('startCall sends the trimmed number, the form the server measures (MICA-466)', async () => {
+    await nuiCall('startCall', { number: '  911 ' });
+
+    expect(triggeredServerEvents).toEqual([['mica:server:phone:start', '911']]);
+  });
+
+  it.each([
+    // `nuiCall` defaults an absent body to `{}`, so `undefined` itself is the sweep's
+    // (`hostileNuiPayloads.test.ts`); `null` is what a page posting `null` sends.
+    ['a null body', null],
+    ['no number', {}],
+    ['a number that is not text', { number: 5550199 }],
+    ['an object', { number: { toString: '555' } }],
+    ['a blank number', { number: '   ' }],
+    ['a number past 32 characters', { number: '5'.repeat(33) }],
+    ['whitespace padding around 33 characters', { number: ` ${'5'.repeat(33)} ` }]
+  ])('startCall refuses %s, sends nothing, and answers idle (MICA-466)', async (_label, data) => {
+    const result = await nuiCall('startCall', data);
+
+    expect(triggeredServerEvents).toEqual([]);
+    expect(result).toEqual({ status: 'idle', error: 'Invalid number' });
+  });
+
+  it('startCall accepts exactly 32 characters, the server bound', async () => {
+    await nuiCall('startCall', { number: '5'.repeat(32) });
+
+    expect(triggeredServerEvents).toEqual([['mica:server:phone:start', '5'.repeat(32)]]);
+  });
+
   it('answerCall relays with no payload and answers connected', async () => {
     const result = await nuiCall('answerCall');
 

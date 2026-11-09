@@ -30,10 +30,36 @@ let connected = false;
 
 export const isInCall = (): boolean => connected;
 
+/**
+ * The number a dial names, or null when it is not one (MICA-466).
+ *
+ * Every caller in `web/` sends `{ number }` as a string — the dialer, a contact, a job line, a
+ * listing, the lock screen's `911`. Held to the server's own `phoneNumber` bound (`netGuard.ts`:
+ * text, not blank once trimmed, at most 32 characters), so nothing the server would accept is
+ * refused here and nothing it would refuse is sent. The page is reachable by any script in it
+ * (AGENTS.md §7), so a missing body, an object or a 64 KiB string stops here.
+ */
+const dialedNumber = (data: unknown): string | null => {
+  const number = (data as { number?: unknown } | null | undefined)?.number;
+  if (typeof number !== 'string') return null;
+  const trimmed = number.trim();
+  // The trimmed text is what is sent: the server trims before it measures too, so the
+  // untrimmed form would let whitespace padding carry an unbounded string past this check.
+  return trimmed.length >= 1 && trimmed.length <= 32 ? trimmed : null;
+};
+
 // NUI Callbacks
 RegisterNuiCallbackType('startCall');
-on('__cfx_nui:startCall', (data: { number: string }, cb: Function) => {
-  TriggerServerEvent('mica:server:phone:start', data.number);
+on('__cfx_nui:startCall', (data: unknown, cb: Function) => {
+  const number = dialedNumber(data);
+  if (number === null) {
+    // Nothing is dialed. `fetchNui` throws on the `error`, and `services/call.ts` only logs
+    // it, so the call screen stays on 'dialing' — what it did before, when the server's guard
+    // dropped the same request without a word. `status` is read by nobody today.
+    cb({ status: 'idle', error: 'Invalid number' });
+    return;
+  }
+  TriggerServerEvent('mica:server:phone:start', number);
   cb({ status: 'dialing' });
 });
 

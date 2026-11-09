@@ -7,7 +7,13 @@ import { ServiceProxy } from '../lib/ServiceProxy';
 import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 import { clientHookFor } from '../lib/clientHooks';
 import { ROUTES, serverEventFor } from '@mica/shared/routes';
-import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@mica/shared/rpc';
+import {
+  GENERIC_SERVICE_ACTION,
+  parseGenericRequest,
+  requestEventFor,
+  type GenericServiceRequest
+} from '@mica/shared/rpc';
+import { ADDON_SERVICE_LIMITS } from '@mica/shared/addonService';
 import { contractFor, isClientPrepared } from '@mica/shared/contract';
 // Evaluating the barrel is what populates `contractFor` — the same registration-by-import
 // the server relies on. Without it every contract answers undefined here and no action
@@ -34,6 +40,20 @@ const proxies = new Map<string, ServiceProxy>();
  * also what the server assumes of a request with no device at all. Read per request.
  */
 const openDeviceOrDefault = (): DeviceId => DeviceState.openDevice() ?? DEFAULT_DEVICE;
+
+/**
+ * Whether both segments are short enough to be a service the server could have registered
+ * (MICA-466).
+ *
+ * `parseGenericRequest` holds each segment to the characters an event name allows but not to a
+ * length, so a page could make the relay build — and the server receive — an event name tens of
+ * kilobytes long. The bound is the one `defineAddonService` already holds every add-on to, 32
+ * for each, so nothing the server can register is refused here: core's longest are
+ * `darkchat_messages` (17) and `getNotificationHistory` (22).
+ */
+const fitsEventSegments = (request: GenericServiceRequest): boolean =>
+  request.service.length <= ADDON_SERVICE_LIMITS.idLength &&
+  request.action.length <= ADDON_SERVICE_LIMITS.actionLength;
 
 for (const route of ROUTES) {
   let proxy = proxies.get(route.service);
@@ -63,7 +83,7 @@ for (const route of ROUTES) {
 RegisterNuiCallbackType(GENERIC_SERVICE_ACTION);
 on(`__cfx_nui:${GENERIC_SERVICE_ACTION}`, async (payload: unknown, cb: Function) => {
   const request = parseGenericRequest(payload);
-  if (!request) {
+  if (!request || !fitsEventSegments(request)) {
     // Refused rather than relayed: both segments are interpolated into an event name, so
     // an unchecked one could address anything on the bus instead of a mica service.
     cb({ error: 'Malformed service request' });

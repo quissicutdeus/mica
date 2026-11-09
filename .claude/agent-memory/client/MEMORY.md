@@ -10,3 +10,8 @@ instead — the break-proof, scratchpad and warm-`.d.ts` notes moved there.
   per client, server `setPlayerCall` syncs the state bag, no positional native
 - [Raw net events are strict tuples](raw-net-events-are-strict-tuples.md) — an
   extra emitNet arg is dropped silently by guardNetEvent; server tuple first
+- [The bare `exports` identifier is unreachable under Node](bare-exports-is-unreachable-under-node.md)
+- [`s.none()` reads a JSON `null` as absent](s-none-reads-null-as-absent.md)
+- [Every native can be stubbed from the typings](native-stubs-from-the-typings.md)
+- [`Has*Loaded` stubs must answer true](has-loaded-stubs-must-answer-true.md)
+- [An own `__proto__` key needs `JSON.parse`](own-proto-key-needs-json-parse.md)

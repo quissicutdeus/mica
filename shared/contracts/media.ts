@@ -65,9 +65,11 @@ export const mediaContract = defineContract({
      * Share the caller's current location as a media row.
      *
      * `clientPrepared`, and the only action in the repo that is. The web calls it with `{}`;
-     * `client/services/Location.ts` discards that, resolves the street name from
-     * `GetStreetNameAtCoord` — a native, so only the game client can answer it — and forwards
-     * `{ label }`. So `label` is a field the UI never sends and the server always sees, which
+     * `client/services/Location.ts` resolves the street name from `GetStreetNameAtCoord` — a
+     * native, so only the game client can answer it — and sets `label` to it. A `label` the
+     * page sent is always dropped, and a road with no name sends no `label` key at all; any
+     * other key the page sent is forwarded as it came, for this schema to refuse. So `label`
+     * is a field the UI never supplies and the server sees whenever the road has a name, which
      * is exactly the sort of thing that has to be written down somewhere all three bundles
      * read.
      */

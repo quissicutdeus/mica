@@ -73,6 +73,28 @@ describe('the generic relay and a contract client hook', () => {
     expect(payload).toEqual({ label: 'Vespucci Boulevard' });
   });
 
+  it("replaces a page's own label with the street's", async () => {
+    await import('../services/Location');
+    await import('../services/Relay');
+
+    await request('media', 'shareLocation', { label: 'Somewhere I made up' });
+
+    expect((emitted[0] as unknown[])[2]).toEqual({ label: 'Vespucci Boulevard' });
+  });
+
+  it('sends no label key at all from a road with no name, and drops the page one', async () => {
+    // `label: undefined` may arrive as `null`, which `s.string().optional()` refuses (MICA-466).
+    (globalThis as Record<string, unknown>).GetStreetNameFromHashKey = () => '';
+    await import('../services/Location');
+    await import('../services/Relay');
+
+    await request('media', 'shareLocation', { label: 'Somewhere I made up' });
+
+    const payload = (emitted[0] as unknown[])[2] as Record<string, unknown>;
+    expect(payload).toEqual({});
+    expect('label' in payload).toBe(false);
+  });
+
   it('refuses a clientPrepared action that has no hook registered, and forwards nothing', async () => {
     // `Relay` alone: `Location.ts`, which registers the hook, is deliberately not loaded.
     await import('../services/Relay');
@@ -96,12 +118,77 @@ describe('the generic relay and a contract client hook', () => {
     expect(payload).toEqual({ id: 7 });
   });
 
+  it.each([
+    ['service', 'a'.repeat(33), 'drop'],
+    ['action', 'media', 'a'.repeat(33)]
+  ])(
+    'refuses a %s segment past 32 characters, and forwards nothing (MICA-466)',
+    async (_, s, a) => {
+      await import('../services/Relay');
+
+      const cb = await request(s, a, { id: 7 });
+
+      expect(emitted).toEqual([]);
+      expect(cb).toHaveBeenCalledWith({ error: 'Malformed service request' });
+    }
+  );
+
+  it('forwards segments of exactly 32 characters, the add-on bound', async () => {
+    await import('../services/Relay');
+
+    await request('a'.repeat(32), 'b'.repeat(32), { id: 7 });
+
+    expect(emitted.map((args) => args[0])).toEqual([
+      requestEventFor('a'.repeat(32), 'b'.repeat(32))
+    ]);
+  });
+
   it('refuses a second hook for the same action', async () => {
     const { registerClientHook } = await import('../lib/clientHooks');
     registerClientHook('media', 'shareLocation', (d) => d);
     expect(() => registerClientHook('media', 'shareLocation', (d) => d)).toThrow(
       /already has a hook/
     );
+  });
+});
+
+/**
+ * `setWaypoint`, the other half of `Location.ts` (MICA-466): only two finite numbers reach the
+ * native, and anything else is answered with an error rather than thrown on or passed through.
+ */
+describe('setWaypoint', () => {
+  const waypoint = async (data: unknown) => {
+    const calls: unknown[][] = [];
+    (globalThis as Record<string, unknown>).SetNewWaypoint = (...args: unknown[]) =>
+      calls.push(args);
+    await import('../services/Location');
+    const handler = nuiCallbacks.get('setWaypoint');
+    if (!handler) throw new Error('Location registered no setWaypoint callback');
+    const cb = vi.fn();
+    await handler(data, cb);
+    return { calls, cb };
+  };
+
+  it('sets the waypoint at the two numbers the page sent', async () => {
+    const { calls, cb } = await waypoint({ x: 215.3, y: -810.6 });
+
+    expect(calls).toEqual([[215.3, -810.6]]);
+    expect(cb).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it.each([
+    ['no body', undefined],
+    ['a null body', null],
+    ['a place whose position would not read', { x: null, y: null }],
+    ['a missing coordinate', { x: 1 }],
+    ['text', { x: '1', y: '2' }],
+    ['Infinity', { x: JSON.parse('1e999'), y: 2 }],
+    ['objects', { x: {}, y: [] }]
+  ])('refuses %s, calls no native, and answers an error', async (_label, data) => {
+    const { calls, cb } = await waypoint(data);
+
+    expect(calls).toEqual([]);
+    expect(cb).toHaveBeenCalledWith({ ok: false, error: 'Invalid waypoint' });
   });
 });
 
