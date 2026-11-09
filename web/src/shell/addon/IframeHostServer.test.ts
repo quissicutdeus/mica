@@ -1652,6 +1652,46 @@ describe('IframeHostServer', () => {
   });
 
   /**
+   * MICA-454. The `message` listener is the shell window's, so every live server hears every
+   * frame, and with three add-ons resident another add-on's `hello` is an everyday event: its
+   * frame introducing itself to its own server. Each resident server used to report it as its
+   * own frame going blank.
+   */
+  describe('a hello from a frame that is not this one', () => {
+    const sibling = () => ({ postMessage: () => {} });
+
+    it('is ignored without a word when it names another add-on', () => {
+      const { posted, from } = server();
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      from({ kind: 'hello', appId: 'blabber' }, sibling());
+      from({ kind: 'hello', appId: 'glimpse' }, sibling());
+
+      expect(error).not.toHaveBeenCalled();
+      expect(posted).toHaveLength(0);
+      // Not refusing too much: this server's own frame is still introduced and answered.
+      from({ kind: 'hello', appId: 'probe' });
+      expect(posted.filter((m) => m.kind === 'hydrate')).toHaveLength(1);
+      expect(error).not.toHaveBeenCalled();
+      error.mockRestore();
+    });
+
+    it('is still reported once when it claims this add-on', () => {
+      const { posted, from } = server();
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      from({ kind: 'hello', appId: 'probe' }, sibling());
+
+      expect(posted).toHaveLength(0);
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining("add-on 'probe' said hello from a window that is not the one")
+      );
+      error.mockRestore();
+    });
+  });
+
+  /**
    * A frame that never says `hello` used to stay blank until the player closed the app: a
    * bundle that never calls `bootAddOn`, or hangs before it. (One that throws is reported
    * by `srcdocFor`'s fallback `error` listener and was never silent.) The watchdog turns

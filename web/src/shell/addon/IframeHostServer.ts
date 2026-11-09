@@ -1070,15 +1070,31 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
          *
          * It no longer means "the frame reloaded": `guest()` is read here, at delivery, so
          * whatever window is in the frame right now is by definition the one accepted
-         * (MICA-90). Reaching this line means a `hello` arrived from a window that is
-         * not in this frame at all — a sibling add-on's frame, or one already torn out of
-         * the DOM — which is a wiring bug rather than a race, and worth the same noise.
+         * (MICA-90). Reaching this line with a `hello` that names this app means a frame
+         * claiming to be this add-on is not the one this server was given — a second frame
+         * built for the same id, or one already torn out of the DOM — which is a wiring
+         * bug rather than a race, and worth the same noise.
          *
          * Only `hello` is worth reporting: it is the one message whose loss is fatal, and
          * a stray `call`/`subscribe` from a dying frame is ordinary teardown noise.
+         *
+         * And only a `hello` that names this app (MICA-454). Every live server hears every
+         * frame's messages, and up to three add-ons stay resident (`MAX_RESIDENT_ADDONS`),
+         * so another add-on's frame introducing itself to its own server is ordinary. Before
+         * this check every resident add-on logged that its own frame "will stay blank"
+         * whenever a sibling opened, and nothing was blank.
+         *
+         * The `hello` carries the app id and nothing else, so this add-on's own widget frame
+         * (`AddOnWidgetFrame`, same manifest id) cannot be told apart from it and is still
+         * reported. No add-on in this repository ships a widget.
          */
         const stray = event.data as { kind?: unknown; appId?: unknown } | null;
-        if (stray && typeof stray === 'object' && stray.kind === 'hello') {
+        if (
+          stray &&
+          typeof stray === 'object' &&
+          stray.kind === 'hello' &&
+          stray.appId === manifest.id
+        ) {
           console.error(
             `[micaOS] add-on '${manifest.id}' said hello from a window that is not the one ` +
               `in its frame, and will stay blank. The frame it came from is not the one ` +
