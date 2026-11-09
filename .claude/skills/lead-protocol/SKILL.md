@@ -117,6 +117,14 @@ resolving, and `check:fast` refused a push.
 `grep -l <tree-name> node_modules/.bin/*` finds it; a reinstall in the main
 checkout repairs it.
 
+**One lane at a time builds the add-ons in a shared checkout.**
+`web/scripts/build-addons.mjs` always deletes and rewrites `web/public/addons/`,
+whatever outDir the lane's own build then uses, so a scratch outDir does not
+isolate it. On 2026-11-09 one teammate's run emptied it under another's
+measurement build mid-copy; the lane caught it by hash. Name the lane that owns
+the add-on build in each brief, Playwright's runs included, since the e2e build
+runs it too.
+
 ## Brief a lane
 
 Every brief opens with the exact tip sha and the spawn mode. A worktree lane

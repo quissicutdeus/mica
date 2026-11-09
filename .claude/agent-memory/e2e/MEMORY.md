@@ -25,3 +25,4 @@ its one-line summary.
 - [MICA-407 axe scan budget](mica-407-axe-scan-budget.md) — streamer messages
   a11y timed out under full-suite load; axe cost scales with DOM, load one older
   page not three
+- [A document-count spec must never enter an add-on frame](mica-451-never-enter-an-addon-frame.md)

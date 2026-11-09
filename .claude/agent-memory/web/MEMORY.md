@@ -52,3 +52,5 @@ why.
 - [vmThreads puts a realm boundary in jsdom files](vmthreads-realm-boundary.md)
 - [An inlined dynamic import keeps every export](inlined-dynamic-import-keeps-whole-namespace.md)
 - [An add-on's components ship in the shell build](addon-components-ship-in-the-shell.md)
+- [A document count includes the harness](document-count-includes-the-harness.md)
+- [An uncaught error keeps a removed frame alive](uncaught-error-pins-the-frame.md)
