@@ -99,6 +99,31 @@ describe('the Bash guard and the owner confirmation for moving main', () => {
     expect(existsSync(TOKEN())).toBe(false);
   });
 
+  it.each([
+    ['a file', `origin ${MAIN} > out.log`],
+    ['a file, attached', `origin ${MAIN} >out.log`],
+    ['an append', `origin ${MAIN} >> /tmp/out.log`],
+    ['stderr to a file', `origin ${MAIN} 2>/tmp/err.log`],
+    ['stderr into stdout', `origin ${MAIN} >/tmp/out.log 2>&1`],
+    ['both, bash-style', `origin HEAD:${MAIN} &>/tmp/out.log`]
+  ])('allows the push with its output redirected to %s', (_label, args) => {
+    writeToken();
+    const { status } = runAt(pushMain(args), MICA, mica);
+    expect(status).toBe(0);
+    expect(existsSync(TOKEN())).toBe(false);
+  });
+
+  it.each([
+    ['a redirect with no target', `origin ${MAIN} >`, 'no target'],
+    ['a target the shell would expand', `origin ${MAIN} >$OUT`, 'plain path'],
+    ['an input redirect', `origin ${MAIN} </dev/null`, 'covers only'],
+    ['a here-string', `origin ${MAIN} <<<x`, 'covers only']
+  ])('refuses %s even with a valid confirmation', (_label, args, reason) => {
+    writeToken();
+    expectRefused(pushMain(args), reason);
+    expect(existsSync(TOKEN())).toBe(true);
+  });
+
   it('allows the push from a worktree of the project, which shares its git dir', () => {
     writeToken();
     const { status } = runAt(`git -C ${WT_MAIN} ${PUSH} origin ${MAIN}`, MICA, mica);

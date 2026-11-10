@@ -1044,6 +1044,12 @@ mp_launched_git() {
 #
 # Returns 0 when the token allows this push, 1 when there is no token; blocks
 # when there is one that does not cover it.
+mp_redirect_target() {
+    case $1 in
+        '' | *[!A-Za-z0-9._/-]*) mp_block "the confirmation covers a redirect only to a plain path, not '$1'" ;;
+    esac
+}
+
 mp_try_token() {
     mp_tok=$mp_common/mica-confirm/move-main
     [ -e "$mp_tok" ] || return 1
@@ -1082,6 +1088,38 @@ mp_try_token() {
     set -f
     # shellcheck disable=SC2086
     set -- $mp_pushargs
+    set +f
+    # An output redirect changes where git's messages go, not what it pushes, so
+    # it is dropped before the shape is judged: `>f`, `>> f`, `2>f`, `&>f`,
+    # `2>&1`. Its target must be a plain path. Anything else -- an input
+    # redirect, a here-doc, a target the shell has yet to expand -- still
+    # leaves the words misaligned and is refused below.
+    mp_kept=
+    mp_rtarget=
+    for mp_w in "$@"; do
+        if [ -n "$mp_rtarget" ]; then
+            mp_rtarget=
+            mp_redirect_target "$mp_w"
+            continue
+        fi
+        case $mp_w in
+            [12]'>&'[12] | '>&'[12]) continue ;;
+            '>' | '>>' | [12]'>' | [12]'>>' | '&>' | '&>>')
+                mp_rtarget=1
+                continue
+                ;;
+            '>'* | [12]'>'* | '&>'*)
+                mp_rt=${mp_w#*>}
+                mp_redirect_target "${mp_rt#>}"
+                continue
+                ;;
+        esac
+        mp_kept="$mp_kept $mp_w"
+    done
+    [ -z "$mp_rtarget" ] || mp_block "the confirmation does not cover a redirect with no target"
+    set -f
+    # shellcheck disable=SC2086
+    set -- $mp_kept
     set +f
     [ $# -eq 2 ] || mp_block "the confirmation covers only 'git push <remote> main' or '<remote> <src>:main', with no options"
     case $1 in
