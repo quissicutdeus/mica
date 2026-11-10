@@ -129,8 +129,12 @@ not work around it.
    the working tree: a force-push or any rewrite of already-pushed history;
    `reset --hard` over uncommitted work; anything that moves `main`; changing
    branch protection or repository settings; `--no-verify`. Say what you're
-   about to do and why, then wait. §2.10's attribution ban is absolute and
-   unaffected by any of this.
+   about to do and why, then wait. The Bash guard cannot read the owner's yes,
+   so a fast-forward of `main` goes through only on a one-time confirmation in
+   the git dir (`mica-confirm/move-main`: the target sha, a 15-minute expiry,
+   the owner's words), written in its own step and used up by the push; the
+   guard's header has the format. Nothing else on this list has an override.
+   §2.10's attribution ban is absolute and unaffected by any of this.
 
 2. **Never edit `fxmanifest.lua` or anything in `dist/`.** Both are generated —
    the manifest by `scripts/generate-barrels.js`, `dist/` by the build. Edits
