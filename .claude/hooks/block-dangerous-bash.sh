@@ -1019,6 +1019,96 @@ mp_launched_git() {
     return 1
 }
 
+# The owner's one-time confirmation for moving main (2026-11-09). The guard
+# cannot read the conversation, so an owner who said yes in chat -- three times,
+# once while away from the keyboard -- was refused every time, and the only way
+# past was switching the guard off. Instead, the session writes the owner's
+# confirmation to a file and this lets exactly one push through on it:
+#
+#   <git-common-dir>/mica-confirm/move-main, four lines:
+#     sha=<the 40-hex commit main may move to>
+#     created=<epoch seconds>
+#     expires=<epoch seconds, at most 900 after created and after now>
+#     quote=<the owner's own words, non-empty>
+#
+# It lives in the git dir, so it can never be committed or pushed. It allows
+# only `git [-C dir] push <remote> main` or `<remote> <src>:main` (or
+# refs/heads/main), with no option of any kind and nothing else on the line,
+# and only when that source resolves to the named sha. A force push of any
+# spelling is refused earlier by check_force_push, token or not. The token is
+# deleted the moment it is used, and the owner's words are printed so the
+# transcript says why. A malformed, expired or mismatched token refuses with
+# its reason; it never falls through to allowed. The confirmation is a record,
+# not proof: the session can write it, which is why it must be its own step
+# (check_main_push refuses a command that touches it and pushes).
+#
+# Returns 0 when the token allows this push, 1 when there is no token; blocks
+# when there is one that does not cover it.
+mp_try_token() {
+    mp_tok=$mp_common/mica-confirm/move-main
+    [ -e "$mp_tok" ] || return 1
+    [ -f "$mp_tok" ] || mp_block "the confirmation at $mp_tok is not a plain file"
+    mp_tsha=
+    mp_tcreated=
+    mp_texpires=
+    mp_tquote=
+    while IFS= read -r mp_tl || [ -n "$mp_tl" ]; do
+        case $mp_tl in
+            sha=*) mp_tsha=${mp_tl#sha=} ;;
+            created=*) mp_tcreated=${mp_tl#created=} ;;
+            expires=*) mp_texpires=${mp_tl#expires=} ;;
+            quote=*) mp_tquote=${mp_tl#quote=} ;;
+            '') ;;
+            *) mp_block "the confirmation has a line the guard does not know: '$mp_tl'" ;;
+        esac
+    done <"$mp_tok"
+    if ! cmd_grep 'confirmation sha' "$mp_tsha" '^[0-9a-f]{40}$'; then
+        mp_block "the confirmation's sha is not a full 40-character commit id"
+    fi
+    case $mp_tcreated in
+        '' | *[!0-9]*) mp_block "the confirmation's created time is not epoch seconds" ;;
+    esac
+    case $mp_texpires in
+        '' | *[!0-9]*) mp_block "the confirmation's expiry is not epoch seconds" ;;
+    esac
+    [ -n "$mp_tquote" ] || mp_block "the confirmation quotes no words from the owner"
+    mp_now=$(date +%s)
+    [ "$mp_texpires" -gt "$mp_now" ] || mp_block "the confirmation expired"
+    if [ $((mp_texpires - mp_tcreated)) -gt 900 ] || [ $((mp_texpires - mp_now)) -gt 900 ]; then
+        mp_block "the confirmation is valid for more than 15 minutes"
+    fi
+
+    # Only the plainest shape: a remote and one refspec, nothing else.
+    set -f
+    # shellcheck disable=SC2086
+    set -- $mp_pushargs
+    set +f
+    [ $# -eq 2 ] || mp_block "the confirmation covers only 'git push <remote> main' or '<remote> <src>:main', with no options"
+    case $1 in
+        '' | -* | *[!A-Za-z0-9._-]*) mp_block "the confirmation covers only a plain remote name, not '$1'" ;;
+    esac
+    case $2 in
+        main | refs/heads/main) mp_src=refs/heads/main ;;
+        *:main | *:refs/heads/main)
+            mp_src=${2%%:*}
+            case $mp_src in
+                '' | +* | -* | *[!A-Za-z0-9._/^~-]*) mp_block "the confirmation does not cover the source '$mp_src'" ;;
+            esac
+            ;;
+        *) mp_block "the confirmation does not cover the refspec '$2'" ;;
+    esac
+    if ! mp_pushed=$(git -C "$mp_target" rev-parse --verify --quiet "$mp_src^{commit}" 2>/dev/null) || [ -z "$mp_pushed" ]; then
+        mp_block "the push's source '$mp_src' does not resolve to a commit"
+    fi
+    if [ "$mp_pushed" != "$mp_tsha" ]; then
+        mp_block "the confirmation names $mp_tsha but this push sends $mp_pushed"
+    fi
+    rm -f -- "$mp_tok" || mp_block "the confirmation could not be consumed"
+    [ ! -e "$mp_tok" ] || mp_block "the confirmation could not be consumed"
+    printf 'allowed: this push moves main to %s on the owner'\''s confirmation: "%s"\n' "$mp_tsha" "$mp_tquote" >&2
+    return 0
+}
+
 # Judges a push that moves main, or may: refuses unless git places its tree in
 # another repository, or -- when it only names no branch -- the tree's current
 # branch is not main. Uses mp_target, mp_bad, mp_mainish and mp_bd.
@@ -1072,6 +1162,9 @@ mp_resolve() {
     fi
 
     if [ -n "$mp_mainish" ]; then
+        if mp_try_token; then
+            return 0
+        fi
         block "this push would move main"
     fi
     # It names no branch, so it pushes the current one.
@@ -1161,6 +1254,7 @@ mp_git_segment() {
     mp_mainish=
     mp_bd=
     mp_npos=0
+    mp_pushargs=$*
     mp_push_args "$@"
     [ "$mp_npos" -gt 1 ] || mp_bd=1
     [ -n "$mp_mainish$mp_bd" ] || return 0
@@ -1237,6 +1331,12 @@ mp_segment() {
 
 check_main_push() {
     [ -n "$main_push" ] || return 0
+
+    # The owner's confirmation (mp_try_token) is written in a step of its own, so
+    # the transcript shows it before any push uses it.
+    case "$cmd" in
+        *mica-confirm*) mp_block "a command that touches the main-push confirmation and also pushes; write the confirmation in its own step" ;;
+    esac
 
     if ! segments=$(split_commands) || [ -z "$segments" ]; then
         if names_main "$cmd"; then
