@@ -13,7 +13,13 @@
 # until everything seen has completed AND nothing new has appeared for a quiet period.
 # One line per run is printed (and written to out-file, if given):
 #
-#   <workflow>  <status>  <conclusion>  <run id>
+#   <workflow>  <status>  <conclusion>  <run id>  [superseded]
+#
+# A workflow can run more than once on a sha (a re-run, a later dispatch). Per workflow name
+# the NEWEST run (highest run id) decides the verdict; an older run of the same name is still
+# printed, marked `superseded` in a fifth column, but no longer counts. It is never dropped:
+# a hidden failure reads as a pass. A failing newest run fails, and a newest run still going
+# keeps the watch pending.
 #
 # Exit status: 0 every run succeeded (a workflow-level `skipped` is reported but allowed);
 # 1 a run failed, no run ever registered, or the watch ran out of time; 2 bad usage or
@@ -124,10 +130,11 @@ if [ "$seen" = ' ' ]; then
 fi
 
 # The verdict comes from the conclusions of the last read, never from a watcher's status.
-report=$(printf '%s\n' "$runs" | while IFS="$tab" read -r id status conclusion name; do
-    [ -n "$id" ] || continue
-    printf '%s\t%s\t%s\t%s\n' "$name" "$status" "$conclusion" "$id"
-done)
+report=$(printf '%s\n' "$runs" | awk -F '\t' -v OFS='\t' '
+    $1 != "" { n++; id[n] = $1; st[n] = $2; co[n] = $3; wf[n] = $4
+        if (!($4 in top) || $1 + 0 > top[$4] + 0) top[$4] = $1 }
+    END { for (i = 1; i <= n; i++)
+        print wf[i], st[i], co[i], id[i], (id[i] + 0 < top[wf[i]] + 0 ? "superseded" : "") }')
 printf '%s\n' "$report"
 [ -z "$out" ] || printf '%s\n' "$report" >"$out"
 
@@ -136,8 +143,9 @@ if [ "$quiet" -lt "$quiet_needed" ]; then
     echo "watch-ci: ran out of polls ($max_polls) before the runs settled" >&2
     verdict=1
 fi
-while IFS="$tab" read -r _ status conclusion _; do
+while IFS="$tab" read -r _ status conclusion _ superseded; do
     [ -n "$status" ] || continue
+    [ "$superseded" != superseded ] || continue
     if [ "$status" != completed ]; then
         echo "watch-ci: a run is still $status" >&2
         verdict=1
