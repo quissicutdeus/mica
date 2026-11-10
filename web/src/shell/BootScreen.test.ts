@@ -10,7 +10,6 @@ import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import BootScreen from './BootScreen.svelte';
 import { BOOT_EXIT_MS, BOOT_IN_MS, POWER_OFF_MS, powerState } from './state/power';
 import { ownerConfig } from './state/ownerConfig';
-import { setActiveDevice } from './state/device';
 
 /** MICA-236: what the overlay draws, and that a dead logo never leaves a broken image. */
 
@@ -20,7 +19,6 @@ const boot = () => powerState.set({ phase: 'boot', delayMs: 0 });
 beforeEach(() => {
   powerState.set({ phase: 'idle', delayMs: 0 });
   ownerConfig.update((c) => ({ ...c, brandLogo: null }));
-  setActiveDevice('phone');
 });
 afterEach(cleanup);
 
@@ -101,22 +99,31 @@ describe('BootScreen', () => {
     expect(getByTestId('boot-mark')).toBeTruthy();
   });
 
-  /** MICA-450: a boot fades in and holds; it fades out only when `power.ts` says it leaves. */
-  it('fades a boot in after the fly-in delay, and out at once when it leaves', async () => {
+  /**
+   * A power-on shows the boot screen and never the phone behind it, so a boot's black has no
+   * fade-in and waits for nothing: only the logo waits out the open's fly-in. It used to be
+   * the backdrop that waited, transparent, and the whole phone flew in and showed first.
+   * MICA-450: it fades out only when `power.ts` says it leaves, at once.
+   */
+  it('puts a boot up black at once, lets only the logo wait, and fades out when it leaves', async () => {
     powerState.set({ phase: 'boot', delayMs: 500 });
     const { getByTestId } = render(BootScreen);
     const el = getByTestId('boot-screen');
-    expect(el.style.animationDuration).toBe(`${BOOT_IN_MS}ms`);
-    expect(el.style.animationDelay).toBe('500ms');
+    const logo = el.firstElementChild as HTMLElement;
+    expect(el.className).toMatch(/(^|\s)bg-black(\s|$)/);
+    expect(el.style.animationDelay, 'the backdrop never waits').toBe('');
+    expect(el.style.animationDuration, 'nor fades in').toBe('');
     expect(el.hasAttribute('data-leaving')).toBe(false);
+    expect(logo.style.animationDelay).toBe('500ms');
+    expect(logo.style.animationDuration).toBe(`400ms, ${BOOT_IN_MS}ms`);
 
     powerState.set({ phase: 'boot', delayMs: 500, leaving: true });
     await tick();
     expect(el.getAttribute('data-leaving')).toBe('true');
     expect(el.style.animationDuration).toBe(`${BOOT_EXIT_MS}ms`);
-    expect(el.style.animationDelay).toBe('0ms');
-    // The logo keeps the open's delay, so the fade-out cannot retime its scale-in.
-    expect((el.firstElementChild as HTMLElement).style.animationDelay).toBe('500ms');
+    expect(el.style.animationDelay).toBe('');
+    // The logo keeps the open's delay, so the fade-out cannot retime its entrance.
+    expect(logo.style.animationDelay).toBe('500ms');
   });
 
   it('runs the power-off screen for its fixed time', () => {
@@ -125,9 +132,22 @@ describe('BootScreen', () => {
     expect(getByTestId('boot-screen').style.animationDuration).toBe(`${POWER_OFF_MS}ms`);
   });
 
-  it('insets by the device bezel so it stays inside the screen', () => {
+  /**
+   * It covers the box it is placed in, at the top layer there. Which box is the frames' to
+   * decide: their screens, so it is clipped to the screen and rides the fly-in
+   * (`Shell.boot.test.ts`). It used to inset itself by the bezel from beside the frame.
+   */
+  it('fills the box it is placed in, at the top layer', () => {
     boot();
     const { getByTestId } = render(BootScreen);
-    expect(getByTestId('boot-screen').getAttribute('style')).toContain('inset: 8px');
+    const el = getByTestId('boot-screen');
+    expect(el.className).toMatch(/(^|\s)absolute(\s|$)/);
+    for (const edge of ['inset-x-0', 'top-0', 'bottom-0']) {
+      expect(el.className).toMatch(new RegExp(`(^|\\s)${edge}(\\s|$)`));
+    }
+    // Not the resident-app slot's shape, which `Shell.test.ts` and specs select by.
+    expect(el.matches('div.absolute.inset-0')).toBe(false);
+    expect(el.className).toMatch(/(^|\s)z-80(\s|$)/);
+    expect(el.style.inset).toBe('');
   });
 });

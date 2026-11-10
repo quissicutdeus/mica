@@ -52,24 +52,28 @@ export type PowerPhase = 'idle' | 'boot' | 'off';
 
 export interface PowerState {
   phase: PowerPhase;
-  /** How long the overlay waits before it appears, so it can follow the frame's fly-in. */
+  /**
+   * How long the logo waits before it enters: the frame's fly-in, on an open. The black
+   * behind it is up from the first frame regardless (`BootScreen.svelte` rides the fly), and
+   * the floor and ceiling below count from the end of this wait.
+   */
   delayMs: number;
   /** A boot that is fading out (`BOOT_EXIT_MS`), before it goes idle. Absent otherwise. */
   leaving?: true;
 }
 
-/** The frame's `transition:fly` in `PhoneFrame.svelte`; boot on open starts after it. */
+/** The frame's `transition:fly` in `PhoneFrame.svelte`; a boot's logo enters after it. */
 export const OPEN_FLY_MS = 500;
 /**
- * The boot's ceiling, from the overlay's start to its last frame, fade-out included: what a
- * boot lasted before it waited for readiness, so a signal that never arrives costs no more
- * than it always did.
+ * The boot's ceiling, from the logo's start (`delayMs` in) to the last frame, fade-out
+ * included: what a boot lasted before it waited for readiness, so a signal that never
+ * arrives costs no more than it always did.
  */
 export const BOOT_MS = 1100;
-/** The overlay's fade-in. */
+/** The logo's fade-in, once the open's fly-in is over. The backdrop never fades in. */
 export const BOOT_IN_MS = 220;
 /**
- * The least a boot shows before it may start leaving, from the overlay's start: the logo's
+ * The least a boot shows before it may start leaving, from the logo's start: the logo's
  * own 400 ms scale-in (`BootScreen.svelte`) and a beat of it still, so it never flashes.
  */
 export const BOOT_MIN_MS = 500;

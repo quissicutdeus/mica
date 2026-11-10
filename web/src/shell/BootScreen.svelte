@@ -7,7 +7,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import { OS_NAME } from '@mica/shared/brand';
   import { t } from './messages';
-  import { descriptor } from './state/device';
   import { ownerConfig } from './state/ownerConfig';
   import { BOOT_EXIT_MS, BOOT_IN_MS, POWER_OFF_MS, powerState } from './state/power';
 
@@ -18,20 +17,35 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * *When* it plays is `state/power.ts`'s decision and is documented there: the session's
    * first open, coming back from a dead battery, and the battery dying. This is the view.
    *
-   * - **Two shapes of animation.** Power-off is one fixed run, in and out (`boot-run`). A
-   *   boot ends when the phone is ready (MICA-450), which this cannot know in advance, so
-   *   it fades in (`boot-in`), holds, and fades out (`boot-out`) only once `power.ts` says
-   *   it is `leaving` -- early or at the ceiling, it never cuts.
+   * - **A boot is black from its first frame.** A power-on shows the boot screen and never
+   *   the phone behind it, so the backdrop has no fade-in and no delay: it is opaque the
+   *   moment it mounts, which is in the same flush that puts the frame on the page. Only the
+   *   logo waits, for `delayMs` (the fly-in, on an open), then fades in over `BOOT_IN_MS` and
+   *   scales in. A boot ends when the phone is ready (MICA-450), which this cannot know in
+   *   advance, so it holds and fades out (`boot-out`) only once `power.ts` says it is
+   *   `leaving` -- early or at the ceiling, it never cuts. The backdrop used to fade in too,
+   *   after the fly-in, so a first open drew the whole phone, then the boot, then the phone
+   *   again.
+   * - **Power-off** is one fixed run, in and out (`boot-run`), over the phone as it was.
    *
    * - **Reduced motion:** nothing renders at all. `power.ts` never leaves `idle` under it,
    *   so there is no still frame either; a splash that only blinks is still motion.
    * - **Input:** `pointer-events-none`, always. The overlay ends by unmounting, and until
    *   then a tap falls through to whatever is underneath, so it can never hold a usable
    *   phone hostage. A call cancels it in `power.ts` before it can cover the ring toast.
-   * - **Screen box:** mounted by `Shell.svelte` beside the frame and inset by the device's
-   *   `bezel`, so it sits exactly on the screen and the player's game shows around it
-   *   (AGENTS.md §6). Bottom content is only the logo, centred and lifted by the home
-   *   indicator's clearance so it never sits under the gesture bar.
+   * - **Screen box:** mounted by each frame (`PhoneFrame`, `TabletFrame`) as the last child
+   *   of its screen, the whole of it. Inside the frame, so it rides the frame's
+   *   `transition:fly` and can be up from the first frame of an open; it used to sit beside
+   *   the frame, where it could not move with it and had to wait the fly-in out. The
+   *   screen's own rounded `overflow-hidden` clips it, so the player's game shows around it
+   *   (AGENTS.md §6). `z-80` and last: the cutout's layer and after it in tree order, so
+   *   nothing in the screen (status bar and home indicator at 60, the drag ghost at 70)
+   *   paints over it. Bottom content is only the logo, centred and lifted by the home
+   *   indicator's clearance so it never sits under the gesture bar. `inset-x-0 top-0
+   *   bottom-0` rather than `inset-0`: `absolute inset-0` under a `relative h-full w-full`
+   *   box is the resident-app slot's shape, which `Shell.test.ts` and specs select by.
+   * - **Home builds underneath.** The phone stays mounted under the boot, on purpose: a boot
+   *   lasts until home is ready (MICA-450), and it is the boot that hides home settling.
    * - **Logo:** `brandLogo` is an absolute cfx-nui URL. If it fails to load, `onerror`
    *   swaps in the drawn mark rather than leaving a broken-image icon.
    * - **A11y:** `aria-hidden`; a splash announced on every open is noise. The image still
@@ -44,11 +58,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let failedLogo = $state<string | null>(null);
   const showImage = $derived(logo !== null && logo !== failedLogo);
 
-  const durationMs = $derived(
-    $powerState.phase === 'off' ? POWER_OFF_MS : $powerState.leaving ? BOOT_EXIT_MS : BOOT_IN_MS
+  // A boot that is not leaving has no animation on the backdrop at all, so no timing either.
+  const screenStyle = $derived(
+    $powerState.phase === 'off'
+      ? `animation-duration: ${POWER_OFF_MS}ms; animation-delay: ${$powerState.delayMs}ms;`
+      : $powerState.leaving
+        ? `animation-duration: ${BOOT_EXIT_MS}ms;`
+        : undefined
   );
-  // The fade-out starts the moment it is asked for: it never waits out the fly-in delay again.
-  const delayMs = $derived($powerState.leaving ? 0 : $powerState.delayMs);
 </script>
 
 {#if $powerState.phase !== 'idle'}
@@ -58,16 +75,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     data-boot="screen"
     data-leaving={$powerState.leaving ? 'true' : undefined}
     aria-hidden="true"
-    class="pointer-events-none absolute flex items-center justify-center bg-black {$descriptor.id ===
-    'tablet'
-      ? 'rounded-frame-inner-tablet'
-      : 'rounded-frame-inner'}"
-    style="inset: {$descriptor.bezel}px; animation-duration: {durationMs}ms; animation-delay: {delayMs}ms;"
+    class="pointer-events-none absolute inset-x-0 top-0 bottom-0 z-80 flex items-center justify-center bg-black"
+    style={screenStyle}
   >
+    <!-- The scale-in's 400 ms is `power.ts`'s floor's to know (`BOOT_MIN_MS`); the fade is
+         `BOOT_IN_MS`. Both wait out the open's fly-in. -->
     <div
       data-boot="logo"
       class="pb-home-indicator flex items-center justify-center"
-      style="animation-delay: {$powerState.delayMs}ms;"
+      style="animation-delay: {$powerState.delayMs}ms; animation-duration: 400ms, {BOOT_IN_MS}ms;"
     >
       {#if showImage && logo}
         <img
@@ -139,24 +155,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {/if}
 
 <style>
-  /* Opaque only while it plays; `both` holds the first keyframe (invisible) through the
-     delay, so the overlay does not flash black ahead of the frame's fly-in. */
-  [data-boot='screen'] {
+  /* A boot's backdrop has no rule here on purpose: no animation is what keeps it opaque
+     from its first frame. Power-off fades in over the phone and out over the takeover. */
+  [data-boot='screen'][data-phase='off'] {
     animation: boot-run linear both;
   }
-  [data-boot='screen'][data-phase='boot'] {
-    animation-name: boot-in;
-    animation-timing-function: ease-out;
-  }
-  /* From fully in: `power.ts` never leaves before `BOOT_MIN_MS`, which outlasts `BOOT_IN_MS`. */
+  /* From fully in, which a boot always is. */
   [data-boot='screen'][data-leaving] {
-    animation-name: boot-out;
-    animation-timing-function: ease-in;
+    animation: boot-out ease-in both;
   }
-  /* Its delay is the open's, set on the element itself rather than inherited, so the
-     screen's delay dropping to zero for the fade-out cannot retime it. */
+  /* Its delay is the open's, set on the element itself, so it waits out the fly-in on a
+     backdrop that is already black; `both` holds it invisible and small until then. */
   [data-boot='logo'] {
-    animation: boot-logo-in 400ms ease-out both;
+    animation-name: boot-logo-in, boot-logo-fade;
+    animation-timing-function: ease-out;
+    animation-fill-mode: both;
   }
   @keyframes boot-run {
     0% {
@@ -172,7 +185,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       opacity: 0;
     }
   }
-  @keyframes boot-in {
+  @keyframes boot-logo-fade {
     from {
       opacity: 0;
     }

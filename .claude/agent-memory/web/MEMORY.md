@@ -45,7 +45,7 @@ why.
 - [An unsynced key needs a synced owner](unsynced-key-needs-a-synced-owner.md)
 - [A new core call needs the facet](new-core-call-needs-the-facet.md)
 - [`content-visibility` still builds the nodes](content-visibility-does-not-skip-node-creation.md)
-- [The boot overlay's fly-in wait has no slack](boot-overlay-fly-in-has-no-slack.md)
+- [The boot overlay rides inside the frame, black from the first flush](boot-overlay-fly-in-has-no-slack.md)
 - [`pkill -f` kills its own shell](pkill-f-matches-its-own-shell.md)
 - [A thread open is not the scroll write](thread-open-cost-is-not-the-scroll-write.md)
 - [Many Vite builds: one warm process](many-vite-builds-one-process.md)

@@ -39,7 +39,10 @@ const THEME_SPECS = [
   // MICA-295: the tablet focus-ring check, the same colour- and scheme-sensitive
   // measurement a11y.spec.ts makes for the phone. Run a second time by tablet-light below,
   // rather than by this project, since it needs the wider frame to fit unzoomed.
-  '**/accessibility.spec.ts'
+  '**/accessibility.spec.ts',
+  // The boot paint order: a light-scheme phone flashing before the boot screen is the
+  // brightest version of that bug, so the ordering is checked in both schemes.
+  '**/boot-paint-order.spec.ts'
 ];
 
 export default defineConfig({

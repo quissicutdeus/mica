@@ -1,22 +1,27 @@
-# The boot overlay's fly-in wait has no slack
+# The boot overlay rides inside the frame, black from the first flush
 
-Measured for MICA-450 (2026-11-08) in Chromium 103 at 4x CPU, n=5, by sampling
-the phone frame's `getBoundingClientRect().top` every animation frame from its
-insertion. The frame comes to rest at a median of 1017 ms after it enters the
-DOM, and the boot overlay first shows at 1083 ms, about 65 ms later. The ~570 ms
-long task at load holds both the fly-in and the overlay's `OPEN_FLY_MS` delay
-back by about the same amount.
+Until 2026-11-09 `BootScreen` was mounted beside the phone frame, not inside it,
+so it could not travel with the frame's `transition:fly`. To avoid a black box
+offset from a moving screen, it waited out `OPEN_FLY_MS` (500 ms) transparent,
+and the frame flew in fully drawn: wallpaper, lock or home, status bar. The
+owner saw "phone, boot, phone". As a z-auto sibling it also painted under the
+frame's own z-60 layers (status bar, home indicator) and the z-80 cutout once
+the fly's transform ended.
 
-**Why it matters:** `BootScreen` is mounted beside the frame, not inside it, so
-it does not travel with `transition:fly`. Showing it any earlier draws a black
-box offset from a screen that is still moving. Cutting `OPEN_FLY_MS` below 500
-buys at most ~65 ms at that risk, and in game, where GTA shares the CPU, the gap
-is unmeasured.
+**Now:** `BootScreen` is the last child of each frame's screen (`PhoneFrame`,
+`TabletFrame`) at `z-80`, so it moves with the fly. Its black has no animation
+and no delay: it is opaque in the same flush that creates the frame. Only the
+logo waits out `delayMs` before fading in. Home stays mounted underneath
+(MICA-450 builds it under the boot), so the cover is what hides it.
 
-**How to apply:** do not shorten the boot to gain time by trimming the fly-in
-delay. The overlay's own duration is what to tune (`BOOT_MIN_MS`, `BOOT_EXIT_MS`
-in `shell/state/power.ts`). Re-measure with a rAF sampler before changing
-either.
+**How to apply:** never give the boot's black a delay or a fade-in again; a boot
+that starts transparent shows the phone first.
+`web/e2e/boot-paint-order.spec.ts` samples every frame from navigation and fails
+any frame where the phone is visible before the overlay covers it.
+`Shell.boot.test.ts` pins the structure: inside the frame, last child, no delay,
+nothing above it. The boot's length is still tuned by `BOOT_MIN_MS` and
+`BOOT_EXIT_MS` in `shell/state/power.ts`; re-measure with a rAF sampler before
+changing either.
 
 Measuring cold start: Fives' `measure.mjs --cold-only` takes about 10 s a run. A
 Forgejo CI job on this box pushed load to 20 and doubled FCP mid-session, so run

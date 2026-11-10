@@ -25,6 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { themeStyleStore } from './state/theme';
   import { isLocked } from './state/lockScreen';
   import LockScreen from './LockScreen.svelte';
+  import BootScreen from './BootScreen.svelte';
 
   /**
    * The tablet's body (MICA-259): a 1280x800 landscape frame with a 12px bezel and a
@@ -135,5 +136,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {/if}
 
     <HomeIndicator />
+
+    <!-- Last in the screen, for the reason `PhoneFrame.svelte` gives. -->
+    <BootScreen />
   </div>
 </div>

@@ -26,6 +26,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { isLocked } from './state/lockScreen';
   import { activeFrame, activeFrameColor, FRAME_COLOR_HEX } from './state/phoneFrame';
   import LockScreen from './LockScreen.svelte';
+  import BootScreen from './BootScreen.svelte';
 
   /**
    * The phone's body: bezel, hole-punch camera, hardware buttons, and the lock screen —
@@ -227,5 +228,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {/if}
 
     <HomeIndicator />
+
+    <!-- Boot and power-off (MICA-236). Last, and in the screen rather than beside the frame,
+         so it paints over every layer here and rides the fly-in: a power-on's first frame
+         is the boot screen, never the phone (`BootScreen.svelte`). -->
+    <BootScreen />
   </div>
 </div>
