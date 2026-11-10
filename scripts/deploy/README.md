@@ -175,6 +175,8 @@ LICENSE_KEY=
 # QBX_CORE_DIR=
 # OX_INVENTORY_DIR=
 # QBX_VEHICLES_DIR=
+# a resource ox_lib's fxmanifest.lua lists under dependencies (`require`, from ox_lib 3.42)
+# is found beside OXMYSQL_DIR; DEP_<NAME>_DIR says otherwise (DEP_REQUIRE_DIR)
 # the esx run's; esx_lib and legacy.sql default to beside ESX_DIR
 # ESX_DIR=/opt/mica-smoke/vendor/es_extended
 # ESX_LIB_DIR=
@@ -229,6 +231,18 @@ told to leave one out is one a stray edit could leave out unnoticed.
   micaOS, on a database holding `legacy.sql` and one `users` row; the console
   has to say `created micaOS's schema for ESX or standalone` and
   `mica: jobs -> es_extended`.
+
+**ox_lib's own dependencies (MICA-479).** The qbx and esx runs read the mounted
+`ox_lib/fxmanifest.lua` and, for every resource it names under `dependencies` or
+`dependency` (not the `/`-prefixed built-ins), mount that directory read-only
+from beside `OXMYSQL_DIR` and `ensure` it before `ox_lib`. ox_lib 3.42 and later
+name `require`, which is
+[overextended/cfxlua-require](https://github.com/overextended/cfxlua-require),
+so the box needs it at `/opt/fivem-main/server-data/vendor/require` (or
+`DEP_REQUIRE_DIR` in `smoke.env`). A dependency that is not there refuses the
+whole invocation before any container starts, naming it and the path; a stack
+whose console prints `Could not find dependency` or `Couldn't start resource`
+fails its run at once instead of timing out scenario by scenario.
 
 micaOS must create its own schema on first start in every run (MICA-306); the
 release smoke test is the only run that imports micaOS's SQL. The seeded

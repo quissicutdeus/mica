@@ -419,6 +419,61 @@ if [[ -e $integ ]]; then
     done
     [[ -f $ESX_SQL ]] ||
         die "$ESX_SQL is missing; es_extended does not create its tables itself, so the esx run imports esx_core's legacy.sql first (ESX_SQL in $ENV_FILE says where it is)"
+    # What ox_lib itself declares it needs (MICA-479). ox_lib 3.42 added `require`
+    # (overextended/cfxlua-require) to its fxmanifest's dependencies, and a stack that lacks it
+    # does not start: ox_lib fails, and qbx_core and ox_inventory with it. Read from the manifest
+    # that is mounted, so the next dependency it grows is found, not hardcoded. A `/`-prefixed
+    # entry (`/server:7290`, `/onesync`) is a built-in requirement of the server, not a resource.
+    # A dependency the stack already mounts under its own name is left to that mount.
+    ox_lib_deps=()
+    ox_lib_dep_dirs=()
+    while IFS= read -r dep; do
+        [[ -n $dep ]] || continue
+        case $dep in
+            /*) continue ;;
+            ox_lib | oxmysql | qbx_core | qbx_vehicles | ox_inventory | esx_lib | es_extended) continue ;;
+        esac
+        [[ $dep =~ ^[A-Za-z0-9_.-]+$ && $dep != . && $dep != .. ]] ||
+            die "$OX_LIB_DIR/fxmanifest.lua declares a dependency named '$dep', which is not a resource name this script will mount"
+        dep_var=DEP_$(tr 'a-z.-' 'A-Z__' <<<"$dep")_DIR
+        dep_dir=
+        if [[ -f $ENV_FILE ]]; then
+            dep_dir=$(grep -m1 "^${dep_var}=" "$ENV_FILE" | cut -d= -f2- || true)
+        fi
+        dep_dir=${dep_dir:-${OXMYSQL_DIR%/*}/$dep}
+        dep_source="the resource ox_lib's fxmanifest.lua lists under dependencies"
+        [[ $dep != require ]] || dep_source="overextended/cfxlua-require (https://github.com/overextended/cfxlua-require), which ox_lib 3.42 and later depend on"
+        [[ -f $dep_dir/fxmanifest.lua ]] ||
+            die "ox_lib at $OX_LIB_DIR depends on the resource '$dep', and $dep_dir/fxmanifest.lua is not there, so the qbx and esx runs could not start ox_lib. '$dep' is $dep_source; install it at $dep_dir, or set $dep_var in $ENV_FILE"
+        ox_lib_deps+=("$dep")
+        ox_lib_dep_dirs+=("$dep_dir")
+    done < <(
+        # The names inside `dependencies { ... }` and after `dependency`, comments dropped.
+        awk '
+            function emit(text) {
+                while (match(text, /\047[^\047]*\047|\042[^\042]*\042/)) {
+                    print substr(text, RSTART + 1, RLENGTH - 2)
+                    text = substr(text, RSTART + RLENGTH)
+                }
+            }
+            {
+                line = $0
+                sub(/--.*/, "", line)
+                if (!inblock) {
+                    if (line ~ /(^|[^A-Za-z0-9_])dependency[ \t]*\(?[ \t]*[\047\042]/) {
+                        sub(/.*dependency/, "", line)
+                        emit(line)
+                        next
+                    }
+                    if (line !~ /(^|[^A-Za-z0-9_])dependencies[ \t]*[{(]/) next
+                    inblock = 1
+                    sub(/.*dependencies/, "", line)
+                }
+                emit(line)
+                if (line ~ /[})]/) inblock = 0
+            }
+        ' "$OX_LIB_DIR/fxmanifest.lua"
+    )
 fi
 
 # Strip FXServer's colour codes so the patterns below see the words.
@@ -571,6 +626,9 @@ run_mode() {
     # every file: a name already there is an error.
     sd="$stage/sd-$mode"
     mkdir "$sd" "$sd/resources" "$sd/resources/oxmysql" "$sd/resources/mica"
+    if [[ $mode == qbx || $mode == esx ]]; then
+        for dep in "${ox_lib_deps[@]}"; do mkdir "$sd/resources/$dep"; done
+    fi
     case $mode in
         qbx) mkdir "$sd/resources/ox_lib" "$sd/resources/qbx_core" "$sd/resources/qbx_vehicles" "$sd/resources/ox_inventory" ;;
         esx) mkdir "$sd/resources/ox_lib" "$sd/resources/esx_lib" "$sd/resources/es_extended" "$sd/resources/ox_inventory" ;;
@@ -640,6 +698,10 @@ run_mode() {
         # In the order qbx_core's own documentation gives, with micaOS after the framework it
         # detects: micaOS reads qbx_core's exports as it loads, and registers its phone item then.
         # qbx_vehicles after qbx_core and before ox_inventory, whose qbx bridge needs it loaded.
+        # ox_lib's own dependencies (`require`, MICA-479) before ox_lib, which will not start without them.
+        if [[ $mode == qbx || $mode == esx ]]; then
+            for dep in "${ox_lib_deps[@]}"; do echo "ensure $dep"; done
+        fi
         case $mode in
             qbx) printf 'ensure %s\n' ox_lib qbx_core qbx_vehicles ox_inventory ;;
             # esx_lib before es_extended, whose manifest loads it; es_extended before ox_inventory,
@@ -666,6 +728,12 @@ run_mode() {
         -v "$OXMYSQL_DIR:/opt/fivem/server-data/resources/oxmysql:ro"
         -v "$resource:/opt/fivem/server-data/resources/mica:ro"
     )
+    if [[ $mode == qbx || $mode == esx ]]; then
+        for i in "${!ox_lib_deps[@]}"; do
+            echo "smoke: ${mode_tag}mounting ox_lib's dependency ${ox_lib_deps[i]} from ${ox_lib_dep_dirs[i]} read-only, and ensuring it before ox_lib"
+            mounts+=(-v "${ox_lib_dep_dirs[i]}:/opt/fivem/server-data/resources/${ox_lib_deps[i]}:ro")
+        done
+    fi
     if [[ $mode == qbx ]]; then
         echo "smoke: ${mode_tag}mounting $OX_LIB_DIR, $QBX_CORE_DIR, $QBX_VEHICLES_DIR and $OX_INVENTORY_DIR read-only, and ensuring them before mica"
         mounts+=(
@@ -741,6 +809,9 @@ run_mode() {
     # In integration mode the window is the suite itself: it ends at the first of the done
     # line, the container stopping, or INTEGRATION_TIMEOUT. The running state is read before
     # the logs, so a container seen stopped has had its last line read.
+    # What FXServer prints for a resource it could not load or start, or one whose dependency is
+    # missing. `mica` itself is held by the check above; this is the rest of the stack.
+    local stack_failed_re="Could not find dependency|Couldn.t start resource "
     local done_re='integration: done ([0-9]+) passed ([0-9]+) failed'
     if [[ $integration == 1 ]]; then
         echo "smoke: ${mode_tag}INTEGRATION -- waiting up to ${INTEGRATION_TIMEOUT}s for the suite's done line"
@@ -749,6 +820,9 @@ run_mode() {
             running=$(podman inspect -f '{{.State.Running}}' "$fx" 2>/dev/null || true)
             logs=$(podman logs "$fx" 2>&1 | plain || true)
             grep -qE "$done_re" <<<"$logs" && break
+            # A stack that cannot start will not get better, and every scenario would wait out
+            # its own timeout; the check after the loop says so (MICA-479).
+            grep -qiE "$stack_failed_re" <<<"$logs" && break
             [[ $running == true ]] || break
             (($(clock_now) < deadline)) || break
             nap 2
@@ -758,6 +832,12 @@ run_mode() {
         logs=$(podman logs "$fx" 2>&1 | plain || true)
     fi
     report
+
+    if [[ $integration == 1 && $mode != standalone ]] && grep -qiE "$stack_failed_re" <<<"$logs"; then
+        echo "---- the stack's lines that say it did not start ----" >&2
+        grep -iE "$stack_failed_re" <<<"$logs" >&2 || true
+        mdie "a resource of the $mode stack could not start (the lines are above), so the suite ran against a server without it; a missing dependency of ox_lib is the usual cause, see scripts/deploy/README.md"
+    fi
 
     if [[ $integration == 1 ]]; then
         # From the first match to the end of the line, so a console prefix is dropped and a

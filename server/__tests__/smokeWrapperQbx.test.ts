@@ -36,6 +36,7 @@ import {
   teardownFixtures,
   trial,
   VEHICLES_MARKER,
+  withOxLibManifest,
   wrap,
   WRAPPER
 } from './smokeWrapperHarness';
@@ -70,6 +71,142 @@ describe.skipIf(!trial)('mica-smoke-release.sh', { timeout: 20_000 }, () => {
    * stack could be set up wrong, and the wrapper has to say which run it was and fail. The esx
    * run's own are in the next block.
    */
+  /**
+   * MICA-479. ox_lib 3.42 added `require` to its manifest's dependencies and a stack without it
+   * does not start: ox_lib, then qbx_core and ox_inventory, fail, and every scenario waits out its
+   * own timeout. The wrapper reads the mounted manifest, so these cases write one.
+   */
+  describe("ox_lib's declared dependencies", () => {
+    const WITH_REQUIRE = [
+      "fx_version 'cerulean'",
+      '-- dependencies { "commented" }',
+      'dependencies {',
+      "    '/server:7290',",
+      "    '/onesync',",
+      "    'require',",
+      '}'
+    ].join('\n');
+    const ensured = (cfg: string) => cfg.split('\n').filter((line) => line.startsWith('ensure '));
+    const mount = (name: string, source: string) =>
+      `-v ${source}:/opt/fivem/server-data/resources/${name}:ro`;
+
+    it('mounts a dependency read-only and ensures it before ox_lib, in the qbx and esx runs only', () => {
+      const r = withOxLibManifest(WITH_REQUIRE, ['require'], () =>
+        wrap(makeRun('manifest'), suite(PASS_A))
+      );
+
+      expect(r.status, r.out).toBe(0);
+      const [standalone, qbx, esx] = r.calls.split('\n').filter((l) => l.startsWith('run -d -i '));
+      expect(ensured(r.qbxCfg).slice(0, 3)).toEqual([
+        'ensure oxmysql',
+        'ensure require',
+        'ensure ox_lib'
+      ]);
+      expect(ensured(r.esxCfg).slice(0, 3)).toEqual([
+        'ensure oxmysql',
+        'ensure require',
+        'ensure ox_lib'
+      ]);
+      expect(ensured(r.cfg)).not.toContain('ensure require');
+      expect(qbx).toContain(mount('require', join(dir, 'require')));
+      expect(esx).toContain(mount('require', join(dir, 'require')));
+      expect(standalone).not.toContain('require');
+      // The built-ins are not resources: nothing is ensured or mounted for them.
+      expect(r.qbxCfg).not.toContain('ensure /');
+      expect(qbx).not.toContain('/server:7290');
+    });
+
+    it('reads `dependency` lines and a one-line list too, and a comment names nothing', () => {
+      const manifest = [
+        "dependency 'alpha'",
+        'dependency "beta" -- dependency "gamma"',
+        "dependencies { '/onesync', 'delta' }"
+      ].join('\n');
+      const r = withOxLibManifest(manifest, ['alpha', 'beta', 'delta'], () =>
+        wrap(makeRun('manifest'), suite(PASS_A))
+      );
+
+      expect(r.status, r.out).toBe(0);
+      expect(ensured(r.qbxCfg).slice(1, 5)).toEqual([
+        'ensure alpha',
+        'ensure beta',
+        'ensure delta',
+        'ensure ox_lib'
+      ]);
+      expect(r.qbxCfg).not.toContain('gamma');
+      expect(r.qbxCfg).not.toContain('commented');
+    });
+
+    it('changes nothing for a manifest with only built-in dependencies (ox_lib 3.39)', () => {
+      const r = withOxLibManifest(
+        "dependencies {\n    '/server:7290',\n    '/onesync',\n}",
+        [],
+        () => wrap(makeRun('manifest'), suite(PASS_A))
+      );
+
+      expect(r.status, r.out).toBe(0);
+      expect(ensured(r.qbxCfg)).toEqual([
+        'ensure oxmysql',
+        'ensure ox_lib',
+        'ensure qbx_core',
+        'ensure qbx_vehicles',
+        'ensure ox_inventory',
+        'ensure mica',
+        'ensure mica-integration'
+      ]);
+      expect(r.out).not.toContain("ox_lib's dependency");
+    });
+
+    it('takes the directory from DEP_<NAME>_DIR in the settings file when it is set', () => {
+      const elsewhere = join(dir, 'require-elsewhere');
+      const env = settingsFile([`DEP_REQUIRE_DIR=${elsewhere}`]);
+      const r = withOxLibManifest(WITH_REQUIRE, ['require-elsewhere'], () =>
+        wrap(makeRun('manifest'), suite(PASS_A), { env })
+      );
+
+      expect(r.status, r.out).toBe(0);
+      const qbx = r.calls.split('\n').filter((l) => l.startsWith('run -d -i '))[1];
+      expect(qbx).toContain(mount('require', elsewhere));
+    });
+
+    it('refuses before anything starts, naming the dependency, the path and where it comes from, when it is missing', () => {
+      const r = withOxLibManifest(WITH_REQUIRE, [], () => wrap(makeRun('manifest'), suite(PASS_A)));
+
+      expect(r.status).toBe(1);
+      expect(r.out).toContain("depends on the resource 'require'");
+      expect(r.out).toContain(`${join(dir, 'require')}/fxmanifest.lua is not there`);
+      expect(r.out).toContain('https://github.com/overextended/cfxlua-require');
+      expect(r.out).toContain('DEP_REQUIRE_DIR');
+      // Before the first container: not one podman call to start a database or a server.
+      expect(r.calls).not.toMatch(/^run /m);
+      expect(r.calls).not.toMatch(/^network create /m);
+    });
+
+    it('refuses a dependency name it would not mount', () => {
+      const r = withOxLibManifest("dependencies { '../etc' }", [], () =>
+        wrap(makeRun('manifest'), suite(PASS_A))
+      );
+
+      expect(r.status).toBe(1);
+      expect(r.out).toContain("a dependency named '../etc'");
+      expect(r.calls).not.toMatch(/^run /m);
+    });
+
+    it('fails the qbx run, with the lines, when the stack prints that a resource could not start', () => {
+      const console = qbxSuite(['a'], {
+        extra: [
+          '[c-resources-core] Could not find dependency require for resource ox_lib.',
+          "[citizen-server-impl] Couldn't start resource ox_lib."
+        ]
+      });
+      const r = wrap(makeRun('manifest'), suite(PASS_A), { qbxLogs: console });
+
+      expect(r.status).toBe(1);
+      expect(r.out).toContain('REFUSED: [qbx mode] a resource of the qbx stack could not start');
+      expect(r.out).toContain('Could not find dependency require for resource ox_lib.');
+    });
+  });
+
   describe('qbx mode', () => {
     const oneLine = (r: { calls: string }, start: RegExp) =>
       r.calls.split('\n').findIndex((line) => start.test(line));

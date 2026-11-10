@@ -260,6 +260,27 @@ export const setupFixtures = () => {
   chmodSync(victim, 0o644);
 };
 
+/**
+ * Runs `fn` with the stand-in ox_lib's fxmanifest.lua set to `manifest` and a stand-in resource
+ * (an empty fxmanifest.lua) beside it for each of `present`, then puts the empty manifest back and
+ * removes what it made (MICA-479). Returns the directory of each, by name.
+ */
+export const withOxLibManifest = <T>(manifest: string, present: string[], fn: () => T): T => {
+  const manifestPath = join(oxLib, 'fxmanifest.lua');
+  const made = present.map((name) => join(dir, name));
+  writeFileSync(manifestPath, manifest);
+  try {
+    for (const path of made) {
+      mkdirSync(path, { recursive: true });
+      writeFileSync(join(path, 'fxmanifest.lua'), '');
+    }
+    return fn();
+  } finally {
+    writeFileSync(manifestPath, '');
+    for (const path of made) rmSync(path, { recursive: true, force: true });
+  }
+};
+
 export const teardownFixtures = () => {
   rmSync(dir, { recursive: true, force: true });
 };
