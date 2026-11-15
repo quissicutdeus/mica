@@ -179,8 +179,8 @@ message reads as something to answer instead of something to execute.
   eleven files it never staged.
 - **Check every coverage claim with a grep.** "No e2e spec covers this" was
   wrong twice; "one `$derived` file" was 81.
-- Resolve every SHA pin a lane adds with `gh api` before merging; all its gates
-  passing proves the gates, not the pins.
+- Check every action tag a lane adds exists (`git ls-remote`) before merging;
+  all its gates passing proves the gates, not the tags.
 - Verify the load-bearing claim of a finding before relaying it to the owner.
 
 ## Integrate

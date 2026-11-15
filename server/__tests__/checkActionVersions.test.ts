@@ -9,10 +9,11 @@ import { tmpdir } from 'os';
 import path from 'path';
 
 /**
- * The two refusals `scripts/check-action-versions.js` makes before it touches the network:
- * a `uses:` that is not a commit SHA, and a SHA with no version comment to check a major
- * against. Each is driven through `--dir` on a one-workflow fixture, so the failing paths
- * are shown to fire without pushing a deliberately broken `uses:` to find out.
+ * The refusals `scripts/check-action-versions.js` makes before it touches the network: a
+ * `uses:` that is not a bare major tag -- a commit SHA, an exact version, a branch -- and a
+ * hold that gives no reason. Each is driven through `--dir` on a one-workflow fixture, so
+ * the failing paths are shown to fire without pushing a deliberately broken `uses:` to
+ * find out.
  *
  * Nothing here runs the script over the real `.github/workflows/`, and that is the point.
  * The happy path needs the GitHub API, and a unit suite that reaches the API fails on
@@ -43,59 +44,54 @@ const run = (dir: string) =>
 const SPAWN_CASE_TIMEOUT_MS = 45_000;
 
 describe('check-action-versions', { timeout: SPAWN_CASE_TIMEOUT_MS }, () => {
-  it('fails on a tag pin, naming it NOT SHA', () => {
-    const result = run(workflowDir('actions/checkout@v7'));
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain('NOT SHA   actions/checkout@v7');
-  });
-
-  it('fails on a SHA pin with no version comment, as unresolved rather than current', () => {
+  it('fails on a commit SHA, naming it NOT MAJOR', () => {
     const result = run(workflowDir('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'));
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain('UNKNOWN');
-    expect(result.stdout).toContain('no version comment');
+    expect(result.stdout).toContain(
+      'NOT MAJOR actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+    );
     expect(result.stdout).not.toContain('  ok ');
   });
 
-  it('fails on a comment that is not a vN tag, without guessing a major from it', () => {
-    const result = run(
-      workflowDir('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # main')
-    );
+  it('fails on an exact version, which holds the action at one release', () => {
+    const result = run(workflowDir('actions/checkout@v7.0.1'));
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("comment 'main' is not a vN tag");
+    expect(result.stdout).toContain('NOT MAJOR actions/checkout@v7.0.1');
+  });
+
+  it('fails on a branch, without guessing a major from it', () => {
+    const result = run(workflowDir('actions/checkout@main'));
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('NOT MAJOR actions/checkout@main');
   });
 
   /**
-   * A hold is the one way a pin may stay an older major, and it has to say why where the
-   * pin is. Neither case below reaches the network: a hold is not compared to the latest
+   * A hold is the one way a tag may stay an older major, and it has to say why where the
+   * tag is. Neither case below reaches the network: a hold is not compared to the latest
    * major at all, which is the whole point of it.
    */
-  it('accepts a pin held at an older major when the hold gives its reason', () => {
+  it('accepts a tag held at an older major when the hold gives its reason', () => {
     const result = run(
-      workflowDir(
-        'actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3 held: v4+ refuses non-github.com hosts'
-      )
+      workflowDir('actions/upload-artifact@v3 # held: v4+ refuses non-github.com hosts')
     );
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('held      actions/upload-artifact@ff15f030');
-    expect(result.stdout).toContain('at v3: v4+ refuses non-github.com hosts');
+    expect(result.stdout).toContain(
+      'held      actions/upload-artifact@v3: v4+ refuses non-github.com hosts'
+    );
   });
 
   it("refuses 'held:' with no reason, so the marker cannot silence the check quietly", () => {
-    const result = run(
-      workflowDir('actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3 held:')
-    );
+    const result = run(workflowDir('actions/upload-artifact@v3 # held:'));
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("'held:' with no reason is not a hold");
   });
 
   /**
    * On Forgejo the job's `GITHUB_TOKEN` is Forgejo's, and sending it to api.github.com
-   * turned every lookup into a 401 (runs 85 and 86). A held pin keeps both cases off the
+   * turned every lookup into a 401 (runs 85 and 86). A held tag keeps both cases off the
    * network; what is asserted is only whether the token was accepted.
    */
-  const HELD_PIN =
-    'actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3 held: v4+ refuses non-github.com hosts';
+  const HELD_PIN = 'actions/upload-artifact@v3 # held: v4+ refuses non-github.com hosts';
   const runWith = (env: Record<string, string>) =>
     spawnSync('node', ['scripts/check-action-versions.js', `--dir=${workflowDir(HELD_PIN)}`], {
       cwd: path.resolve('.'),

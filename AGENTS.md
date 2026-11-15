@@ -37,7 +37,7 @@ Run from the **repo root** unless noted.
 | Fast loop: format + typecheck + changed unit only | `pnpm check:fast`                                                      | Yes                      |
 | Fail fast if no dev server is warm                | `pnpm dev:check`                                                       | Yes                      |
 | Lint the Go server and the Dockerfile             | `pnpm lint:container`                                                  | Yes                      |
-| Actions SHA-pinned and no major behind            | `pnpm lint:actions`                                                    | Yes                      |
+| Actions on a major tag and none a major behind    | `pnpm lint:actions`                                                    | Yes                      |
 | Run the demo image locally                        | `pnpm demo` / `demo:up` / `demo:down`                                  | Yes                      |
 | Smoke-test a running demo image                   | `pnpm demo:smoke`                                                      | Yes                      |
 | Scaffold an app                                   | `pnpm new:app <id> [--service]`                                        | Yes                      |

@@ -67,18 +67,20 @@ a red build that blocks the deploy. Git hooks are global on these machines via
 `core.hooksPath`, and git honors exactly one hooks path — a repo's own hooks are
 reached only because the global ones dispatch to them.
 
-## Pins are resolved, not typed
+## Actions follow their major tag
 
-Every action in `.github/workflows/` is pinned to a commit SHA with the tag it
-came from in a trailing comment, and `pnpm lint:actions` resolves each one
-against GitHub. A pin no repository holds fails there — and so do a rate limit
-and a network error, reported as _unresolved_ rather than skipped, because a pin
-the lint could not check is not a checked pin. A lane once pinned two actions to
-SHAs that exist in no repository and added a release step zipping a `dist/` its
-job never built; every gate it ran was green. So resolve every SHA you write
-yourself — `gh api repos/<o>/<r>/git/ref/tags/<tag>`, then
-`gh api repos/<o>/<r>/commits/<sha>` — and when the lint cannot reach GitHub,
-say so in the report rather than reading its silence as a pass.
+Every action in `.github/workflows/` names a bare major tag (`@v7`), so each run
+takes that major's newest release; a commit SHA or an exact version (`@v7.1.0`)
+fails `pnpm lint:actions`, which also fails on a newer major and asks for its
+release notes to be read before the tag moves. A rate limit or a network error
+is reported as _unresolved_ rather than skipped, because a tag the lint could
+not check is not a checked tag. What the lint cannot see is whether the action
+publishes that major: check a new one with
+`git ls-remote https://github.com/<o>/<r> refs/tags/<tag>` before writing it,
+since GitHub refuses an unknown `uses:` only when a job reaches it, and a lane
+once added actions that existed in no repository with every gate green. When the
+lint cannot reach GitHub, say so in the report rather than reading its silence
+as a pass.
 
 ## Where CI runs, and what a green tick can hide
 

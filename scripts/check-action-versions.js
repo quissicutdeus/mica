@@ -3,40 +3,41 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Every workflow action is pinned to a commit SHA, and none has fallen a major behind.
+ * Every workflow action follows its major tag, and none has fallen a major behind.
  *
- * Two checks, in that order. A `uses:` must be a full 40-hex commit SHA with the version
- * it was resolved from in a trailing comment (`@3d3c42e... # v7`). A `@v7` tag is a
- * moving target -- GitHub re-points it at every v7.x release, and whoever can push to the
- * action's repository can re-point it at anything -- so a tag is trust in a maintainer's
- * account for as long as the workflow runs, where a SHA is trust in one reviewed commit
- * (MICA-199). Then, from the comment, the script asks whether a newer MAJOR exists.
- * Only the major, deliberately: drift inside a major is what the SHA pin exists to hold
- * still, and drift across one is where a runtime deprecation lands.
+ * Two checks, in that order. A `uses:` must name a bare major tag (`@v7`): GitHub moves
+ * that tag to every v7.x release, so each run takes the newest one without anyone
+ * bumping it. A commit SHA or an exact version (`@v7.1.0`) holds the action still, which
+ * is what this repository decided against on 2026-11-15: until then every action was
+ * SHA-pinned (MICA-199), trusting one reviewed commit rather than the maintainer's
+ * account, and the pins fell a release or two behind between the bumps nobody made. The
+ * trade taken is that whoever can push to an action's repository can re-point its major
+ * tag; the actions used here are GitHub's own, Docker's and pnpm's. Then the script asks
+ * whether a newer MAJOR exists, since a major is where breaking changes and runtime
+ * deprecations land, and moving to one wants its release notes read.
  *
- * A pin may be **held** at an older major on purpose, and the hold has to be written
- * where the pin is: `@<sha> # v3 held: <reason>`. The tag is still recorded and the SHA is
- * still required; what changes is that no newer major is asked for. The first hold was
- * `actions/upload-artifact`, whose v4+ refuses to run on any host but github.com while
- * the same workflow also runs on Forgejo. A hold with no reason is not a hold -- the
- * marker without text is reported as unresolved, so "held:" cannot become a way to
- * silence the check without saying why.
+ * A tag may be **held** at an older major on purpose, and the hold has to be written
+ * where the tag is: `@v3 # held: <reason>`. What changes is that no newer major is asked
+ * for. The first hold was `actions/upload-artifact`, whose v4+ refused to run on any host
+ * but github.com while the same workflow also ran on Forgejo. A hold with no reason is
+ * not a hold -- the marker without text is reported as unresolved, so "held:" cannot
+ * become a way to silence the check without saying why.
+ *
  * `.github/dependabot.yml` used to watch the majors and was deleted -- every merge of one
  * of its pull requests put dependabot[bot] in the repository's contributor list, which is
- * not a trade worth making for a weekly bump. Renovate was considered for the SHA pins and
- * not adopted for the same reason. This script opens no pull request and authors no
- * commit; a bump is a human reading the release notes and resolving the tag by hand
- * (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing an annotated tag once).
+ * not a trade worth making for a weekly bump. This script opens no pull request and
+ * authors no commit; a major bump is a human reading the release notes and editing the
+ * tag.
  *
- * It FAILS on anything it could not judge rather than passing quietly: a pin with no
- * version comment, a comment that is not a `vN` tag, a rate limit, a network error. A
- * version check that cannot reach the API and says nothing reads as "everything is
- * current", which is the worst answer it could give -- so those are an exit code, not a
- * warning. What it cannot see is whether the SHA is a real commit of that repository;
- * `actions/checkout` refuses to resolve one that is not, so a fabricated pin fails the
- * first workflow run that reaches it, loudly.
+ * It FAILS on anything it could not judge rather than passing quietly: a hold with no
+ * reason, a ref it cannot read as a major, a rate limit, a network error. A version
+ * check that cannot reach the API and says nothing reads as "everything is current",
+ * which is the worst answer it could give -- so those are an exit code, not a warning.
+ * What it cannot see is whether the action publishes that major at all; GitHub refuses
+ * a `uses:` it cannot resolve at "Set up job", so a mistyped tag fails the first
+ * workflow run that reaches it, loudly.
  *
- *   node scripts/check-action-versions.js            fail on an unpinned ref or a newer major
+ *   node scripts/check-action-versions.js            fail on a ref that is not a major tag, or a newer major
  *   node scripts/check-action-versions.js --list      print findings, always exit 0
  *   node scripts/check-action-versions.js --dir=DIR   scan DIR instead, to prove it fires
  *
@@ -63,11 +64,11 @@ const USES =
 /** A tag this can reason about: `v7`, `v7.1`, `v7.1.2`. Anything else is unresolvable. */
 const VTAG = /^v(\d+)(?:\.\d+)*$/;
 
-/** `v3 held: <reason>` -- a deliberate stop at an older major, with the reason beside it. */
-const HELD = /^(v\d+(?:\.\d+)*)\s+held:\s*(.*)$/;
+/** `@v3 # held: <reason>` -- a deliberate stop at an older major, with the reason beside it. */
+const HELD = /^held:\s*(.*)$/;
 
-/** A full commit SHA: 40 hex characters */
-const SHA = /^[0-9a-f]{40}$/;
+/** A bare major tag, the only ref that follows the action's releases: `v7`. */
+const MAJOR = /^v(\d+)$/;
 
 /**
  * A job's `GITHUB_TOKEN` is issued by whichever server runs the job. On Forgejo that is a
@@ -143,7 +144,7 @@ const latestMajorOnce = (repo) => {
   return latestByRepo.get(repo);
 };
 
-/** Every `owner/repo` used across the workflows, with the SHAs and tags it is pinned at. */
+/** Every `owner/repo` used across the workflows, with the refs it is used at. */
 function collect() {
   const pins = new Map();
   for (const file of fs.readdirSync(WORKFLOWS).filter((f) => /\.ya?ml$/.test(f))) {
@@ -167,7 +168,7 @@ if (pins.size === 0) {
   process.exit(1);
 }
 
-const notSha = [];
+const notMajor = [];
 const behind = [];
 const unresolved = [];
 const current = [];
@@ -176,85 +177,69 @@ const held = [];
 for (const [repo, { refs, files }] of [...pins].sort()) {
   const where = [...files].sort().join(', ');
   for (const { ref, comment } of [...refs].sort((a, b) => a.ref.localeCompare(b.ref))) {
-    // Every action must be pinned to a full commit SHA
-    if (!SHA.exec(ref)) {
-      notSha.push({ repo, ref, where, comment });
+    // Every action must follow a bare major tag: a SHA or an exact version holds it still.
+    const tag = MAJOR.exec(ref);
+    if (!tag) {
+      notMajor.push({ repo, ref, where });
       continue;
     }
 
-    // The comment is the only record of which tag the SHA came from. Without it the
-    // major check has nothing to compare, and "could not check" is a failure here, not a
-    // pass -- see the docblock.
-    const version = (comment ?? '').trim();
-
-    // A hold: the tag is recorded, the major is not compared. The reason is mandatory.
-    const hold = HELD.exec(version);
+    // A hold: the major is not compared to the latest. The reason is mandatory.
+    const hold = HELD.exec((comment ?? '').trim());
     if (hold) {
-      if (!hold[2].trim()) {
-        unresolved.push({ repo, ref, version, where, why: "'held:' with no reason is not a hold" });
+      if (!hold[1].trim()) {
+        unresolved.push({ repo, ref, where, why: "'held:' with no reason is not a hold" });
       } else {
-        held.push({ repo, ref, version: hold[1], reason: hold[2].trim() });
+        held.push({ repo, ref, reason: hold[1].trim() });
       }
-      continue;
-    }
-
-    const pinned = VTAG.exec(version);
-    if (!pinned) {
-      unresolved.push({
-        repo,
-        ref,
-        version,
-        where,
-        why: version ? `comment '${version}' is not a vN tag` : 'no version comment after the SHA'
-      });
       continue;
     }
 
     try {
       const latest = await latestMajorOnce(repo);
-      if (latest.major > Number(pinned[1])) {
-        behind.push({ repo, ref, version, latest: latest.tag, where });
+      if (latest.major > Number(tag[1])) {
+        behind.push({ repo, ref, latest: latest.tag, where });
       } else {
         current.push({ repo, ref, latest: latest.tag });
       }
     } catch (error) {
-      unresolved.push({ repo, ref, version, where, why: error.message });
+      unresolved.push({ repo, ref, where, why: error.message });
     }
   }
 }
 
 for (const { repo, ref, latest } of current) {
-  console.log(`  ok        ${repo}@${ref.slice(0, 8)}...  (${latest})`);
+  console.log(`  ok        ${repo}@${ref}  (latest ${latest})`);
 }
-for (const { repo, ref, version, reason } of held) {
-  console.log(`  held      ${repo}@${ref.slice(0, 8)}...  at ${version}: ${reason}`);
+for (const { repo, ref, reason } of held) {
+  console.log(`  held      ${repo}@${ref}: ${reason}`);
 }
 for (const { repo, ref, latest, where } of behind) {
-  console.log(`  BEHIND    ${repo}@${ref.slice(0, 8)}... -> ${latest}   in ${where}`);
+  console.log(`  BEHIND    ${repo}@${ref} -> ${latest}   in ${where}`);
 }
 for (const { repo, ref, where, why } of unresolved) {
-  console.log(`  UNKNOWN   ${repo}@${ref.slice(0, 8)}...   in ${where}: ${why}`);
+  console.log(`  UNKNOWN   ${repo}@${ref}   in ${where}: ${why}`);
 }
-for (const { repo, ref, where, comment } of notSha) {
-  console.log(`  NOT SHA   ${repo}@${ref}   in ${where}${comment ? ` (comment: ${comment})` : ''}`);
+for (const { repo, ref, where } of notMajor) {
+  console.log(`  NOT MAJOR ${repo}@${ref}   in ${where}`);
 }
 
 console.log(
-  `\n${current.length} pinned, ${held.length} held, ${behind.length} behind, ${unresolved.length} unresolved, ${notSha.length} not SHA-pinned`
+  `\n${current.length} current, ${held.length} held, ${behind.length} behind, ${unresolved.length} unresolved, ${notMajor.length} not on a major tag`
 );
 
 if (LIST_ONLY) process.exit(0);
 
-if (notSha.length > 0) {
-  console.error('\nAll actions must be pinned to a full commit SHA (40 hex characters).');
-  console.error('Add the version as a comment, e.g., `@abc1234567...def # v7`.');
+if (notMajor.length > 0) {
+  console.error('\nEvery action must follow a bare major tag, e.g. `@v7`: a commit SHA or an');
+  console.error('exact version holds it at one release while the major moves on.');
 }
 if (behind.length > 0) {
-  console.error('\nA newer major exists for the actions marked BEHIND. Bump the SHA and comment');
+  console.error('\nA newer major exists for the actions marked BEHIND. Move the tag');
   console.error("after reading that major's release notes -- majors carry breaking changes.");
 }
 if (unresolved.length > 0) {
   console.error('\nSome actions could not be checked, which is reported as a failure rather');
   console.error('than a pass: a silent version check reads as "everything is current".');
 }
-process.exit(notSha.length + behind.length + unresolved.length > 0 ? 1 : 0);
+process.exit(notMajor.length + behind.length + unresolved.length > 0 ? 1 : 0);

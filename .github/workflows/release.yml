@@ -45,7 +45,7 @@ jobs:
           fi
           echo "ref=refs/tags/$WANTED" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.target.outputs.ref }}
           # Full history, not the default shallow clone: the CalVer below
@@ -121,7 +121,7 @@ jobs:
       # `pnpm build` on Node 26 was the price of admission. That is why this job installs
       # and builds now, where it once ran `pnpm pack` from a manifest alone: the tarballs
       # still need no node_modules, the zip needs the whole build.
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: pnpm/action-setup@v6
         if: steps.tag.outputs.skip == ''
         name: Install pnpm 11
         with:
@@ -129,7 +129,7 @@ jobs:
 
       - name: Install Node.js 26
         if: steps.tag.outputs.skip == ''
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v7
         with:
           node-version: 26
           cache: 'pnpm'
@@ -187,7 +187,7 @@ jobs:
       # untouched.
       - name: Check out the run-checked.sh this workflow expects
         if: steps.tag.outputs.skip == ''
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           path: .wrapper-check
@@ -294,7 +294,7 @@ jobs:
 
       - name: Attest build provenance
         if: steps.tag.outputs.skip == ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/release/*.tgz
