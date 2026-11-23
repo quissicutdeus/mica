@@ -30,15 +30,8 @@ concurrency:
   group: verify-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Least privilege, stated once for every job.
-#
-# Without this the workflow runs on whatever the repository's default token scope is —
-# read/write on most repos, and something an operator can change under it without either
-# side noticing. Nothing here writes to GitHub: no image is pushed, no comment posted, no
-# ref moved. `contents: read` is what checkout needs and nothing more, and a job that ever
-# does need more declares its own block rather than widening this one.
-permissions:
-  contents: read
+# No `permissions:` block: Forgejo ignores GitHub's (and warns on every job). A run's own
+# token reads and writes this repository and no other; nothing here writes with it.
 
 jobs:
   verify:
@@ -235,15 +228,12 @@ jobs:
       # uploading only the failed shard's would give a report that silently omits half the
       # results while looking complete. On a green run these are small (traces are
       # retain-on-failure) and nothing downloads them; they expire in a day.
-      # github.com only. GitHub fails a job at "Set up job" if it so much as references a
-      # v3 artifact action, even in a step its `if:` would skip, so v3 cannot stay in this
-      # file as a Forgejo fallback. v4 and later refuse any host that is not github.com.
-      # Forgejo is a mirror of GitHub now and runs these files too, so on Forgejo the
-      # artifact steps are skipped: its E2E shards still pass or fail, it just keeps no
-      # blob report.
+      # Forgejo's own artifact action: GitHub's v4 and later refuse any host but github.com.
+      # (Named by URL, so scripts/check-action-versions.js, which looks up GitHub's
+      # actions, leaves it alone.)
       - name: Upload blob report
-        if: always() && github.server_url == 'https://github.com'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # v5
         with:
           name: blob-report-${{ strategy.job-index }}
           path: web/blob-report
@@ -260,9 +250,7 @@ jobs:
     name: E2E report
     runs-on: ubuntu-26.04
     needs: [e2e]
-    # github.com only: it exists to download the shards' blobs, which only github.com
-    # uploads (see the upload step above).
-    if: failure() && github.server_url == 'https://github.com'
+    if: failure()
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -282,7 +270,7 @@ jobs:
       # With no `name`, every artifact of the run lands in a subdirectory of its own (the
       # shards' uniquely named `blob-report-<n>`), so the blobs are gathered afterwards.
       - name: Download blob reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # v7
         with:
           path: web/blob-reports
 
@@ -296,7 +284,7 @@ jobs:
         run: pnpm --filter web exec playwright merge-reports --reporter html ./blob-report
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # v5
         with:
           name: playwright-report
           path: web/playwright-report
@@ -604,3 +592,87 @@ jobs:
           MICA_DB_USER: root
           MICA_DB_PASSWORD: mica-test
         run: node scripts/test-endpoints.js
+
+  # The deploys, after Verify, in Verify: a push to dev deploys dev.mica.gg and the FiveM
+  # resource, a push to main deploys mica.gg. They were a separate workflow fired by
+  # `workflow_run` when Verify completed, a trigger Forgejo does not run, so here they wait
+  # on Verify's jobs with `needs:` instead -- the same promise: nothing deploys unless
+  # Verify passed for this commit.
+  #
+  # `always()` in the `if` is load-bearing. A push to dev skips `e2e` and `container` by
+  # design, and a job that needs a skipped job is itself skipped, silently: dev would never
+  # deploy and nobody would hear. So the job always starts for its branch, and the gate step
+  # below decides: a needed job that failed or was cancelled fails the deploy, loudly (the
+  # job, the run and the commit go red); one skipped by design does not.
+  #
+  # `event_name == 'push'` keeps a pull request's Verify (the standing dev->main sync PR
+  # among them) from deploying anything. Two pushes' deploys never overlap on the box:
+  # deploy.sh on hoth holds its own lock.
+  deploy-dev:
+    name: Deploy dev
+    needs: [verify, e2e, container, schema, endpoints]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Require a green Verify
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          if printf '%s' "$NEEDS" | grep -Eq '"result": *"(failure|cancelled)"'; then
+            message="Verify was not green for ${GITHUB_SHA} on dev, so dev.mica.gg was NOT"
+            message="${message} deployed and is still on the previous commit."
+            echo "::error title=Deploy blocked::${message}"
+            echo "$NEEDS"
+            exit 1
+          fi
+
+      # The forced command on hoth's end does the whole deploy (scripts/deploy/deploy.sh):
+      # the key selects the target, and the session sends nothing. The step's status is ssh's,
+      # which is the script's: a failed build, a demo container that never turns healthy or a
+      # resource reload FXServer did not confirm reddens this step, the run and the commit.
+      # -T because the key carries no-pty: without it ssh may ask for a tty, sshd refuses, and
+      # the failure reads like a network problem.
+      - name: Deploy dev.mica.gg + FiveM resource
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -T -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts fivem@"$DEPLOY_HOST"
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY_DEV }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+  deploy-main:
+    name: Deploy main
+    needs: [verify, e2e, container, schema, endpoints]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    steps:
+      # Same gate as `deploy-dev`, and it needs its own copy: a deploy job added without one
+      # would deploy past a red Verify.
+      - name: Require a green Verify
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          if printf '%s' "$NEEDS" | grep -Eq '"result": *"(failure|cancelled)"'; then
+            message="Verify was not green for ${GITHUB_SHA} on main, so mica.gg was NOT"
+            message="${message} deployed and is still on the previous commit."
+            echo "::error title=Deploy blocked::${message}"
+            echo "$NEEDS"
+            exit 1
+          fi
+
+      # The same session as `deploy-dev`, with this target's key.
+      - name: Deploy mica.gg
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -T -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts fivem@"$DEPLOY_HOST"
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY_MAIN }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}

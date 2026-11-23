@@ -17,10 +17,7 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-  id-token: write
-  attestations: write
+# No `permissions:` block: Forgejo ignores GitHub's, and warns on every job.
 
 jobs:
   release:
@@ -63,7 +60,7 @@ jobs:
       - name: Compute CalVer and tag
         id: tag
         env:
-          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           WANTED: ${{ inputs.tag }}
         run: |
@@ -95,9 +92,16 @@ jobs:
             exit 1
           fi
 
-          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
-            if [ "$draft" = "true" ]; then
-              echo "::error::$tag has a leftover draft release from an earlier run. Delete it (gh release delete $tag) and re-run."
+          # Forgejo's API: 200 with the release, 404 without one. Anything else fails the step.
+          status=$(curl -sS -o release.json -w '%{http_code}' -H "Authorization: token $TOKEN" \
+            "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+          case $status in
+            200 | 404) ;;
+            *) echo "::error::Forgejo answered $status looking up the $tag release." && exit 1 ;;
+          esac
+          if [ "$status" = 200 ]; then
+            if grep -q '"draft":true' release.json; then
+              echo "::error::$tag has a leftover draft release from an earlier run. Delete it on the Releases page and re-run."
               exit 1
             fi
             echo "$tag is already released; nothing to do."
@@ -290,16 +294,11 @@ jobs:
         if: steps.tag.outputs.skip == ''
         run: |
           cd dist/release
-          sha256sum *.tgz *.zip > SHA256SUMS
+          sha256sum -- *.tgz *.zip > SHA256SUMS
 
-      - name: Attest build provenance
-        if: steps.tag.outputs.skip == ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-path: |
-            dist/release/*.tgz
-            dist/release/*.zip
-
+      # No build provenance attestation: actions/attest-build-provenance signs with GitHub's
+      # OIDC identity and stores in GitHub's attestation service, neither of which exists on
+      # Forgejo. SHA256SUMS, attached below, is what a download is checked against.
       # MICA-221: an owner reads a release for one question -- "does this need anything from
       # me" -- and a commit list cannot answer it. `scripts/lib/release-notes.js` picks the
       # CHANGELOG.md entry (or entries) this tag covers and prints them, with an explicit
@@ -334,21 +333,28 @@ jobs:
       - name: Draft the release with all assets attached
         if: steps.tag.outputs.skip == ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          gh release create "${{ steps.tag.outputs.tag }}" \
-            --draft \
-            --title "${{ steps.tag.outputs.tag }}" \
-            --notes-file release-notes.md \
-            --generate-notes \
-            dist/release/*.tgz \
-            dist/release/*.zip \
-            dist/release/SHA256SUMS
+          api=$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY
+          node -e 'const fs=require("fs"); const t=process.env.TAG;
+            process.stdout.write(JSON.stringify({tag_name:t, name:t, draft:true,
+              body:fs.readFileSync("release-notes.md","utf8")}))' >release-request.json
+          curl -fsS -X POST -H "Authorization: token $TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @release-request.json "$api/releases" >release.json
+          id=$(node -p 'require("./release.json").id')
+          for file in dist/release/*.tgz dist/release/*.zip dist/release/SHA256SUMS; do
+            curl -fsS -X POST -H "Authorization: token $TOKEN" -F "attachment=@$file" \
+              "$api/releases/$id/assets?name=$(basename "$file")" >/dev/null
+          done
+          echo "id=$id" >>"$GITHUB_OUTPUT"
+        id: draft
 
-      # Separate step so a failure here is legible as "the assets are on, publishing failed"
-      # rather than being buried in the call that did both.
       - name: Publish it, sealing the assets in
         if: steps.tag.outputs.skip == ''
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release edit "${{ steps.tag.outputs.tag }}" --draft=false
+          TOKEN: ${{ github.token }}
+          ID: ${{ steps.draft.outputs.id }}
+        run: |
+          curl -fsS -X PATCH -H "Authorization: token $TOKEN" -H 'Content-Type: application/json' \
+            -d '{"draft":false}' "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/releases/$ID" >/dev/null

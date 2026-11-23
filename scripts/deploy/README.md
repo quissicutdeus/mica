@@ -94,9 +94,10 @@ smoke test's settings, below.
 
 ## The deploy
 
-`.github/workflows/deploy.yml` runs after a green Verify on a push to `dev` or
-`main`, opens a session with that branch's key, and sends nothing. The step's
-status is ssh's, which is `deploy.sh`'s. In order, it:
+The deploy jobs at the end of `.forgejo/workflows/build-test.yml` (Verify) run
+after its other jobs on a push to `dev` or `main`, refuse if any of them failed,
+open a session with that branch's key, and send nothing. The step's status is
+ssh's, which is `deploy.sh`'s. In order, it:
 
 1. takes hoth's lock (below), waiting up to thirty minutes for a job already
    holding it rather than being dropped;

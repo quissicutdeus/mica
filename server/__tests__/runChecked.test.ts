@@ -110,9 +110,9 @@ describe.skipIf(!usable)('run-checked.sh', () => {
  * `ssh ... | tee` there would be green when the run was red.
  */
 describe('the workflows that reach hoth', () => {
-  const read = (f: string) => readFileSync(join(ROOT, '.github/workflows', f), 'utf8');
+  const read = (f: string) => readFileSync(join(ROOT, '.forgejo/workflows', f), 'utf8');
   const sites: Array<[file: string, sessions: number, checked: number]> = [
-    ['deploy.yml', 2, 0],
+    ['build-test.yml', 2, 0],
     ['release.yml', 2, 2],
     ['integration.yml', 1, 1]
   ];

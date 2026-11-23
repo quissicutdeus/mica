@@ -23,8 +23,7 @@ on:
     - cron: '17 9 * * 1'
   workflow_dispatch:
 
-permissions:
-  contents: read
+# No `permissions:` block: Forgejo ignores GitHub's, and warns on every job.
 
 jobs:
   check:

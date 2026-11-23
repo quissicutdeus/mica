@@ -54,7 +54,7 @@ const LIST_ONLY = process.argv.includes('--list');
 // watched fail is a gate nobody knows the shape of, and pinning a workflow backwards just
 // to test this one would mean pushing a deliberately stale `uses:` to find out.
 const DIR_ARG = process.argv.find((a) => a.startsWith('--dir='));
-const WORKFLOWS = DIR_ARG ? DIR_ARG.slice('--dir='.length) : '.github/workflows';
+const WORKFLOWS = DIR_ARG ? DIR_ARG.slice('--dir='.length) : '.forgejo/workflows';
 
 /** `uses: owner/repo/optional/subpath@ref`, ignoring `uses: ./local` and `docker://`. */
 const USES =

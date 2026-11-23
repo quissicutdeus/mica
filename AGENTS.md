@@ -540,7 +540,7 @@ does not need the e2e suite:
 | Markdown, config, `.github/`             | `format:check` + `lint:md`                  |
 | Shell (`scripts/**.sh`, `.githooks/`)    | `shellcheck -x` on the files                |
 | `docker/`, `Dockerfile`, `.dockerignore` | `lint:container` **and `docker build`**     |
-| `.github/workflows/`                     | `format:check` + `lint:md` + `lint:actions` |
+| `.forgejo/workflows/`                    | `format:check` + `lint:md` + `lint:actions` |
 | `client/`, `server/`, `shared/`          | `typecheck` + `test:unit`                   |
 | `web/`                                   | `typecheck` + `test:unit` + `test:e2e`      |
 | Anything you cannot confidently bound    | `pnpm verify`                               |

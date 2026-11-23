@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * MICA-125. Builds the public SDK docs site — https://docs.mica.gg/, linked from the
- * README and deployed by `.github/workflows/docs.yml`.
+ * README and deployed by `.forgejo/workflows/docs.yml`.
  *
  * ## Why this is a script and not just `typedoc`
  *

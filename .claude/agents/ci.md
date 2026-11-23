@@ -69,24 +69,30 @@ reached only because the global ones dispatch to them.
 
 ## Pins are resolved, not typed
 
-Every action in `.github/workflows/` is pinned to a commit SHA with the tag it
+Every action in `.forgejo/workflows/` is pinned to a commit SHA with the tag it
 came from in a trailing comment, and `pnpm lint:actions` resolves each one
-against GitHub. A pin no repository holds fails there — and so do a rate limit
-and a network error, reported as _unresolved_ rather than skipped, because a pin
-the lint could not check is not a checked pin. A lane once pinned two actions to
-SHAs that exist in no repository and added a release step zipping a `dist/` its
-job never built; every gate it ran was green. So resolve every SHA you write
+against GitHub (Forgejo's own actions, named by URL, are left out of that). A
+pin no repository holds fails there — and so do a rate limit and a network
+error, reported as _unresolved_ rather than skipped, because a pin the lint
+could not check is not a checked pin. A lane once pinned two actions to SHAs
+that exist in no repository and added a release step zipping a `dist/` its job
+never built; every gate it ran was green. So resolve every SHA you write
 yourself — `gh api repos/<o>/<r>/git/ref/tags/<tag>`, then
 `gh api repos/<o>/<r>/commits/<sha>` — and when the lint cannot reach GitHub,
 say so in the report rather than reading its silence as a pass.
 
 ## Where CI runs, and what a green tick can hide
 
-**GitHub is the primary remote** and runs the deploys and releases, with the
-secrets. The self-hosted Forgejo on hoth is a mirror that `mirror.yml` keeps in
-sync on every push, and it runs these same workflow files with no secrets. A
-step that must differ between them splits on `github.server_url`, as several
-already do.
+**The home Forgejo is the primary remote** (since 2026-11-23) and runs
+everything, deploys and releases included, from `.forgejo/workflows/`, with the
+secrets. GitHub is a public copy Forgejo push-mirrors to, and runs nothing: it
+has no workflow files. The deploys are jobs at the end of Verify (Forgejo has no
+`workflow_run`), the SDK docs are published as the `gh-pages` branch for
+GitHub's Pages to serve, and releases carry `SHA256SUMS` but no GitHub
+provenance attestation. `scripts/watch-ci.sh` still asks GitHub through `gh`, so
+it now finds no runs and fails; watch Forgejo's Actions page instead. The
+`github.server_url` splits that remain are harmless: the github.com side never
+runs.
 
 - **GitHub resolves every `uses:` in a job before it reads any `if:`.** An
   action GitHub refuses (the v3 artifact actions, since 2026) fails the whole
