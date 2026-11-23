@@ -24,10 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        name: Install pnpm 11
-        with:
-          version: 11
+      # pnpm from the job image when it's the right major (the runner's own image has it:
+      # the ansible repo's stacks/forgejo-runner, MICA-482); installed here where it isn't
+      # (Playwright's E2E container, GitHub's runners).
+      - name: Install pnpm 11
+        run: >-
+          case "$(pnpm --version 2>/dev/null)" in 11.*) ;;
+          *) npm install -g --no-fund --no-audit "pnpm@11" ;; esac
       # The runner's own pnpm store, when it has one: mica's tatooine runner gives every
       # job container the same persistent volume at /pnpm-store (the ansible repo's
       # stacks/forgejo-runner/config.yml), so installs link from what earlier jobs
