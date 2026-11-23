@@ -28,12 +28,21 @@ jobs:
         name: Install pnpm 11
         with:
           version: 11
+      # The runner's own pnpm store, when it has one: mica's tatooine runner gives every
+      # job container the same persistent volume at /pnpm-store (the ansible repo's
+      # stacks/forgejo-runner/config.yml), so installs link from what earlier jobs
+      # downloaded instead of fetching every package again. Anywhere else the
+      # directory is absent and pnpm keeps its default store.
+      - name: Use the runner's pnpm store, when it has one
+        run: if [ -d /pnpm-store ]; then pnpm config set store-dir /pnpm-store --location global; fi
 
       - name: Install Node.js 26
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 26
-          cache: 'pnpm'
+          # setup-node's pnpm cache is GitHub's cache service, for GitHub's own machines;
+          # mica's runner keeps the store itself (above).
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
 
       # --ignore-scripts: the root "prepare" script installs dev git hooks, which a CI job
       # has no use for.

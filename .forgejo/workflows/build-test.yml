@@ -75,11 +75,20 @@ jobs:
         name: Install pnpm ${{ matrix.pnpm-version }}
         with:
           version: ${{ matrix.pnpm-version }}
+      # The runner's own pnpm store, when it has one: mica's tatooine runner gives every
+      # job container the same persistent volume at /pnpm-store (the ansible repo's
+      # stacks/forgejo-runner/config.yml), so installs link from what earlier jobs
+      # downloaded instead of fetching every package again. Anywhere else the
+      # directory is absent and pnpm keeps its default store.
+      - name: Use the runner's pnpm store, when it has one
+        run: if [ -d /pnpm-store ]; then pnpm config set store-dir /pnpm-store --location global; fi
       - name: Install Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
+          # setup-node's pnpm cache is GitHub's cache service, for GitHub's own machines;
+          # mica's runner keeps the store itself (above).
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
       - name: Install dependencies
         # --ignore-scripts: same reason the Dockerfile uses it -- the root "prepare"
         # script installs dev git hooks, which CI never needs and which fails here
@@ -120,7 +129,7 @@ jobs:
       # and the `e2e` job below is exactly `pnpm verify`, and a gate added to verify.js
       # lands here automatically. Only e2e was ever carved out by name.
       #
-      # `--quick` drops e2e, which now runs sharded across its own machines: it was 158s
+      # `--quick` drops e2e, which runs in its own job below: it was 158s
       # of this job's 227s of gates, and the only reason this job was paying a 42s pull of
       # the Playwright image at all.
       #
@@ -135,26 +144,24 @@ jobs:
       - name: Verify
         run: pnpm verify --quick --no-container --no-db
 
-  # The e2e suite, on its own machines, split in two.
+  # The e2e suite, in a job of its own, in one piece.
   #
   # It was 158s of the ~227s `pnpm verify` spent in the job above, and it was also the
   # only reason that job ran inside the Playwright image at all -- a 42s pull, paid by
   # every gate whether or not it needed a browser. Between them those two facts were 69%
-  # of that job. Splitting the suite out takes both off it at once, and the shards run
-  # beside it rather than after it.
+  # of that job. A job of its own takes both off it at once, and runs beside it.
   #
-  # Two shards and not more because the fixed cost per shard is that same 42s image pull.
-  # Tests are ~156s of the 158s (the bundle the webServer serves builds in about five),
-  # so two shards is ~78s of tests against ~58s of setup, and a third would buy about
-  # twenty seconds of wall clock for another full machine's overhead. The matrix is one
-  # line to widen if that trade ever looks different.
-  #
-  # `fail-fast: false` deliberately: one shard failing must not cancel the other, or a
-  # red run tells you about half the suite and stays silent about the rest.
+  # One job, not shards. On GitHub's hosted runners it ran as two shards, each on a fresh
+  # machine of its own, which bought wall clock for ~58s of setup apiece. On mica's own
+  # runner on tatooine (since 2026-11-23, MICA-480) that trade is gone: the runner takes
+  # two jobs at a time, so a second shard queued behind Verify anyway, every shard paid the
+  # whole checkout, pnpm, Node and install again, and the shards competed for the same
+  # CPUs. One job runs the suite once, set up once, and Playwright's own HTML report is
+  # already whole -- no blob merging.
   e2e:
-    name: E2E ${{ matrix.shard }}
+    name: E2E
     runs-on: ubuntu-26.04
-    # Not on a push to dev. A push to dev runs `verify` and `schema` only; the e2e shards
+    # Not on a push to dev. A push to dev runs `verify` and `schema` only; the e2e suite
     # and the image build run on every pull request -- the standing dev->main one
     # included, which is where they gate what reaches main -- on a push to main, and on a
     # manual run. On a single self-hosted runner the five jobs of a dev push serialised to
@@ -173,10 +180,6 @@ jobs:
     # it, so a future playwright bump may have no `-resolute` build yet. Check
     # https://mcr.microsoft.com/v2/playwright/tags/list before changing either half.
     container: mcr.microsoft.com/playwright:v1.63.0-resolute
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ['1/2', '2/2']
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -184,11 +187,20 @@ jobs:
         name: Install pnpm 11
         with:
           version: 11
+      # The runner's own pnpm store, when it has one: mica's tatooine runner gives every
+      # job container the same persistent volume at /pnpm-store (the ansible repo's
+      # stacks/forgejo-runner/config.yml), so installs link from what earlier jobs
+      # downloaded instead of fetching every package again. Anywhere else the
+      # directory is absent and pnpm keeps its default store.
+      - name: Use the runner's pnpm store, when it has one
+        run: if [ -d /pnpm-store ]; then pnpm config set store-dir /pnpm-store --location global; fi
       - name: Install Node.js 26
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 26
-          cache: 'pnpm'
+          # setup-node's pnpm cache is GitHub's cache service, for GitHub's own machines;
+          # mica's runner keeps the store itself (above).
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
@@ -210,80 +222,22 @@ jobs:
           /tmp/chromium-103/chrome-linux/chrome --version
           echo "CEF_FLOOR_CHROMIUM=/tmp/chromium-103/chrome-linux/chrome" >> "$GITHUB_ENV"
 
-      # `--reporter=blob` rather than the config's own reporters. A shard sees only its
-      # own third of the results, so an HTML report per shard is two partial reports and
-      # no whole one; blob is the intermediate the merge job below turns back into a
-      # single report. Nothing about `pnpm test:e2e` changes for a developer.
-      #
-      # `workers` stays whatever Playwright picks (web/playwright.config.ts sets it to
-      # `undefined` on purpose). Sharding adds machines; raising workers would add
-      # contention on one, and that config's timeout comment records exactly what that
-      # did to this suite the last time -- six tests failing between 10.3s and 11.7s
-      # against a 10s limit, none of them actually broken.
-      - name: Run shard ${{ matrix.shard }}
-        run: pnpm --filter web exec playwright test --shard=${{ matrix.shard }} --reporter=blob
+      # The config's own reporters (web/playwright.config.ts: under CI, `github` and
+      # `html`), so a failure's report is the whole suite's. `workers` stays whatever
+      # Playwright picks (that config sets it to `undefined` on purpose): raising it adds
+      # contention, and that config's timeout comment records exactly what that did to
+      # this suite the last time -- six tests failing between 10.3s and 11.7s against a
+      # 10s limit, none of them actually broken.
+      - name: Run the e2e suite
+        run: pnpm --filter web exec playwright test
 
-      # `always()`, not `failure()`. The merge job below runs only when something failed,
-      # but it has to merge *every* shard's blob to produce a report of the whole suite --
-      # uploading only the failed shard's would give a report that silently omits half the
-      # results while looking complete. On a green run these are small (traces are
-      # retain-on-failure) and nothing downloads them; they expire in a day.
+      # Only on failure, as before the shards: traces are retain-on-failure, and a green
+      # run's report is nothing anybody opens.
       # Forgejo's own artifact action: GitHub's v4 and later refuse any host but github.com.
       # (Named by URL, so scripts/check-action-versions.js, which looks up GitHub's
       # actions, leaves it alone.)
-      - name: Upload blob report
-        if: always()
-        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # v5
-        with:
-          name: blob-report-${{ strategy.job-index }}
-          path: web/blob-report
-          retention-days: 1
-
-  # One readable HTML report out of the shards' blobs -- and only when something failed.
-  #
-  # `needs:` makes this run after the shards rather than beside them, so on a green run it
-  # would be pure added wall clock: about a minute of checkout and install for a report
-  # nobody opens. `if: failure()` is what keeps the common path at the cost of the slowest
-  # shard. This matches what the old single job did, which also uploaded its report only
-  # on failure.
-  e2e-report:
-    name: E2E report
-    runs-on: ubuntu-26.04
-    needs: [e2e]
-    if: failure()
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        name: Install pnpm 11
-        with:
-          version: 11
-      - name: Install Node.js 26
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 26
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      # Every shard's blob into one directory; merge-reports reads the set, not a file.
-      # With no `name`, every artifact of the run lands in a subdirectory of its own (the
-      # shards' uniquely named `blob-report-<n>`), so the blobs are gathered afterwards.
-      - name: Download blob reports
-        uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # v7
-        with:
-          path: web/blob-reports
-
-      - name: Gather the shards' blobs
-        run: |
-          mkdir -p web/blob-report
-          find web/blob-reports -mindepth 2 -type f -name '*.zip' -exec mv -t web/blob-report/ {} +
-          ls -l web/blob-report
-
-      - name: Merge into one report
-        run: pnpm --filter web exec playwright merge-reports --reporter html ./blob-report
-
       - name: Upload Playwright report
+        if: failure()
         uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # v5
         with:
           name: playwright-report
@@ -521,11 +475,20 @@ jobs:
         name: Install pnpm ${{ matrix.pnpm-version }}
         with:
           version: ${{ matrix.pnpm-version }}
+      # The runner's own pnpm store, when it has one: mica's tatooine runner gives every
+      # job container the same persistent volume at /pnpm-store (the ansible repo's
+      # stacks/forgejo-runner/config.yml), so installs link from what earlier jobs
+      # downloaded instead of fetching every package again. Anywhere else the
+      # directory is absent and pnpm keeps its default store.
+      - name: Use the runner's pnpm store, when it has one
+        run: if [ -d /pnpm-store ]; then pnpm config set store-dir /pnpm-store --location global; fi
       - name: Install Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
+          # setup-node's pnpm cache is GitHub's cache service, for GitHub's own machines;
+          # mica's runner keeps the store itself (above).
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Test migrations
@@ -579,11 +542,20 @@ jobs:
         name: Install pnpm ${{ matrix.pnpm-version }}
         with:
           version: ${{ matrix.pnpm-version }}
+      # The runner's own pnpm store, when it has one: mica's tatooine runner gives every
+      # job container the same persistent volume at /pnpm-store (the ansible repo's
+      # stacks/forgejo-runner/config.yml), so installs link from what earlier jobs
+      # downloaded instead of fetching every package again. Anywhere else the
+      # directory is absent and pnpm keeps its default store.
+      - name: Use the runner's pnpm store, when it has one
+        run: if [ -d /pnpm-store ]; then pnpm config set store-dir /pnpm-store --location global; fi
       - name: Install Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
+          # setup-node's pnpm cache is GitHub's cache service, for GitHub's own machines;
+          # mica's runner keeps the store itself (above).
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Test endpoints
