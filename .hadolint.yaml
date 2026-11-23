@@ -11,7 +11,7 @@ ignored:
   # maintenance for a reproducibility guarantee that stops at the stage boundary.
   #
   # The pins that DO reach the image are the ones that matter, and they are
-  # already explicit: the base image tags, and pnpm@11 matched to CI.
+  # already explicit: the base image tags, and pnpm@12 matched to CI.
   - DL3018
 
 failure-threshold: warning

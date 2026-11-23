@@ -17,7 +17,7 @@ SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 # No `packageManager` field in the root package.json to corepack from, so pin to
 # the major .forgejo/workflows/build-test.yml pins (`pnpm-version: [11]`) -- the
 # container and CI must not disagree about lockfile format.
-RUN npm install -g pnpm@11 --no-fund --no-audit && apk add --no-cache brotli
+RUN npm install -g pnpm@12 --no-fund --no-audit && apk add --no-cache brotli
 
 WORKDIR /app
 

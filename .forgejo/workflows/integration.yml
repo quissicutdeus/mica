@@ -27,10 +27,10 @@ jobs:
       # pnpm from the job image when it's the right major (the runner's own image has it:
       # the ansible repo's stacks/forgejo-runner, MICA-482); installed here where it isn't
       # (Playwright's E2E container, GitHub's runners).
-      - name: Install pnpm 11
+      - name: Install pnpm 12
         run: >-
-          case "$(pnpm --version 2>/dev/null)" in 11.*) ;;
-          *) npm install -g --no-fund --no-audit "pnpm@11" ;; esac
+          case "$(pnpm --version 2>/dev/null)" in 12.*) ;;
+          *) npm install -g --no-fund --no-audit "pnpm@12" ;; esac
       # The runner's own pnpm store, when it has one: mica's tatooine runner gives every
       # job container the same persistent volume at /pnpm-store (the ansible repo's
       # stacks/forgejo-runner/config.yml), so installs link from what earlier jobs
