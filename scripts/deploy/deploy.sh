@@ -63,8 +63,9 @@ trap ': >"$lock"' EXIT
 
 cd "/opt/fivem-$target/server-data/vendor/mica"
 
-# Over SSH with the read-only deploy key that ~/.ssh/config names github-mica.
-git fetch git@github-mica:quissicutdeus/mica.git "$target"
+# From the home Forgejo, where mica lives since 2026-11-23 (GitHub keeps a copy), over
+# SSH with the read-only deploy key that ~/.ssh/config names forgejo-mica.
+git fetch git@forgejo-mica:quissicutdeus/mica.git "$target"
 git reset --hard FETCH_HEAD
 
 # Re-install this script from the checkout it just reset, so a change to it reaches hoth with

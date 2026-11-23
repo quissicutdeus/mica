@@ -89,8 +89,8 @@ secrets. GitHub is a public copy Forgejo push-mirrors to, and runs nothing: it
 has no workflow files. The deploys are jobs at the end of Verify (Forgejo has no
 `workflow_run`), the SDK docs are published as the `gh-pages` branch for
 GitHub's Pages to serve, and releases carry `SHA256SUMS` but no GitHub
-provenance attestation. `scripts/watch-ci.sh` still asks GitHub through `gh`, so
-it now finds no runs and fails; watch Forgejo's Actions page instead. The
+provenance attestation. `scripts/watch-ci.sh` asks Forgejo's API (MICA-481),
+with the token in `FORGEJO_TOKEN` or `~/.config/forgejo/token`. The
 `github.server_url` splits that remain are harmless: the github.com side never
 runs.
 
