@@ -19,6 +19,13 @@ on:
 
 # No `permissions:` block: Forgejo ignores GitHub's, and warns on every job.
 
+# One run at a time per branch: a newer push cancels the older run on a
+# branch or pull request, but on main runs queue, so a deploy or release is
+# never cancelled halfway.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   release:
     name: Tag and release

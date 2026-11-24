@@ -12,6 +12,12 @@ on:
 
 # No `permissions:` block: Forgejo ignores GitHub's, and warns on every job.
 
+# One run at a time per branch: checks only, nothing deployed, so a newer
+# push simply cancels the older run, on main too.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   reuse:
     name: Verify SPDX compliance
