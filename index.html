@@ -1,0 +1,149 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="./"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>@mica/sdk (SDK contract v1)</title><meta name="description" content="Documentation for @mica/sdk (SDK contract v1)"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script><script async src="assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="index.html" class="title">@mica/sdk (SDK contract v1)</a>
+<div id="tsd-toolbar-links"></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<h1>@mica/sdk (SDK contract v1)</h1></div>
+<div class="tsd-panel tsd-typography"><h1 id="micasdk" class="tsd-anchor-link">@mica/sdk<a href="#micasdk" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h1>
+<p>The contract every micaOS app and every out-of-tree add-on is built against.
+Apps reach the phone strictly through this package: the shell's own pieces —
+<code>PhoneFrame</code>, <code>Launcher</code>, <code>ToastHost</code>, <code>ErrorBoundary</code> — are deliberately not
+exported, and an app that draws its own phone frame is a bug.</p>
+<h2 id="is-two-barrels-wearing-one-name" class="tsd-anchor-link"><code>@mica/sdk</code> is two barrels wearing one name<a href="#is-two-barrels-wearing-one-name" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>The specifier an app writes is always <code>@mica/sdk</code>. <strong>Which file it resolves to
+is decided by the bundle being built, not by the import</strong>, and the two files do
+not export quite the same set:</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>File</th>
+<th>Resolved by</th>
+<th>Who gets it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>index</code></td>
+<td><code>sdk/index.ts</code></td>
+<td><code>web/vite.config.ts</code></td>
+<td>the phone's own shell and its <code>core: true</code> apps, in-process</td>
+</tr>
+<tr>
+<td><code>addon</code></td>
+<td><code>sdk/addon.ts</code></td>
+<td><code>web/vite.addon.config.ts</code></td>
+<td>an out-of-tree <code>core: false</code> add-on, in a sandboxed iframe</td>
+</tr>
+<tr>
+<td><code>app</code></td>
+<td><code>sdk/app.ts</code></td>
+<td><code>@mica/sdk/app</code></td>
+<td>a manifest file, and only a manifest file</td>
+</tr>
+<tr>
+<td><code>core</code></td>
+<td><code>sdk/core.ts</code></td>
+<td><code>@mica/sdk/core</code></td>
+<td>a <code>core: true</code> app that needs the raw NUI transport</td>
+</tr>
+<tr>
+<td><code>dev</code></td>
+<td><code>sdk/dev.ts</code></td>
+<td><code>@mica/sdk/dev</code></td>
+<td>an add-on's <code>pnpm dev</code> only, never a bundle you ship</td>
+</tr>
+</tbody>
+</table>
+<p><strong>If you are writing a Store add-on, <code>addon</code> is your surface.</strong> It is the one
+that has <code>bootAddOn</code>, which is the function your bundle must call; a
+<code>core: false</code> bundle has no NUI at all and reaches the shell only through the
+<code>postMessage</code> protocol <code>bootAddOn</code> sets up.</p>
+<p><code>app</code> exists because a manifest has to be loadable before the SDK is — importing
+the main barrel from a manifest closes an import cycle and every binding comes
+out <code>undefined</code>. <code>core</code> is the surface a sandboxed add-on is refused:
+<code>useNuiBridge</code> can invoke any registered NUI callback by name, so it would
+defeat every permission the sandbox exists to enforce.</p>
+<p><code>dev</code> is the opposite case: something an add-on has during development and must
+never have in a bundle it ships. It is the in-frame mock of an add-on's server
+half (<code>defineAddonMock</code>, <code>installAddonMock</code>) that the add-on template's
+<code>pnpm dev</code> installs so a demo phone with no FiveM server behind it has something
+to answer <code>useService</code> (MICA-311). It is off both barrels on purpose, and the
+template's production build refuses any import of it, because a mock that
+reached a shipped bundle would answer the add-on's service itself instead of the
+server's.</p>
+<p>Both <code>index</code> and <code>addon</code> are documented here on purpose, because the bare
+specifier means a different file to each build: the shell's Vite config aliases
+<code>@mica/sdk</code> to <code>index</code>, and the add-on build aliases it to <code>addon</code>. What a
+package manager resolves for <code>.</code> is decided, though (MICA-125):
+<code>sdk/package.json</code> maps <code>.</code> to <code>addon.ts</code>. The map can only be right for one
+audience, and the one that reads it is outside this repository — add-on authors
+— while the shell always has a Vite config to alias in. So <code>index</code> is published
+under no subpath at all: an outside consumer resolving it would get names it
+cannot call and no <code>bootAddOn</code>.</p>
+<h2 id="which-version-is-this" class="tsd-anchor-link">Which version is this?<a href="#which-version-is-this" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>The number in the header and the footer of every page is <code>SDK_CONTRACT_VERSION</code>,
+from <code>sdk/version.ts</code>. It is the version of the exported surface itself — the
+names each entry point publishes, the values you can call and the types you can
+name alike, the props of every exported component, and the members of every
+exported string vocabulary. It moves when that surface moves and at no other
+time, which is what makes it the number worth pinning an add-on against.</p>
+<p>It is deliberately <strong>not</strong> either of the other two numbers in this repo:</p>
+<ul>
+<li><code>MICA_VERSION</code> is a CalVer stamp of the running phone build, computed from
+<code>git log</code> and moving on every push. An add-on branching on it is branching on
+noise, and an add-on bundle cannot know it anyway — it reads <code>''</code>.</li>
+<li><code>package.json</code>'s <code>1.0.0</code> is a placeholder read by no code. Displaying it would
+advertise a published npm package that does not exist.</li>
+</ul>
+<p>Nothing in the phone consults the contract version at install or boot time.
+There is no runtime compatibility gate; this is a number you can read and act
+on, not one the shell enforces for you.</p>
+<h2 id="what-this-site-cannot-show" class="tsd-anchor-link">What this site cannot show<a href="#what-this-site-cannot-show" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>TypeDoc reads TypeScript, not Svelte. The SDK's UI primitives — <code>Screen</code>,
+<code>Button</code>, <code>ListItem</code>, <code>Avatar</code> and the rest of <code>sdk/ui/</code> — are <code>.svelte</code> files,
+so they are exported by these barrels but have no page here. Read <code>sdk/ui/</code> in
+the repository for those. A type an app needs to name is declared in a <code>.ts</code>
+sibling beside its component, so it does have a page.</p>
+<h2 id="how-the-two-barrels-differ" class="tsd-anchor-link">How the two barrels differ<a href="#how-the-two-barrels-differ" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>Derived from this build, not written by hand — if it disagrees with the module
+pages beside it, this build is broken.</p>
+<ul>
+<li><strong>On <code>index</code> and not <code>addon</code></strong> (4): <code>CatalogEntry</code>, <code>fetchCatalog</code>, <code>getRemoteCatalogUrl</code>, <code>getTrustedRemoteAppHosts</code>. These are the
+shell's own controls. An add-on that could name its own host as trusted, or
+rewrite the Store catalog URL, is the hole the sandbox exists to close.</li>
+<li><strong>On <code>addon</code> and not <code>index</code></strong> (1): <code>bootAddOn</code>. The iframe entry
+point, which has no meaning for an app running in-process.</li>
+</ul>
+<p>Everything else is on both.</p>
+</div></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div>
+<details open class="tsd-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>On This Page</h3></summary>
+<div class="tsd-accordion-details"><a href="#micasdk"><span>@mica/sdk</span></a>
+<ul>
+<li><a href="#is-two-barrels-wearing-one-name"><span> is two barrels wearing one name</span></a></li>
+<li><a href="#which-version-is-this"><span>Which version is this?</span></a></li>
+<li><a href="#what-this-site-cannot-show"><span>What this site cannot show</span></a></li>
+<li><a href="#how-the-two-barrels-differ"><span>How the two barrels differ</span></a></li></ul></div></details></div>
+<div class="site-menu">
+<nav class="tsd-navigation"><a href="modules.html">@mica/sdk (SDK contract v1)</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p>
+<p>SDK contract v1 — <code>SDK_CONTRACT_VERSION</code> in <code>sdk/version.ts</code>. Not the phone's build version.</p></footer>
+<div class="overlay"></div></body></html>

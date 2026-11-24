@@ -1,0 +1,76 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>useSearchProvider | @mica/sdk (SDK contract v1)</title><meta name="description" content="Documentation for @mica/sdk (SDK contract v1)"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script><script async src="../assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">@mica/sdk (SDK contract v1)</a>
+<div id="tsd-toolbar-links"></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<ul class="tsd-breadcrumb" aria-label="Breadcrumb">
+<li><a href="../modules/index.html">index</a></li>
+<li><a href="" aria-current="page">useSearchProvider</a></li></ul>
+<h1>Function useSearchProvider</h1></div>
+<section class="tsd-panel">
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="usesearchprovider"><span class="tsd-kind-call-signature">useSearchProvider</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">appId</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">search</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">needle</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">)</span> <span class="tsd-signature-symbol">=&gt;</span> <a href="../interfaces/index.ProvidedHit.html" class="tsd-signature-type tsd-kind-interface">ProvidedHit</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-symbol">()</span> <span class="tsd-signature-symbol">=&gt;</span> <span class="tsd-signature-type">void</span><a href="#usesearchprovider" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Contribute this app's own rows to the phone's search (MICA-286).</p>
+<p>The home-screen search knows how to find an app, a contact, a conversation, a photo, a
+mail and a listing, because the shell holds all six. It holds nothing an app owns — and
+for a <code>core: false</code> add-on it never can: core may not name an app the Store installs
+(<code>sdk/coreBoundary.test.ts</code>), and an add-on's rows live inside a sandboxed frame the
+shell cannot read. This is how they get listed anyway.</p>
+<pre><code class="ts"><span class="hl-2">useSearchProvider</span><span class="hl-1">(</span><span class="hl-5">&#39;notes&#39;</span><span class="hl-1">, (</span><span class="hl-7">needle</span><span class="hl-1">) </span><span class="hl-3">=&gt;</span><br/><span class="hl-1">  </span><span class="hl-2">filterByQuery</span><span class="hl-1">(</span><span class="hl-7">$notes</span><span class="hl-1">, </span><span class="hl-7">needle</span><span class="hl-1">, (</span><span class="hl-7">n</span><span class="hl-1">) </span><span class="hl-3">=&gt;</span><span class="hl-1"> [</span><span class="hl-7">n</span><span class="hl-1">.</span><span class="hl-7">title</span><span class="hl-1">, </span><span class="hl-7">n</span><span class="hl-1">.</span><span class="hl-7">content</span><span class="hl-1">]).</span><span class="hl-2">map</span><span class="hl-1">((</span><span class="hl-7">note</span><span class="hl-1">) </span><span class="hl-3">=&gt;</span><span class="hl-1"> ({</span><br/><span class="hl-1">    </span><span class="hl-7">id:</span><span class="hl-1"> </span><span class="hl-7">note</span><span class="hl-1">.</span><span class="hl-7">id</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-7">title:</span><span class="hl-1"> </span><span class="hl-7">note</span><span class="hl-1">.</span><span class="hl-7">title</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-7">subtitle:</span><span class="hl-1"> </span><span class="hl-7">note</span><span class="hl-1">.</span><span class="hl-7">content</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-7">props:</span><span class="hl-1"> { </span><span class="hl-7">noteId:</span><span class="hl-1"> </span><span class="hl-7">note</span><span class="hl-1">.</span><span class="hl-7">id</span><span class="hl-1"> }</span><br/><span class="hl-1">  }))</span><br/><span class="hl-1">);</span>
+</code><button type="button">Copy</button></pre>
+
+<p><strong><code>search</code> runs where the app runs</strong>, on the app's own rows, and only the hits it returns
+are handed to the shell. <code>needle</code> is already trimmed and lower-cased, and is never empty:
+an empty query clears this app's rows without asking it anything.</p>
+<p><strong><code>props</code> is a deep link into this app</strong>, the same object <code>useDeepLink</code> reads back —
+<code>openApp(appId, props)</code> is what a tap does. An app with no deep link may omit it and the
+row opens the app root, which is the honest fallback rather than a dead tap.</p>
+<p>Three things follow from residency, and they are the reason this is a hook rather than a
+manifest field:</p>
+<ul>
+<li><strong>The app has to be running.</strong> Apps mount on first open and stay mounted, so a phone
+that has never opened this app in this session lists nothing from it. That is a real
+limit and not a bug this hook can fix — an app that is not running has no code in
+memory to ask.</li>
+<li><strong>Nothing is fetched for a search.</strong> <code>search</code> is synchronous by construction, so it
+answers from what the app already holds. An app that wants its rows findable before it
+is opened should declare a <code>preload</code> in its manifest, which is what fills those caches.</li>
+<li><strong>The subscription ends with the component.</strong> The returned function releases it early
+for a caller that wants a provider scoped to one screen; unmount does it otherwise.</li>
+</ul>
+<p>A <code>search</code> that throws is caught here: the phone's search must not break because one app
+did, so this app contributes nothing for that keystroke and the rest of the list is
+unaffected.</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">appId</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">search</span>: <span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">needle</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">)</span> <span class="tsd-signature-symbol">=&gt;</span> <a href="../interfaces/index.ProvidedHit.html" class="tsd-signature-type tsd-kind-interface">ProvidedHit</a><span class="tsd-signature-symbol">[]</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-symbol">()</span> <span class="tsd-signature-symbol">=&gt;</span> <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/host/useSearchProvider.ts:62</li></ul></aside></div></li></ul></section></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div></div>
+<div class="site-menu">
+<nav class="tsd-navigation"><a href="../modules.html">@mica/sdk (SDK contract v1)</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p>
+<p>SDK contract v1 — <code>SDK_CONTRACT_VERSION</code> in <code>sdk/version.ts</code>. Not the phone's build version.</p></footer>
+<div class="overlay"></div></body></html>

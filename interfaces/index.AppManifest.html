@@ -1,0 +1,386 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>AppManifest | @mica/sdk (SDK contract v1)</title><meta name="description" content="Documentation for @mica/sdk (SDK contract v1)"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script><script async src="../assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">@mica/sdk (SDK contract v1)</a>
+<div id="tsd-toolbar-links"></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<ul class="tsd-breadcrumb" aria-label="Breadcrumb">
+<li><a href="../modules/index.html">index</a></li>
+<li><a href="" aria-current="page">AppManifest</a></li></ul>
+<h1>Interface AppManifest</h1></div>
+<div class="tsd-signature"><span class="tsd-signature-keyword">interface</span> <span class="tsd-kind-interface">AppManifest</span> <span class="tsd-signature-symbol">{</span><br/>    <a class="tsd-kind-property" href="#author">author</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#badgestore">badgeStore</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Readable</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#bundleurl">bundleUrl</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#core">core</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#defaultprops">defaultProps</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#description">description</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#devices">devices</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-keyword">readonly</span> (<span class="tsd-signature-type">&quot;phone&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;tablet&quot;</span>)<span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#icon">icon</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">Component</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">any</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-symbol">{}</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">Snippet</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-symbol">[</span><span class="tsd-signature-symbol">]</span><span class="tsd-signature-symbol">&gt;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#id">id</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#installedat">installedAt</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#isremote">isRemote</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#keybinds">keybinds</a><span class="tsd-signature-symbol">?:</span> <a href="index.AppKeybindInput.html" class="tsd-signature-type tsd-kind-interface">AppKeybindInput</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#name">name</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#networkhosts">networkHosts</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-keyword">readonly</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#permissions">permissions</a><span class="tsd-signature-symbol">?:</span> (<br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;messages&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;search&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;admin&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;location&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;camera&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;account&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;bank&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;call&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;contacts&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;control-center&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;highscores&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;jobs&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;mail&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;marketplace&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;media&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;notifications&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;reports&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;social&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;storage&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;app-events&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;app-registry&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;app-registry-write&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;clock&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;clock-write&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;devtools&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;display&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;display-write&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;keybinds&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;keybinds-write&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;lock-screen&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;lock-screen-write&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;music&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;navigation&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;notification-settings&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;notification-settings-write&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;system-hardware&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;system-hardware-write&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;theme&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;theme-write&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;wallpaper&quot;</span><br/>        <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;wallpaper-write&quot;</span><br/>    )<span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#preload">preload</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">()</span> <span class="tsd-signature-symbol">=&gt;</span> <span class="tsd-signature-type">void</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#requires">requires</a><span class="tsd-signature-symbol">?:</span> (<span class="tsd-signature-type">&quot;jobs&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;money&quot;</span>)<span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#requiresadmin">requiresAdmin</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#requiresnetwork">requiresNetwork</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#sdkcontract">sdkContract</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#services">services</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-keyword">readonly</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#tile">tile</a><span class="tsd-signature-symbol">:</span> <a href="index.AppTile.html" class="tsd-signature-type tsd-kind-interface">AppTile</a><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#updatedat">updatedAt</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#version">version</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#widget">widget</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>        <span class="tsd-kind-property">load</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">()</span> <span class="tsd-signature-symbol">=&gt;</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">default</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Component</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">size</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">&quot;2x1&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;2x2&quot;</span> <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span> <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">sizes</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-keyword">readonly</span> (<span class="tsd-signature-type">&quot;2x1&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;2x2&quot;</span>)<span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:258</li></ul></aside>
+<section class="tsd-panel-group tsd-index-group">
+<section class="tsd-panel tsd-index-panel">
+<details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h5 class="tsd-index-heading uppercase">Index</h5></summary>
+<div class="tsd-accordion-details">
+<section class="tsd-index-section">
+<h3 class="tsd-index-heading tsd-anchor-link" id="properties">Properties<a href="#properties" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-index-list"><a href="#author" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>author?</span></a>
+<a href="#badgestore" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>badge<wbr/>Store?</span></a>
+<a href="#bundleurl" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>bundle<wbr/>Url?</span></a>
+<a href="#core" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>core</span></a>
+<a href="#defaultprops" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>default<wbr/>Props?</span></a>
+<a href="#description" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>description?</span></a>
+<a href="#devices" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>devices?</span></a>
+<a href="#icon" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>icon</span></a>
+<a href="#id" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>id</span></a>
+<a href="#installedat" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>installed<wbr/>At?</span></a>
+<a href="#isremote" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>is<wbr/>Remote?</span></a>
+<a href="#keybinds" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>keybinds?</span></a>
+<a href="#name" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>name</span></a>
+<a href="#networkhosts" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>network<wbr/>Hosts?</span></a>
+<a href="#permissions" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>permissions?</span></a>
+<a href="#preload" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>preload?</span></a>
+<a href="#requires" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>requires?</span></a>
+<a href="#requiresadmin" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>requires<wbr/>Admin?</span></a>
+<a href="#requiresnetwork" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>requires<wbr/>Network?</span></a>
+<a href="#sdkcontract" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>sdk<wbr/>Contract?</span></a>
+<a href="#services" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>services?</span></a>
+<a href="#tile" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>tile</span></a>
+<a href="#updatedat" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>updated<wbr/>At?</span></a>
+<a href="#version" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>version?</span></a>
+<a href="#widget" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>widget?</span></a>
+</div></section></div></details></section></section>
+<details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Properties"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h2 class="tsd-anchor-link" id="properties-1">Properties<a href="#properties-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
+<section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="author"><code class="tsd-tag">Optional</code><span>author</span><a href="#author" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">author</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-comment tsd-typography"><p>App author or developer team</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:311</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="badgestore"><code class="tsd-tag">Optional</code><span>badge<wbr/>Store</span><a href="#badgestore" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">badgeStore</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Readable</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">&gt;</span></div>
+<div class="tsd-comment tsd-typography"><p>Reactive unread count for the launcher badge — <code>unreadMailCount</code> and friends.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:295</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="bundleurl"><code class="tsd-tag">Optional</code><span>bundle<wbr/>Url</span><a href="#bundleurl" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">bundleUrl</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-comment tsd-typography"><p>Remote bundle URL if dynamically loaded</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:339</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="core"><span>core</span><a href="#core" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">core</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">boolean</span></div>
+<div class="tsd-comment tsd-typography"><p>Does this app ship with the phone, and is it therefore not uninstallable?</p>
+<p><strong>Required, and deliberately not inferred.</strong> It was once <code>isSystem</code>, defaulted from
+<code>author</code> — a display string — so an app whose author was anything other than
+<code>'Community'</code> silently became unremovable, and naming yourself <code>'micaOS'</code> was enough to
+do it. Two things followed from deriving a protection boundary instead of stating it:
+the derivation was circular (<code>isSystem</code> read <code>author</code>, then <code>author</code> read <code>isSystem</code>),
+and a second, subtly different copy of it grew in the Store — so the registry and the
+uninstall button could disagree about the same app, and the button threw.</p>
+<p>A remote app is never core. <code>defineApp</code> forces <code>false</code> when <code>isRemote</code> is set and
+throws on an explicit <code>core: true</code> beside it: a downloaded bundle asking for protection
+is broken or hostile. That closes a footgun rather than preventing an attack — an
+add-on runs in the shell's own JS context regardless (§7).</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:356</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="defaultprops"><code class="tsd-tag">Optional</code><span>default<wbr/>Props</span><a href="#defaultprops" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">defaultProps</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></div>
+<div class="tsd-comment tsd-typography"><p>Default props passed when launching app component</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:335</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="description"><code class="tsd-tag">Optional</code><span>description</span><a href="#description" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">description</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-comment tsd-typography"><p>Brief description of app functionality</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:313</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="devices"><code class="tsd-tag">Optional</code><span>devices</span><a href="#devices" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">devices</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-keyword">readonly</span> (<span class="tsd-signature-type">&quot;phone&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;tablet&quot;</span>)<span class="tsd-signature-symbol">[]</span></div>
+<div class="tsd-comment tsd-typography"><p>Which devices this app appears on (MICA-260). Absent means <code>['phone']</code>.</p>
+<p>A visibility contract exactly as <code>requires</code> is: an app whose list lacks the device
+on screen has no icon on it, in the launcher, the dock, the drawer, a folder or
+search, and <code>openApp</code> refuses it. Nothing about the server changes.</p>
+<p>Listing <code>'tablet'</code> says the app is <em>usable</em> at 1280x800, not merely that it loads:
+the shell renders <code>tablet.svelte</code> beside <code>index.svelte</code> when the app ships one and
+<code>index.svelte</code> stretched to the frame when it does not. <code>useDisplay().device</code> says
+which frame the app is in, for the app that wants one root and two layouts.</p>
+<p><code>defineApp</code> supplies no default, for the reason <code>requires</code> has none: absent is the
+only thing a bundle published before this field existed can say, and it has to keep
+meaning what it always did — a phone app.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:402</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="icon"><span>icon</span><a href="#icon" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">icon</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">Component</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">any</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-symbol">{}</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">Snippet</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-symbol">[</span><span class="tsd-signature-symbol">]</span><span class="tsd-signature-symbol">&gt;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span></div>
+<div class="tsd-comment tsd-typography"><p>A Svelte component, a snippet, or an image URL. Null renders no glyph, which
+is what a remote app that shipped without one gets.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:293</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="id"><span>id</span><a href="#id" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">id</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-comment tsd-typography"><p>Unique id — <code>contacts</code>, <code>crypto_tracker</code>. lower_snake_case.</p>
+<p>The stable one. It is a directory name, the <code>mica:&lt;id&gt;:</code> storage namespace, the
+<code>&lt;app&gt;</code> segment of every net event, a keybind claim and the <code>?app=</code> deep link. Renaming
+it is a data migration, not a rename, which is exactly why it is not derived from
+<code>name</code>: a display string should be free to change without orphaning stored data or
+altering event names that server code handles.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:268</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="installedat"><code class="tsd-tag">Optional</code><span>installed<wbr/>At</span><a href="#installedat" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">installedAt</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-comment tsd-typography"><p>ISO date string when app was installed</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:506</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="isremote"><code class="tsd-tag">Optional</code><span>is<wbr/>Remote</span><a href="#isremote" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">isRemote</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span></div>
+<div class="tsd-comment tsd-typography"><p>Flag indicating whether app was dynamically loaded from a remote bundle</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:337</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="keybinds"><code class="tsd-tag">Optional</code><span>keybinds</span><a href="#keybinds" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">keybinds</span><span class="tsd-signature-symbol">?:</span> <a href="index.AppKeybindInput.html" class="tsd-signature-type tsd-kind-interface">AppKeybindInput</a><span class="tsd-signature-symbol">[]</span></div>
+<div class="tsd-comment tsd-typography"><p>Default hotkeys this app wants, shown grouped under it in Settings &gt; Shortcuts.
+Only apps for which this is set contribute app-scoped keybinds; most apps omit it.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:333</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="name"><span>name</span><a href="#name" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">name</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-comment tsd-typography"><p>Display name on the home screen. Cosmetic — the launcher label, the Store listing and
+the error-boundary message, nothing that is keyed on.</p>
+<p>Optional on input. <code>defineApp</code> title-cases the id when it is omitted, so <code>crypto_tracker</code>
+becomes &quot;Crypto Tracker&quot; and all twelve apps in this repo needed only the id. Give it
+explicitly when the display name is not simply the id — &quot;GPS&quot;, &quot;My Bank&quot;.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:277</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="networkhosts"><code class="tsd-tag">Optional</code><span>network<wbr/>Hosts</span><a href="#networkhosts" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">networkHosts</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-keyword">readonly</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">[]</span></div>
+<div class="tsd-comment tsd-typography"><p>MICA-24: the exact origins a <code>core: false</code> add-on's sandboxed frame may reach, for
+every kind of request: <code>fetch()</code>, and since MICA-202 and MICA-442 an image, a clip, a
+font, a script or a stylesheet too.</p>
+<p>Without it, an add-on's own JS — not just the code an author wrote, but anything a
+supply-chain compromise slipped into its bundle — could call out to any host on the
+internet, or load code its pinned SHA never covered. <code>srcdoc.ts</code> writes this list into
+the frame's <code>connect-src</code> and beside <code>data: blob:</code> in every subresource directive; an
+empty or absent list means <code>connect-src 'none'</code> and nothing loaded from any host. A
+host named here can also serve the frame a script, so declare only hosts you control.</p>
+<p>Declaring this without also declaring <code>requiresNetwork: true</code> is refused by
+<code>defineApp</code> — asking for real network egress while saying the app does not need
+network at all is a contradiction, not an oversight to let through quietly. The
+reverse is fine and common: an app can need <code>requiresNetwork</code> (in-game cell signal,
+for its ordinary server-proxied calls) without ever calling <code>fetch()</code> itself, and
+should simply leave this empty rather than declare a host it does not use.</p>
+<p>Full origins only (<code>https://api.example.com</code>, no path) — <code>defineApp</code> rejects
+anything else, since a bare hostname or a wildcard is not a valid CSP source and
+<code>srcdoc.ts</code> does no correction of its own.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:437</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="permissions"><code class="tsd-tag">Optional</code><span>permissions</span><a href="#permissions" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">permissions</span><span class="tsd-signature-symbol">?:</span> (<br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;messages&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;search&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;admin&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;location&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;camera&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;account&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;bank&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;call&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;contacts&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;control-center&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;highscores&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;jobs&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;mail&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;marketplace&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;media&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;notifications&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;reports&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;social&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;storage&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;app-events&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;app-registry&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;app-registry-write&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;clock&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;clock-write&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;devtools&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;display&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;display-write&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;keybinds&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;keybinds-write&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;lock-screen&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;lock-screen-write&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;music&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;navigation&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;notification-settings&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;notification-settings-write&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;system-hardware&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;system-hardware-write&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;theme&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;theme-write&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;wallpaper&quot;</span><br/>    <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;wallpaper-write&quot;</span><br/>)<span class="tsd-signature-symbol">[]</span></div>
+<div class="tsd-comment tsd-typography"><p>What this app reaches for, as shown to a player in the Store.</p>
+<p><strong>A disclosure, not only a sandbox.</strong> A <code>core: true</code> app runs in the shell's own JS
+context, so nothing stops it importing a hook it did not declare; a <code>core: false</code>
+add-on runs in a sandboxed iframe and has the shell re-check every call. Either way
+§2.9 is the real boundary underneath: the server gates privileged actions and does not
+take a NUI request as proof of intent.</p>
+<p>What is enforced is that the disclosure is <strong>true</strong>. <code>sdk/permissions.test.ts</code> reads
+each app's SDK imports and fails the build if it reaches for contacts, photos, the
+camera, notifications or local storage without saying so. Declaring more than the scan
+finds is allowed — <code>network</code> and <code>location</code> have no hook to infer them from.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:328</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="preload"><code class="tsd-tag">Optional</code><span>preload</span><a href="#preload" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">preload</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">()</span> <span class="tsd-signature-symbol">=&gt;</span> <span class="tsd-signature-type">void</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></div>
+<div class="tsd-comment tsd-typography"><p>Load this app's data while the phone opens, before the launcher draws.</p>
+<p>Declared by the app rather than listed by the shell. <code>bootstrap.ts</code> used to name each
+store by hand, and nothing connected that list to the apps it was loading for — so an
+app that shipped a <code>badgeStore</code> and was forgotten there showed a stale badge until
+somebody opened it, which is precisely when a badge no longer matters.</p>
+<p>Only for what has to be right <em>before</em> first paint. Everything else belongs in
+<code>onAppForeground</code>, which reloads per visit; this runs once per phone-open.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:307</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="requires"><code class="tsd-tag">Optional</code><span>requires</span><a href="#requires" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">requires</span><span class="tsd-signature-symbol">?:</span> (<span class="tsd-signature-type">&quot;jobs&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;money&quot;</span>)<span class="tsd-signature-symbol">[]</span></div>
+<div class="tsd-comment tsd-typography"><p>Server capabilities this app cannot function without. Absent means it needs none.</p>
+<p><strong>A visibility contract, not a security boundary</strong> — the same caveat <code>requiresAdmin</code>
+carries, and worth restating rather than inferring. All this does is keep the icon
+away from a phone where the app could not work; the server still refuses every action
+it would have refused anyway (§2.9), and an app hidden here is not a disabled server
+endpoint. A modified client can still emit whatever it likes.</p>
+<p>Not <code>permissions</code>, which is a disclosure of what the app reaches for, shown to a
+player before they install it — that is a statement about the app, this is a statement
+about what the deployment can do. Not <code>requiresNetwork</code> either: that blocks the app at
+runtime, behind a &quot;Not Network&quot; screen, because cell signal comes back. A capability
+the server does not have is not a transient condition, so the honest outcome is
+absence rather than an app that is present and always errors.</p>
+<p>Absent is the only thing a bundle published before this field existed can say, and it
+means exactly the right thing: this app needs nothing of the server beyond what every
+app needs. <code>defineApp</code> supplies no default, so nothing already installed changes
+behaviour and no consumer has to distinguish <code>undefined</code> from <code>[]</code>.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:385</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="requiresadmin"><code class="tsd-tag">Optional</code><span>requires<wbr/>Admin</span><a href="#requiresadmin" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">requiresAdmin</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span></div>
+<div class="tsd-comment tsd-typography"><p>Hide the app entirely unless the player holds an admin ace.</p>
+<p>A visibility hint, not a permission. The server gates every privileged action it
+exposes; this only stops the icon appearing for everyone else.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:363</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="requiresnetwork"><code class="tsd-tag">Optional</code><span>requires<wbr/>Network</span><a href="#requiresnetwork" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">requiresNetwork</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span></div>
+<div class="tsd-comment tsd-typography"><p>Does this app need the NUI bridge to work at all?</p>
+<p>Used to be inferred from <code>permissions.includes('network')</code> — but <code>network</code> disclosed
+nothing (every app talks to its own service, so marking it on everyone would mean
+marking it on no one) and conflated two different questions: what a player should be
+told an app reaches for, and whether the phone should block the app while signal is
+out. This is the second question, stated on its own rather than smuggled through the
+permission list. <code>Shell.svelte</code>'s &quot;Not Network&quot; gate reads this, not <code>permissions</code>.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:413</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="sdkcontract"><code class="tsd-tag">Optional</code><span>sdk<wbr/>Contract</span><a href="#sdkcontract" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">sdkContract</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-comment tsd-typography"><p>MICA-196: the <code>SDK_CONTRACT_VERSION</code> this bundle was compiled against.</p>
+<p><code>sdk/version.ts</code> published that number for an add-on to read and act on, and said
+plainly what it did not do: &quot;nothing consults it at install or boot time. There is no
+runtime compatibility gate anywhere in the phone (MICA-173), and adding one is new
+manifest surface that needs deciding on its own.&quot; This is that surface, decided.</p>
+<p>Without it, an add-on built against a future contract installs cleanly and fails
+wherever it first touches something that moved — a missing export, a renamed prop —
+as an <code>ErrorBoundary</code> crash a player reads as &quot;this add-on is broken&quot;. The version was
+knowable at the bundle's build; nothing was carrying it across.</p>
+<p>Checked for <strong>equality</strong>, not order. <code>SDK_CONTRACT_VERSION</code> is typed <code>string</code> and
+deliberately carries no ordering — its own doc explains why a literal type there would
+turn a comparison into a type error — so &quot;newer&quot; and &quot;older&quot; are not questions this can
+ask. What it can say is whether the phone is running the contract the bundle was built
+for, and a bundle built for a different one is refused at install and again at hydrate.</p>
+<p><strong>Absent means &quot;did not say&quot;, and is never refused.</strong> Every add-on published before
+this field existed omits it, and a bundle built by a third-party bundler that never
+heard of <code>__MICA_VERSION__</code> omits it too. Declaring it is how an add-on asks to be
+refused early and legibly rather than late and confusingly.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:490</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="services"><code class="tsd-tag">Optional</code><span>services</span><a href="#services" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">services</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-keyword">readonly</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">[]</span></div>
+<div class="tsd-comment tsd-typography"><p>MICA-196: the server services this app owns, named rather than inferred.</p>
+<p><code>useService(id)</code> is the generic door to a server service and the id is the caller's to
+choose, so something has to decide whose service an add-on may name. Until this field
+that decision was a string prefix — <code>id === appId || id.startsWith(appId + '_')</code> — over
+a <strong>flat</strong> namespace that already holds <code>blabber_dms</code> and <code>phone_call_log</code>. Two apps
+therefore reach the same service whenever one's id is the other's prefix: Blabber
+reaches <code>blabber_dms</code> by the prefix rule, and an add-on that simply takes the id
+<code>blabber_dms</code> reaches it by owning it. Neither is a bug in either app; the rule cannot
+tell them apart, because it derives ownership from spelling instead of reading it.</p>
+<p>So an app states what it owns, and the registry refuses an install whose claim collides
+with an installed app's — that check is what makes the declaration worth anything, and
+it is why this is not merely documentation.</p>
+<p>Every entry must be the app's own id or sit under <code>&lt;id&gt;_</code>. That is the same namespace
+the prefix rule enforced, kept deliberately: this field exists to make a claim
+<em>checkable</em>, not to let an app claim more than it could before. A declaration outside
+it is refused here, at definition time, where the author can see it.</p>
+<p><strong>Absent is not &quot;owns nothing&quot;.</strong> Every add-on published before this field existed says
+nothing, and for those the old prefix rule still answers — see <code>IframeHostServer</code>'s
+<code>serviceAllowed</code>. Refusing them, or reading absence as an empty list, would break every
+one of them, which is exactly the failure <code>@mica/sdk</code> is built to avoid. Declaring it
+is how an app opts into the stricter, checked answer.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:465</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="tile"><span>tile</span><a href="#tile" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">tile</span><span class="tsd-signature-symbol">:</span> <a href="index.AppTile.html" class="tsd-signature-type tsd-kind-interface">AppTile</a></div>
+<div class="tsd-comment tsd-typography"><p>The launcher tile: what it is painted, and what the glyph on it inherits.</p>
+<p>The authored field (MICA-91). It replaces a free-form <code>color</code> string that held both
+roles at once, positionally and unchecked — which is what let a tile and its glyph
+disagree, and what MICA-88 had to go and reconcile by hand across sixteen apps.</p>
+<p>Required, and the only spelling. The derived <code>color</code> output and the deprecated <code>color</code>
+input were removed on 2026-10-22 (MICA-419), with the contract left at <code>'1'</code> because SDK
+1 is unreleased; a reader that wants one class string calls <code>flattenTile</code>.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:289</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="updatedat"><code class="tsd-tag">Optional</code><span>updated<wbr/>At</span><a href="#updatedat" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">updatedAt</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-comment tsd-typography"><p>ISO date string when app was last updated</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:508</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="version"><code class="tsd-tag">Optional</code><span>version</span><a href="#version" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">version</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-comment tsd-typography"><p>Semantic version string (e.g. &quot;1.0.0&quot;)</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:309</li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="widget"><code class="tsd-tag">Optional</code><span>widget</span><a href="#widget" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">widget</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>    <span class="tsd-kind-property">load</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">()</span> <span class="tsd-signature-symbol">=&gt;</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">default</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Component</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">size</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">&quot;2x1&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;2x2&quot;</span> <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span> <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">sizes</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-keyword">readonly</span> (<span class="tsd-signature-type">&quot;2x1&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;2x2&quot;</span>)<span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></div>
+<div class="tsd-comment tsd-typography"><p>MICA-245: what this app offers the home screen besides its icon. Absent means nothing.</p>
+<p><code>sizes</code> is the whole declaration for a <code>core: false</code> add-on: its bundle hands a widget
+root to <code>bootAddOn</code> beside the app root, and the shell boots it in a sandboxed frame of
+its own under exactly the permissions, grant and facet table the app runs with. <code>load</code>
+is for a <code>core: true</code> app only — the widget component, lazily, as the registry loads the
+app's own entry — and <code>defineApp</code> refuses it on an add-on, whose code the shell never
+imports. <code>sizes</code> is non-empty, repeats nothing, and names only <code>'2x1'</code> and <code>'2x2'</code>.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/manifest.ts:501</li></ul></aside></section></section></details></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div>
+<details open class="tsd-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>On This Page</h3></summary>
+<div class="tsd-accordion-details">
+<details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Properties"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Properties</summary>
+<div><a href="#author"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>author</span></a><a href="#badgestore"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>badge<wbr/>Store</span></a><a href="#bundleurl"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>bundle<wbr/>Url</span></a><a href="#core"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>core</span></a><a href="#defaultprops"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>default<wbr/>Props</span></a><a href="#description"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>description</span></a><a href="#devices"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>devices</span></a><a href="#icon"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>icon</span></a><a href="#id"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>id</span></a><a href="#installedat"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>installed<wbr/>At</span></a><a href="#isremote"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>is<wbr/>Remote</span></a><a href="#keybinds"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>keybinds</span></a><a href="#name"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>name</span></a><a href="#networkhosts"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>network<wbr/>Hosts</span></a><a href="#permissions"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>permissions</span></a><a href="#preload"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>preload</span></a><a href="#requires"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>requires</span></a><a href="#requiresadmin"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>requires<wbr/>Admin</span></a><a href="#requiresnetwork"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>requires<wbr/>Network</span></a><a href="#sdkcontract"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>sdk<wbr/>Contract</span></a><a href="#services"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>services</span></a><a href="#tile"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>tile</span></a><a href="#updatedat"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>updated<wbr/>At</span></a><a href="#version"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>version</span></a><a href="#widget"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>widget</span></a></div></details></div></details></div>
+<div class="site-menu">
+<nav class="tsd-navigation"><a href="../modules.html">@mica/sdk (SDK contract v1)</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p>
+<p>SDK contract v1 — <code>SDK_CONTRACT_VERSION</code> in <code>sdk/version.ts</code>. Not the phone's build version.</p></footer>
+<div class="overlay"></div></body></html>

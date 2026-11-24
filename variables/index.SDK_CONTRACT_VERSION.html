@@ -1,0 +1,93 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>SDK_CONTRACT_VERSION | @mica/sdk (SDK contract v1)</title><meta name="description" content="Documentation for @mica/sdk (SDK contract v1)"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script><script async src="../assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">@mica/sdk (SDK contract v1)</a>
+<div id="tsd-toolbar-links"></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<ul class="tsd-breadcrumb" aria-label="Breadcrumb">
+<li><a href="../modules/index.html">index</a></li>
+<li><a href="" aria-current="page">SDK_CONTRACT_VERSION</a></li></ul>
+<h1>Variable SDK_CONTRACT_VERSION<code class="tsd-tag">Const</code></h1></div>
+<div class="tsd-signature"><span class="tsd-kind-variable">SDK_CONTRACT_VERSION</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = &#39;1&#39;</span></div>
+<div class="tsd-comment tsd-typography"><p>The version of the <strong>contract</strong> <code>@mica/sdk</code> publishes: the exported names of each entry
+point — <strong>the values an add-on can call and the types it can name, equally</strong> — the props
+of every exported component, and the members of every exported string vocabulary. It
+moves when that surface moves and at no other time, which is the whole reason it is worth
+reading.</p>
+<p>That &quot;and the types&quot; is spelled out because the sentence used to say &quot;the exported names&quot;
+and leave it open, and the check behind it read the surface with a runtime <code>import *</code>,
+which cannot see a type at all. Sixty-three published names on <code>index.ts</code> and sixty-two on
+<code>addon.ts</code> were outside the gate in both directions until MICA-182 closed it. An add-on
+that writes <code>import type { Note } from '@mica/sdk'</code> is broken by that name disappearing
+in exactly the way one calling a deleted hook is, so this number moves for both.</p>
+<p>And it moves for a type's <strong>shape</strong> on the same reasoning (MICA-185): the fields of a
+published object type and the members of a published literal union are names an add-on
+compiled against too. <code>AppTile.fg</code> becoming <code>AppTile.glyph</code>, or <code>'unordered'</code> leaving
+<code>AppUpdateKind</code>, keeps <code>AppTile</code> and <code>AppUpdateKind</code> on the entry point and breaks every
+bundle that wrote the old one — and <code>pnpm typecheck</code> staying green says nothing about it,
+because that only proves the shell still compiles against the SDK, not that a bundle
+built against last week's does. Seven published types are consumed by nothing in this
+tree at all, so for those it would not even fail by accident. Removing a field or
+narrowing a union is therefore a bump; adding a field or widening a union is not, on the
+same terms as adding an export.</p>
+<p><code>publicSurface.test.ts</code> pins its frozen baselines to this value and imports it from here
+rather than declaring a copy — landing a break means bumping this, on the owner's explicit
+word only (see <code>version.test.ts</code>), <em>and</em> re-freezing those baselines in the same commit,
+so the break is a reviewable line in a diff. It lived as a <code>const</code> inside that test file
+until MICA-173, where nobody outside this repo could import it; the file said as much
+itself.</p>
+<p><strong>Not</strong> <code>MICA_VERSION</code> below, which is a CalVer build stamp computed from <code>git log</code> and
+moves on every push to <code>main</code> (eleven tags on 2026-08-27 alone) — an add-on branching on
+it is branching on noise. <strong>Not</strong> <code>package.json</code>'s <code>1.0.0</code> either, which is a placeholder
+read by no code and would advertise a published npm package that does not exist.</p>
+<p>Typed <code>string</code> rather than the literal <code>'1'</code> on purpose: the one call site this export
+exists for is an add-on comparing it against the version it was written against, and a
+literal type makes <code>SDK_CONTRACT_VERSION === '2'</code> a &quot;this comparison appears
+unintentional&quot; error rather than a check.</p>
+<p><strong>The design system is out of contract.</strong> <code>app.css</code>, <code>app-utilities.css</code> and
+<code>app-reset.css</code> moved into the package on MICA-172, and this number does not move when
+they change. That is not an oversight: an add-on reads this to decide what it may <em>call</em>,
+and there is no equivalent question for a utility class. Nor is there a mechanism to ask
+one — an add-on's CSS is inlined from whatever <code>vite.addon.config.ts</code> injected at <em>its</em>
+build, so no add-on can have compiled against one stylesheet and been handed another. A
+number that moved for every colour tweak would stop meaning anything for the case it
+exists to serve, which is the one thing it must not do.</p>
+<p><strong>So is the tooling in <code>checks/</code></strong> (MICA-312): <code>@mica/sdk/stylelint</code> and the <code>pnpm check</code>
+script an add-on runs. No bundle imports either, so a stricter check can fail an author's
+lint and cannot change what an installed add-on does. <code>publicSurface.test.ts</code> pins the
+subpath, not what the config says.</p>
+<p><strong>The shell does consult it</strong> (MICA-196): a manifest stamping <code>sdkContract</code> with any other
+value is refused at install (<code>assertContractSupported</code> in <code>shell/state/registry.ts</code>) and
+at hydrate (<code>IframeHostServer</code>) — by equality, since this is unordered. An add-on with no
+stamp is never refused. The public catalog's URL is keyed on it too
+(<code>publicAddonCatalogUrl</code>), so a bump moves where the Store looks for add-ons.</p>
+<p>Still <code>'1'</code> after MICA-419 removed <code>AppManifest.color</code> and the deprecated
+<code>AppManifestInput.color</code> on 2026-10-22, on the ground <code>523c1bbc</code> set out: SDK 1 has
+never been released and nothing outside this repo builds against it, so a bump would buy
+only its costs — the catalog path moving to <code>addons/sdk-2/</code> and every add-on stamped <code>'1'</code>
+refused. The frozen shapes in <code>publicSurface.test.ts</code> record the removal under <code>'1'</code>.
+<code>version.test.ts</code> holds it there: it moves only on the owner's explicit word (MICA-459).</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in sdk/version.ts:83</li></ul></aside></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div></div>
+<div class="site-menu">
+<nav class="tsd-navigation"><a href="../modules.html">@mica/sdk (SDK contract v1)</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p>
+<p>SDK contract v1 — <code>SDK_CONTRACT_VERSION</code> in <code>sdk/version.ts</code>. Not the phone's build version.</p></footer>
+<div class="overlay"></div></body></html>
