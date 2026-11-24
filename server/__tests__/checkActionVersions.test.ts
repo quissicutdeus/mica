@@ -15,7 +15,7 @@ import path from 'path';
  * the failing paths are shown to fire without pushing a deliberately broken `uses:` to
  * find out.
  *
- * Nothing here runs the script over the real `.github/workflows/`, and that is the point.
+ * Nothing here runs the script over the real `.forgejo/workflows/`, and that is the point.
  * The happy path needs the GitHub API, and a unit suite that reaches the API fails on
  * whatever the runner's shared anonymous rate limit is doing that minute -- 31 lookups
  * came back 403 in CI on the first push (MICA-199). `action-drift.yml` runs the script

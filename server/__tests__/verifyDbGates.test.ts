@@ -93,7 +93,7 @@ describe('wiring', () => {
   });
 
   it("CI's verify job passes --no-db, so the schema and endpoints jobs are not doubled", () => {
-    const wf = readFileSync('.github/workflows/build-test.yml', 'utf8');
+    const wf = readFileSync('.forgejo/workflows/build-test.yml', 'utf8');
     expect(wf).toContain('pnpm verify --quick --no-container --no-db');
   });
 });

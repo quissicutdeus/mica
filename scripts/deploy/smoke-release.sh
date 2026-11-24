@@ -10,7 +10,7 @@
 #   command="/home/fivem/bin/smoke-release.sh",no-port-forwarding,no-X11-forwarding,\
 #   no-agent-forwarding,no-pty ssh-ed25519 AAAA... mica-ci-smoke-release
 #
-# .github/workflows/release.yml and integration.yml open an SSH session with that key
+# .forgejo/workflows/release.yml and integration.yml open an SSH session with that key
 # and pipe a zip to it; sshd runs this with the zip on stdin. The zip is the entire
 # client-supplied surface: it is size-capped, unpacked into a directory of its own,
 # and handed to mica-smoke-release.sh beside this file, which starts a throwaway

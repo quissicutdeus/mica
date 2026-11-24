@@ -1,0 +1,91 @@
+name: Publish SDK docs
+
+# Both jobs live in one workflow and only one of them runs off main, so every run was
+# called plain "Publish SDK docs" and the runs list could not tell a build from a publish.
+# Matches deploy.yml's own run-name for the same reason.
+run-name: Publish SDK docs - ${{ github.ref_name }}
+
+# Two jobs, two different questions, and they are deliberately not the same trigger.
+#
+# **Building is a gate.** `pnpm docs:sdk` is the only thing in this repo that runs TypeDoc
+# over the SDK barrels, and it is not part of `pnpm verify` — so while this workflow fired
+# on main alone, a change that broke the docs build was invisible until somebody merged,
+# and the site meanwhile went on serving its last successful build with nothing anywhere
+# saying it was stale. That is exactly the shape AGENTS.md calls a check that fails open,
+# and it is not hypothetical: MICA-172 landed on dev and broke this build for three days
+# without a single red run, because main had not moved.
+#
+# Adding dev makes the break loud on the commit that causes it, on the branch that
+# actually receives commits here.
+#
+# **Publishing is routing.** A dev build has nowhere to go; the deploy job's `if` below
+# skips it, silently and correctly.
+on:
+  push:
+    branches: [main]
+
+# No `permissions:` block: Forgejo ignores GitHub's, and warns on every job.
+
+# Keyed per branch rather than the single `pages` group GitHub's starter workflow uses.
+# With dev building here too, one shared group would queue a dev build in front of a main
+# publish for no reason — the two never touch the same deployment. Within a branch the
+# serialisation is kept, and `cancel-in-progress: false` with it: a superseded publish
+# that dies mid-deploy leaves the live site half-written, which is worse than a wait.
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      # pnpm from the job image when it's the right major (the runner's own image has it:
+      # the ansible repo's stacks/forgejo-runner, MICA-482); installed here where it isn't
+      # (Playwright's E2E container, GitHub's runners).
+      - name: Install pnpm 12
+        run: >-
+          case "$(pnpm --version 2>/dev/null)" in 12.*) ;;
+          *) npm install -g --no-fund --no-audit "pnpm@12" ;; esac
+      # The runner's own pnpm store, when it has one: mica's tatooine runner gives every
+      # job container the same persistent volume at /pnpm-store (the ansible repo's
+      # stacks/forgejo-runner/config.yml), so installs link from what earlier jobs
+      # downloaded instead of fetching every package again. Anywhere else the
+      # directory is absent and pnpm keeps its default store.
+      - name: Use the runner's pnpm store, when it has one
+        run: if [ -d /pnpm-store ]; then pnpm config set store-dir /pnpm-store --location global; fi
+      - name: Install Node.js 26
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          # setup-node's pnpm cache is GitHub's cache service, for GitHub's own machines;
+          # mica's runner keeps the store itself (above).
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # Fails, rather than publishing something wrong, if the site stops covering the
+      # add-on barrel or loses its contract-version stamp. See web/scripts/docs-sdk.mjs.
+      - name: Generate SDK docs
+        run: pnpm run docs:sdk
+      # Published as the gh-pages branch: one commit, replaced each time, holding exactly the
+      # built site. mica lives on the home Forgejo, which has no Pages; its push mirror
+      # carries the branch to GitHub, whose Pages serves it (Settings > Pages: deploy from
+      # the gh-pages branch, root). GitHub's own deploy-pages action runs only on
+      # github.com, which runs nothing for this repository any more.
+      #
+      # .nojekyll because a branch-served site goes through Jekyll, which drops TypeDoc's
+      # files whose names start with an underscore.
+      - name: Publish to the gh-pages branch
+        if: github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          cd web/docs
+          touch .nojekyll
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name='Forgejo Actions' -c user.email='actions@git.quissicutdeus.com' \
+            commit -q -m "SDK docs for ${GITHUB_SHA}"
+          git push -q --force "https://ci:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" gh-pages

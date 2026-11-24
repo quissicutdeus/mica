@@ -271,10 +271,11 @@ Both scripts accept a database from the environment instead of starting Docker:
 set `MICA_DB_HOST`, `MICA_DB_PORT`, `MICA_DB_USER` and `MICA_DB_PASSWORD` and
 they connect there; leave them unset and they start the throwaway container as
 before. Neither has a "no database, nothing to do" branch — unreachable is
-exit 1. That is what lets the `schema` job in `.github/workflows/build-test.yml`
-run both against a MariaDB service container on every push, so each path is one
-script rather than a local one and a CI copy. `pnpm verify` runs `test:schema`
-by default and `test:migrations` under `--migrations`.
+exit 1. That is what lets the `schema` job in
+`.forgejo/workflows/build-test.yml` run both against a MariaDB service container
+on every push, so each path is one script rather than a local one and a CI copy.
+`pnpm verify` runs `test:schema` by default and `test:migrations` under
+`--migrations`.
 
 ### It drives the real module, deliberately
 
@@ -394,7 +395,7 @@ test('walks through every Settings screen and back', async ({ page }) => {
 ## `lint` is ~2s here and was ~118s in CI, and the cache was the reason
 
 `pnpm verify`'s `lint` gate is ~2-3s locally and cost **118s on every CI run** —
-a third of a 316s job — while `.github/workflows/build-test.yml` restored an
+a third of a 316s job — while `.forgejo/workflows/build-test.yml` restored an
 ESLint cache each time and its comment claimed a warm run took a second. Both
 halves were true: the cache really was restored, and it really did match
 nothing.

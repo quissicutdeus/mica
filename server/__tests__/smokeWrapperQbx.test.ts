@@ -562,7 +562,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', { timeout: 20_000 }, () => {
 
     it('prints every line the two workflows require of a passing run, and only a full run prints them all', () => {
       const required = ['integration.yml', 'release.yml'].map((name) => {
-        const text = readFileSync(join(ROOT, '.github/workflows', name), 'utf8');
+        const text = readFileSync(join(ROOT, '.forgejo/workflows', name), 'utf8');
         const block = text.match(/RUN_CHECKED_REQUIRE: \|\n((?: {12}\S.*\n)+)/);
         expect(block, `${name} sets no RUN_CHECKED_REQUIRE`).not.toBeNull();
         return (block?.[1] ?? '')

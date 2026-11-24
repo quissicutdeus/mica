@@ -14,8 +14,14 @@ name: Integration
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
+# No `permissions:` block: Forgejo ignores GitHub's, and warns on every job.
+
+# One run at a time per branch: a newer push cancels the older run on a
+# branch or pull request, but on main runs queue, so a deploy or release is
+# never cancelled halfway.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   integration:
@@ -25,16 +31,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-        name: Install pnpm 11
-        with:
-          version: 11
+      # pnpm from the job image when it's the right major (the runner's own image has it:
+      # the ansible repo's stacks/forgejo-runner, MICA-482); installed here where it isn't
+      # (Playwright's E2E container, GitHub's runners).
+      - name: Install pnpm 12
+        run: >-
+          case "$(pnpm --version 2>/dev/null)" in 12.*) ;;
+          *) npm install -g --no-fund --no-audit "pnpm@12" ;; esac
+      # The runner's own pnpm store, when it has one: mica's tatooine runner gives every
+      # job container the same persistent volume at /pnpm-store (the ansible repo's
+      # stacks/forgejo-runner/config.yml), so installs link from what earlier jobs
+      # downloaded instead of fetching every package again. Anywhere else the
+      # directory is absent and pnpm keeps its default store.
+      - name: Use the runner's pnpm store, when it has one
+        run: if [ -d /pnpm-store ]; then pnpm config set store-dir /pnpm-store --location global; fi
 
       - name: Install Node.js 26
         uses: actions/setup-node@v7
         with:
           node-version: 26
-          cache: 'pnpm'
+          # setup-node's pnpm cache is GitHub's cache service, for GitHub's own machines;
+          # mica's runner keeps the store itself (above).
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
 
       # --ignore-scripts: the root "prepare" script installs dev git hooks, which a CI job
       # has no use for.

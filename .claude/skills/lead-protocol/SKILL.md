@@ -197,10 +197,11 @@ message reads as something to answer instead of something to execute.
   notice reports the wrapper's exit, not the gate's. After a partial failure
   rerun only the gate that failed.
 - Watch a push's CI with `scripts/watch-ci.sh <full-sha>`, started with
-  `run_in_background`. It waits for runs that register late (Deploy follows
-  Verify), and exits non-zero unless every run succeeded. It refuses a short
-  sha: `gh run list --commit` matches nothing on one, so a watcher finds no run,
-  exits at once and reads as a pass; two did that on 2026-10-08.
+  `run_in_background`. It asks the home Forgejo, where CI runs since 2026-11-23,
+  waits for runs that register late, and exits non-zero unless every run
+  succeeded. It refuses a short sha: a lookup by commit matches nothing on one,
+  so a watcher finds no run, exits at once and reads as a pass; two did that on
+  2026-10-08.
 - **Start a long gate with the Bash tool's `run_in_background`, never a bare `&`
   or `( … ) &` inside a foreground call.** The lead acts only when something
   wakes it, and an untracked job sends no notice when it ends. On 2026-10-07 a

@@ -4,14 +4,17 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Watch every GitHub Actions run for one pushed commit until they have all finished, and
+# Watch every Forgejo Actions run for one pushed commit until they have all finished, and
 # exit non-zero unless every one of them concluded in success:
 #
 #   scripts/watch-ci.sh [-R owner/name] <full-40-char-sha> [out-file]
 #
-# Runs register late: Deploy follows Verify through `workflow_run`, so this keeps polling
-# until everything seen has completed AND nothing new has appeared for a quiet period.
-# One line per run is printed (and written to out-file, if given):
+# mica lives on the home Forgejo (git.quissicutdeus.com) since 2026-11-23; GitHub keeps a
+# copy that Forgejo pushes to and that runs no Actions, so this asks Forgejo's API.
+#
+# Runs register late (a push starts several workflows, and a slow trigger can add one), so
+# this keeps polling until everything seen has finished AND nothing new has appeared for a
+# quiet period. One line per run is printed (and written to out-file, if given):
 #
 #   <workflow>  <status>  <conclusion>  <run id>  [superseded]
 #
@@ -21,20 +24,23 @@
 # a hidden failure reads as a pass. A failing newest run fails, and a newest run still going
 # keeps the watch pending.
 #
-# Exit status: 0 every run succeeded (a workflow-level `skipped` is reported but allowed);
-# 1 a run failed, no run ever registered, or the watch ran out of time; 2 bad usage or
-# `gh` could not be asked. It never reads silence as a pass: `gh run list --commit` matches
-# nothing on a short sha, so a short sha is refused rather than watched for nothing.
+# Exit status: 0 every run succeeded (a `skipped` run is reported but allowed); 1 a run
+# failed or was cancelled, no run ever registered, or the watch ran out of time; 2 bad
+# usage, or Forgejo could not be asked. It never reads silence as a pass: a short sha is
+# refused rather than watched for nothing.
 #
-# GH_CONFIG_DIR is honoured when the caller set it. The repo is `-R`, else the one `gh`
-# resolves for the current checkout. Tuning, for tests: WATCH_CI_INTERVAL (seconds between
-# polls, default 20), WATCH_CI_QUIET (quiet polls needed, default 6), WATCH_CI_POLLS (poll
-# budget, default 180), WATCH_CI_ERRORS (consecutive gh failures tolerated, default 5).
+# The token is FORGEJO_TOKEN, else the file ~/.config/forgejo/token (read access to the
+# repo is enough). The server is FORGEJO_URL (default https://git.quissicutdeus.com). The
+# repo is `-R`, else origin's owner/name. Tuning, for tests: WATCH_CI_INTERVAL (seconds
+# between polls, default 20), WATCH_CI_QUIET (quiet polls needed, default 6),
+# WATCH_CI_POLLS (poll budget, default 180), WATCH_CI_ERRORS (consecutive API failures
+# tolerated, default 5).
 
 interval=${WATCH_CI_INTERVAL:-20}
 quiet_needed=${WATCH_CI_QUIET:-6}
 max_polls=${WATCH_CI_POLLS:-180}
 max_errors=${WATCH_CI_ERRORS:-5}
+server=${FORGEJO_URL:-https://git.quissicutdeus.com}
 
 repo=
 if [ "${1:-}" = "-R" ]; then
@@ -58,21 +64,36 @@ case $sha in
 esac
 if [ "${#sha}" -ne 40 ]; then
     echo "watch-ci: '$sha' is ${#sha} characters; a full 40-character sha is required." >&2
-    echo "watch-ci: gh matches --commit on the full sha only, so a short one would watch nothing." >&2
+    echo "watch-ci: Forgejo matches head_sha on the full sha only, so a short one would watch nothing." >&2
     exit 2
 fi
 
-command -v gh >/dev/null 2>&1 || {
-    echo "watch-ci: gh is not installed" >&2
+for tool in curl jq; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "watch-ci: $tool is not installed" >&2
+        exit 2
+    }
+done
+
+token=${FORGEJO_TOKEN:-}
+if [ -z "$token" ] && [ -r "$HOME/.config/forgejo/token" ]; then
+    token=$(cat "$HOME/.config/forgejo/token")
+fi
+[ -n "$token" ] || {
+    echo "watch-ci: no token: set FORGEJO_TOKEN or write ~/.config/forgejo/token" >&2
     exit 2
 }
 
 if [ -z "$repo" ]; then
-    repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner) || repo=
-    [ -n "$repo" ] || {
-        echo "watch-ci: could not work out the repo from gh; pass -R owner/name" >&2
-        exit 2
-    }
+    # origin's owner/name, from either git@host:owner/name.git or https://host/owner/name.git.
+    repo=$(git remote get-url origin 2>/dev/null | sed -E 's#^[^:]+://[^/]+/##; s#^[^@]+@[^:]+:##; s#\.git$##') || repo=
+    case $repo in
+        */*) ;;
+        *)
+            echo "watch-ci: could not work out the repo from origin; pass -R owner/name" >&2
+            exit 2
+            ;;
+    esac
 fi
 
 tab=$(printf '\t')
@@ -82,13 +103,23 @@ errors=0
 poll=0
 runs=''
 
+# One line per run of this commit: id, status, conclusion, workflow. Forgejo reports a
+# single status per run; a finished one (success, failure, cancelled, skipped) is
+# `completed` with that as its conclusion, anything else is still going.
+list_runs() {
+    curl -fsS -H "Authorization: token $token" \
+        "$server/api/v1/repos/$repo/actions/runs?head_sha=$sha&limit=50" |
+        jq -r '.workflow_runs[]
+            | (if (.status | IN("success", "failure", "cancelled", "skipped")) then "completed" else .status end) as $s
+            | [.id, $s, (if $s == "completed" then .status else "none" end), .workflow_id]
+            | map(tostring) | join("\t")'
+}
+
 while [ "$poll" -lt "$max_polls" ]; do
     poll=$((poll + 1))
-    if ! runs=$(gh run list -R "$repo" --commit "$sha" --limit 100 \
-        --json databaseId,status,conclusion,workflowName \
-        --jq '.[] | [.databaseId, .status, (.conclusion // "none"), .workflowName] | join("\t")'); then
+    if ! runs=$(list_runs); then
         errors=$((errors + 1))
-        echo "watch-ci: gh run list failed ($errors/$max_errors)" >&2
+        echo "watch-ci: asking Forgejo failed ($errors/$max_errors)" >&2
         if [ "$errors" -ge "$max_errors" ]; then
             echo "watch-ci: giving up; this is NOT a pass, the runs were never read" >&2
             exit 2

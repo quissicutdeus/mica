@@ -65,15 +65,18 @@ pointed at one, sshd would run that, ignore the zip on stdin, exit 0 and print
 `deployed main @ <sha>`, and Actions would report a green smoke test that tested
 nothing.
 
-The fetch is over SSH with a read-only deploy key of this repository, never
-https. In `~/.ssh/config`, with the public key added under the repository's
-deploy keys (read-only) and github.com's host key in `~/.ssh/known_hosts`:
+The fetch is from the home Forgejo (git.quissicutdeus.com, where mica lives
+since 2026-11-23; GitHub keeps a copy), over SSH with a read-only deploy key of
+this repository, never https. In `~/.ssh/config`, with the public key added
+under the repository's deploy keys in Forgejo (read-only) and Forgejo's host key
+in `~/.ssh/known_hosts` (`ssh-keyscan git.quissicutdeus.com`):
 
 ```text
-Host github-mica
-    HostName github.com
+Host forgejo-mica
+    HostName git.quissicutdeus.com
+    Port 22
     User git
-    IdentityFile ~/.ssh/github-mica
+    IdentityFile ~/.ssh/forgejo-mica
     IdentitiesOnly yes
 ```
 
@@ -94,13 +97,14 @@ smoke test's settings, below.
 
 ## The deploy
 
-`.github/workflows/deploy.yml` runs after a green Verify on a push to `dev` or
-`main`, opens a session with that branch's key, and sends nothing. The step's
-status is ssh's, which is `deploy.sh`'s. In order, it:
+The deploy jobs at the end of `.forgejo/workflows/build-test.yml` (Verify) run
+after its other jobs on a push to `dev` or `main`, refuse if any of them failed,
+open a session with that branch's key, and send nothing. The step's status is
+ssh's, which is `deploy.sh`'s. In order, it:
 
 1. takes hoth's lock (below), waiting up to thirty minutes for a job already
    holding it rather than being dropped;
-2. fetches the branch from `github-mica` into
+2. fetches the branch from `forgejo-mica` into
    `/opt/fivem-<target>/server-data/vendor/mica` and resets to it, then
    reinstalls itself (and, on dev, the smoke scripts);
 3. builds the FiveM resource: `pnpm install --frozen-lockfile --ignore-scripts`

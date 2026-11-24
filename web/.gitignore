@@ -26,8 +26,8 @@ dist-ssr
 # Test artifacts
 playwright-report
 test-results
-# Each `--shard` writes one of these; the merge job turns the set back into a
-# single playwright-report. Only CI produces them, but a local shard run would too.
+# A `--shard` run with `--reporter=blob` writes one of these. CI ran its e2e that
+# way until MICA-480 put it in one job; a local shard run still would.
 blob-report
 
 # Generated docs

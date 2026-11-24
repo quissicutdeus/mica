@@ -9,8 +9,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // scripts/watch-ci.sh decides whether a pushed commit is green. These drive the real script
-// with a fake `gh` that prints canned `id status conclusion workflow` rows, so the verdict
-// is exercised, not just configured.
+// with a fake `curl` and `jq` in place of Forgejo's API: `jq` prints canned
+// `id status conclusion workflow` rows, as the script's filter would, so the verdict is
+// exercised, not just configured.
 
 const SCRIPT = join(__dirname, '..', '..', 'scripts', 'watch-ci.sh');
 const SHA = 'a'.repeat(40);
@@ -19,10 +20,14 @@ let dir: string;
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'watch-ci-'));
-  const gh = join(dir, 'gh');
-  // Ignores its arguments and prints the rows in $FAKE_RUNS, as the script's --jq would.
-  writeFileSync(gh, '#!/bin/sh\nprintf "%s" "$FAKE_RUNS"\n');
-  chmodSync(gh, 0o755);
+  // `curl` answers with nothing; `jq` ignores it and prints the rows in $FAKE_RUNS, as the
+  // script's filter would on Forgejo's answer.
+  const curl = join(dir, 'curl');
+  writeFileSync(curl, '#!/bin/sh\nexit 0\n');
+  chmodSync(curl, 0o755);
+  const jq = join(dir, 'jq');
+  writeFileSync(jq, '#!/bin/sh\ncat >/dev/null\nprintf "%s" "$FAKE_RUNS"\n');
+  chmodSync(jq, 0o755);
 });
 
 afterAll(() => {
@@ -38,6 +43,7 @@ function watch(rows: Row[]) {
     env: {
       PATH: `${dir}:${process.env.PATH}`,
       FAKE_RUNS: runs,
+      FORGEJO_TOKEN: 'test',
       WATCH_CI_INTERVAL: '0',
       WATCH_CI_QUIET: '2',
       WATCH_CI_POLLS: '6'

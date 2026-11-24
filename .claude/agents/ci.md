@@ -69,13 +69,14 @@ reached only because the global ones dispatch to them.
 
 ## Actions follow their major tag
 
-Every action in `.github/workflows/` names a bare major tag (`@v7`), so each run
-takes that major's newest release; a commit SHA or an exact version (`@v7.1.0`)
-fails `pnpm lint:actions`, which also fails on a newer major and asks for its
-release notes to be read before the tag moves. A rate limit or a network error
-is reported as _unresolved_ rather than skipped, because a tag the lint could
-not check is not a checked tag. What the lint cannot see is whether the action
-publishes that major: check a new one with
+Every action in `.forgejo/workflows/` names a bare major tag (`@v7`), so each
+run takes that major's newest release; a commit SHA or an exact version
+(`@v7.1.0`) fails `pnpm lint:actions`, which also fails on a newer major and
+asks for its release notes to be read before the tag moves. Forgejo's own
+actions, named by URL, keep their pinned SHAs and are left out of that. A rate
+limit or a network error is reported as _unresolved_ rather than skipped,
+because a tag the lint could not check is not a checked tag. What the lint
+cannot see is whether the action publishes that major: check a new one with
 `git ls-remote https://github.com/<o>/<r> refs/tags/<tag>` before writing it,
 since GitHub refuses an unknown `uses:` only when a job reaches it, and a lane
 once added actions that existed in no repository with every gate green. When the
@@ -84,11 +85,16 @@ as a pass.
 
 ## Where CI runs, and what a green tick can hide
 
-**GitHub is the primary remote** and runs the deploys and releases, with the
-secrets. The self-hosted Forgejo on hoth is a mirror that `mirror.yml` keeps in
-sync on every push, and it runs these same workflow files with no secrets. A
-step that must differ between them splits on `github.server_url`, as several
-already do.
+**The home Forgejo is the primary remote** (since 2026-11-23) and runs
+everything, deploys and releases included, from `.forgejo/workflows/`, with the
+secrets. GitHub is a public copy Forgejo push-mirrors to, and runs nothing: it
+has no workflow files. The deploys are jobs at the end of Verify (Forgejo has no
+`workflow_run`), the SDK docs are published as the `gh-pages` branch for
+GitHub's Pages to serve, and releases carry `SHA256SUMS` but no GitHub
+provenance attestation. `scripts/watch-ci.sh` asks Forgejo's API (MICA-481),
+with the token in `FORGEJO_TOKEN` or `~/.config/forgejo/token`. The
+`github.server_url` splits that remain are harmless: the github.com side never
+runs.
 
 - **GitHub resolves every `uses:` in a job before it reads any `if:`.** An
   action GitHub refuses (the v3 artifact actions, since 2026) fails the whole

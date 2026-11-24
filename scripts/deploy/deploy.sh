@@ -12,7 +12,7 @@
 #   command="/home/fivem/bin/mica-deploy.sh dev",no-port-forwarding,no-X11-forwarding,\
 #   no-agent-forwarding,no-pty ssh-ed25519 AAAA... mica-ci-deploy-dev
 #
-# .github/workflows/deploy.yml opens an SSH session with that key and sends
+# .forgejo/workflows/build-test.yml (its deploy jobs) opens an SSH session with that key and sends
 # nothing; sshd runs this instead, so the key, not the session, picks the target.
 # What it does, in order: the micaOS resource (fetch, reset, install, build), the
 # demo site's image and its Quadlet unit, a restart of the demo container, and a
@@ -63,8 +63,9 @@ trap ': >"$lock"' EXIT
 
 cd "/opt/fivem-$target/server-data/vendor/mica"
 
-# Over SSH with the read-only deploy key that ~/.ssh/config names github-mica.
-git fetch git@github-mica:quissicutdeus/mica.git "$target"
+# From the home Forgejo, where mica lives since 2026-11-23 (GitHub keeps a copy), over
+# SSH with the read-only deploy key that ~/.ssh/config names forgejo-mica.
+git fetch git@forgejo-mica:quissicutdeus/mica.git "$target"
 git reset --hard FETCH_HEAD
 
 # Re-install this script from the checkout it just reset, so a change to it reaches hoth with
